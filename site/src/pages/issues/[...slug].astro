@@ -1,0 +1,61 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import FeaturedItem from "../../components/FeaturedItem.astro";
+import AppendixSection from "../../components/AppendixSection.astro";
+
+export async function getStaticPaths() {
+  const issues = await getCollection("issues");
+  return issues.map((issue) => ({
+    params: { slug: issue.id },
+    props: { issue },
+  }));
+}
+
+const { issue } = Astro.props;
+const { date, theme, featured, appendix, metadata } = issue.data;
+
+const sectionGroups: {
+  key: "papers" | "news" | "blogs";
+  label: string;
+  count: number;
+}[] = [
+  { key: "papers", label: "Papers", count: metadata.items_featured_papers },
+  { key: "news",   label: "News",   count: metadata.items_featured_news },
+  { key: "blogs",  label: "Blogs",  count: metadata.items_featured_blogs },
+];
+
+const itemsBySection = {
+  papers: featured.filter((i) => i.section === "papers"),
+  news:   featured.filter((i) => i.section === "news"),
+  blogs:  featured.filter((i) => i.section === "blogs"),
+};
+---
+<BaseLayout title={`${date} — AI Agents Daily`} description={theme || `AI Agents Daily issue for ${date}`}>
+  <header class="issue-header">
+    <div class="issue-header__date">{date}</div>
+    <h1 class="issue-header__title">AI Agents</h1>
+    {theme && <p class="issue-header__theme">{theme}</p>}
+    <div class="statbar" role="group" aria-label="Run statistics">
+      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_papers}</span> papers</span>
+      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_news}</span> news</span>
+      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_blogs}</span> blogs</span>
+      <span class="statbar__item"><span class="statbar__num">{metadata.items_appendix}</span> appendix</span>
+      <span class="statbar__item"><span class="statbar__num">{metadata.items_considered}</span> considered</span>
+    </div>
+  </header>
+
+  {sectionGroups.map((g) => (
+    g.count > 0 && (
+      <section class="section" id={g.key}>
+        <header class="section__head">
+          <h2 class="section__title">{g.label}</h2>
+          <span class="section__count">{g.count}</span>
+        </header>
+        {itemsBySection[g.key].map((item) => <FeaturedItem item={item} />)}
+      </section>
+    )
+  ))}
+
+  <AppendixSection appendix={appendix} />
+</BaseLayout>

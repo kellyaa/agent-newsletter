@@ -1,0 +1,45 @@
+---
+interface AppendixItem {
+  id: string;
+  section: "papers" | "news" | "blogs";
+  source: string;
+  url: string;
+  title: string;
+}
+interface Props {
+  appendix: {
+    papers: AppendixItem[];
+    news: AppendixItem[];
+    blogs: AppendixItem[];
+  };
+}
+const { appendix } = Astro.props;
+const total = appendix.papers.length + appendix.news.length + appendix.blogs.length;
+const groups: { key: keyof typeof appendix; label: string }[] = [
+  { key: "papers", label: "Papers" },
+  { key: "news", label: "News" },
+  { key: "blogs", label: "Blogs" },
+];
+---
+{total > 0 && (
+  <details class="appendix">
+    <summary>{total} more items the ranker flagged but didn't feature</summary>
+    <div class="appendix__body">
+      {groups.map((g) => (
+        appendix[g.key].length > 0 && (
+          <section class="appendix__group">
+            <h4 class="appendix__group-title">{g.label}</h4>
+            <ul class="appendix__list">
+              {appendix[g.key].map((it) => (
+                <li>
+                  <a href={it.url} rel="noopener noreferrer external">{it.title}</a>
+                  <span class="appendix__source">{it.source}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      ))}
+    </div>
+  </details>
+)}

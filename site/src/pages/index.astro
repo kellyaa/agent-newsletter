@@ -1,0 +1,31 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const issues = await getCollection("issues");
+issues.sort((a, b) => (a.data.date < b.data.date ? 1 : -1));
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<BaseLayout title="AI Agents Daily">
+  {issues.length === 0 ? (
+    <p class="empty-state">No issues yet. The first run lands tomorrow.</p>
+  ) : (
+    <ul class="issue-list">
+      {issues.map((issue) => {
+        const m = issue.data.metadata;
+        const counts = `${m.items_featured_papers}p · ${m.items_featured_news}n · ${m.items_featured_blogs}b · ${m.items_appendix} appendix`;
+        return (
+          <li class="issue-list__item">
+            <div class="issue-list__date">{issue.data.date}</div>
+            <h2 class="issue-list__title">
+              <a href={`${base}/issues/${issue.id}/`}>
+                {issue.data.theme || `Issue ${issue.data.date}`}
+              </a>
+            </h2>
+            <div class="issue-list__counts">{counts}</div>
+          </li>
+        );
+      })}
+    </ul>
+  )}
+</BaseLayout>

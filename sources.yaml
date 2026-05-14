@@ -1,0 +1,152 @@
+# Source-family → section defaults (in scripts/prefilter.py SECTION_BY_FAMILY):
+#   rss → blogs, arxiv/hf-daily → papers, gh/hn/reddit → news
+#
+# Any source entry below may add an optional `section:` field to override the
+# family default. Allowed values: papers | news | blogs. Invalid values are
+# logged and ignored. The override is stamped onto every item the source
+# emits and persists to items.section_override in state.db.
+#
+# Example: a vendor blog whose RSS is really release announcements →
+#   - id: vendor-x
+#     url: https://x.com/blog/rss
+#     section: news
+
+rss:
+  - id: simonw
+    name: "Simon Willison's Weblog"
+    url: https://simonwillison.net/atom/everything/
+    weight: 1.0
+
+  - id: latent-space
+    name: "Latent Space"
+    url: https://www.latent.space/feed
+    weight: 1.0
+
+  - id: interconnects
+    name: "Interconnects (Nathan Lambert)"
+    url: https://www.interconnects.ai/feed
+    weight: 1.0
+
+  - id: raschka
+    name: "Sebastian Raschka — Ahead of AI"
+    url: https://magazine.sebastianraschka.com/feed
+    weight: 1.0
+
+  - id: eugene-yan
+    name: "Eugene Yan"
+    url: https://eugeneyan.com/rss/
+    weight: 1.0
+
+  - id: hamel
+    name: "Hamel Husain"
+    url: https://hamel.dev/index.xml
+    weight: 1.0
+
+  - id: karuparti
+    name: "Karuparti"
+    url: https://newsletter.karuparti.com/feed
+    weight: 0.7
+
+  # Investigated & dropped (2026-05-14). Revisit if upstream restores RSS or
+  # if we add an HTML-scrape adapter to fetch.py:
+  #   - The AI Exchange / Every (Dan Shipper)  — every.to has no public RSS path
+  #   - The Batch (DeepLearning.AI)            — all RSS endpoints return 404/500
+  #   - LangChain Blog                         — Webflow site, /blog/rss serves HTML
+  #                                              (covered by GitHub releases watchlist)
+  #   - Galileo AI Blog                        — no working endpoint
+  #   - Anthropic /news, OpenAI /research      — no RSS; would need HTML scraper
+  #   - GMI Cloud Blog                         — feed URL never identified
+  #   notes: "Find RSS feed for gmicloud.ai/en/blog or drop."
+
+arxiv:
+  # arXiv Atom-API queries. Each query runs daily and returns most recent matches.
+  # Categories: cs.AI, cs.CL, cs.SE, cs.MA (multi-agent), cs.LG
+  - id: arxiv-agents
+    name: "arXiv: agent-related"
+    query: 'cat:cs.AI AND (abs:"agent" OR abs:"tool use" OR abs:"tool-calling" OR abs:"multi-agent")'
+    max_results: 50
+    weight: 1.0
+
+  - id: arxiv-llm-systems
+    name: "arXiv: LLM systems / evals"
+    query: 'cat:cs.CL AND (abs:"LLM agent" OR abs:"language agent" OR abs:"agent benchmark" OR abs:"tool-augmented")'
+    max_results: 30
+    weight: 1.0
+
+  - id: arxiv-software-eng
+    name: "arXiv: code/SWE agents"
+    query: 'cat:cs.SE AND (abs:"LLM" OR abs:"agent" OR abs:"code generation")'
+    max_results: 30
+    weight: 1.0
+
+hn:
+  # Hacker News via Algolia. The `query` parameter is free-text, NOT boolean;
+  # avoid 'OR' / quoted phrases. One concept per query, dedup downstream.
+  - id: hn-agent
+    name: "HN: agent"
+    query: "agent"
+    hours_back: 48
+    min_points: 40
+    weight: 0.8
+
+  - id: hn-llm
+    name: "HN: llm"
+    query: "llm"
+    hours_back: 48
+    min_points: 40
+    weight: 0.8
+
+  - id: hn-mcp
+    name: "HN: MCP"
+    query: "mcp"
+    hours_back: 48
+    min_points: 30
+    weight: 0.9
+
+  - id: hn-claude
+    name: "HN: claude"
+    query: "claude"
+    hours_back: 48
+    min_points: 40
+    weight: 0.9
+
+reddit:
+  # Reddit JSON endpoints. Score-gated in prefilter.
+  - id: reddit-localllama
+    name: "r/LocalLLaMA"
+    url: https://www.reddit.com/r/LocalLLaMA/top.json?t=day
+    min_score: 100
+    weight: 0.7
+
+  - id: reddit-mlops
+    name: "r/MachineLearning"
+    url: https://www.reddit.com/r/MachineLearning/top.json?t=day
+    min_score: 100
+    weight: 0.7
+
+github_releases:
+  # Watchlist for `gh api repos/<owner>/<name>/releases` — picked up in fetch.py.
+  - owner: langchain-ai
+    repo: langgraph
+  - owner: langchain-ai
+    repo: langchain
+  - owner: anthropics
+    repo: claude-code
+  - owner: anthropics
+    repo: anthropic-sdk-python
+  - owner: modelcontextprotocol
+    repo: servers
+  - owner: stanfordnlp
+    repo: dspy
+  - owner: microsoft
+    repo: autogen
+  - owner: joaomdmoura
+    repo: crewAI
+  - owner: openai
+    repo: openai-agents-python
+
+hf_daily:
+  # Hugging Face daily papers — scrape, no official API.
+  - id: hf-daily-papers
+    url: https://huggingface.co/papers
+    weight: 1.0

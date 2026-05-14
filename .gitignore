@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+logs/
+candidates.json
+ranked.json
+.claude/settings.local.json
+
+# Astro
+site/node_modules/
+site/dist/
+site/.astro/
+
+# Old v0 artifacts (kept in repo as v0 archive but not actively published)
+# (newsletters/ and index.md are in git history but no new commits should add to them)

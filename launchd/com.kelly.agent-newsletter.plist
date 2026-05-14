@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kelly.agent-newsletter</string>
+
+  <!-- Run /Users/kelly/git/incubation/run.sh once a day. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>/Users/kelly/git/incubation/run.sh</string>
+  </array>
+
+  <!-- 07:00 local. If the Mac is asleep at this time, launchd will run the
+       job on the next wake (unlike cron). -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- Don't run on load (avoid surprise daily-cycle on `launchctl load`). -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Capture launchd-level stdout/stderr; the pipeline already logs to
+       logs/run-YYYY-MM-DD.log via tee in run.sh. These are for cases where
+       run.sh itself can't start (missing bash, permission errors, etc.). -->
+  <key>StandardOutPath</key>
+  <string>/Users/kelly/git/incubation/logs/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/kelly/git/incubation/logs/launchd.err</string>
+
+  <!-- Inherit a sensible PATH; bash -lc above also reads ~/.zprofile etc.
+       which is where uv, claude, gh, and pnpm should be on the path. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/kelly/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Quietly skip if a run is already in progress. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+</dict>
+</plist>

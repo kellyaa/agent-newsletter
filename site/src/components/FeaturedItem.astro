@@ -1,0 +1,53 @@
+---
+import ScoreBar from "./ScoreBar.astro";
+import TagChip from "./TagChip.astro";
+import Callout from "./Callout.astro";
+
+interface Item {
+  id: string;
+  section: "papers" | "news" | "blogs";
+  source: string;
+  url: string;
+  title: string;
+  author?: string | null;
+  score: number;
+  tags: string[];
+  summary: string;
+  takeaway?: string | null;
+  open_question?: string | null;
+}
+interface Props { item: Item; }
+const { item } = Astro.props;
+
+// Render summary as inline HTML — it may contain inline markdown like `code`,
+// **bold**, or [text](url). We trust the writer prompt's restrictions.
+import { marked } from "marked";
+// marked is bundled by Astro's MD pipeline already; if it's not installed at
+// the site level, we'll add it in package.json.
+---
+<article class="item" id={item.id}>
+  <h3 class="item__title">
+    <a href={item.url} rel="noopener noreferrer external">{item.title}</a>
+  </h3>
+  <div class="item__meta">
+    <span class="item__source">{item.source}</span>
+    {item.author && <span class="item__author">— {item.author}</span>}
+    <ScoreBar score={item.score} />
+    {item.tags.length > 0 && (
+      <span class="tag-list">
+        {item.tags.map((t) => <TagChip label={t} />)}
+      </span>
+    )}
+  </div>
+  <div class="item__summary" set:html={marked.parseInline(item.summary)}></div>
+  {item.takeaway && (
+    <Callout type="takeaway">
+      <span set:html={marked.parseInline(item.takeaway)}></span>
+    </Callout>
+  )}
+  {item.open_question && (
+    <Callout type="question">
+      <span set:html={marked.parseInline(item.open_question)}></span>
+    </Callout>
+  )}
+</article>

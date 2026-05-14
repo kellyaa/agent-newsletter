@@ -1,0 +1,12 @@
+---
+interface Props {
+  type: "takeaway" | "question";
+}
+const { type } = Astro.props;
+const label = type === "takeaway" ? "Takeaway" : "Open question";
+const cls = type === "takeaway" ? "callout--takeaway" : "callout--question";
+---
+<aside class={`callout ${cls}`}>
+  <span class="callout__label">{label}</span>
+  <slot />
+</aside>

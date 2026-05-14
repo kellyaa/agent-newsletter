@@ -1,0 +1,7 @@
+# SQLite is binary; mark explicitly so git doesn't try to text-diff it.
+state.db binary
+*.db binary
+
+# Lock files: track but show as binary in diffs (huge text diffs are noise).
+pnpm-lock.yaml -diff
+uv.lock -diff

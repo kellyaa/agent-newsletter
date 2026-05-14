@@ -1,0 +1,16 @@
+---
+interface Props {
+  score: number;
+  max?: number;
+}
+const { score, max = 10 } = Astro.props;
+const cells = Array.from({ length: max }, (_, i) => i < score);
+---
+<span class="scorebar" aria-label={`score ${score} out of ${max}`}>
+  <span class="scorebar__track" aria-hidden="true">
+    {cells.map((filled) => (
+      <span class={`scorebar__cell${filled ? " is-filled" : ""}`}></span>
+    ))}
+  </span>
+  <span class="scorebar__num">{score}/{max}</span>
+</span>
