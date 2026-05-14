@@ -335,12 +335,20 @@ v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 
 ## Iteration Plan
 
-- **v0 (day 1):** fetch.py + prefilter.py produce `candidates.json`. No LLM yet. Eyeball the output.
-- **v0.5 (day 2):** wire in the ranker, hand-review scores for a week, tune the rubric.
-- **v1 (week 1):** add the writer, publish to repo. First real newsletter.
-- **v1.1:** GitHub Pages + Atom feed.
-- **v1.2:** topic-level dedup with `topics_covered`.
-- **v2:** "this week in agents" weekly rollup; tag-filtered indexes; RSS feed for the site itself.
+- **v0 (shipped):** fetch.py + prefilter.py produce `candidates.json`. No LLM yet.
+- **v0.5 (shipped):** ranker wired up, three section calls per day, JSON-schema-validated output via `--json-schema`.
+- **v1 (shipped):** writer + publisher, plain-Markdown daily newsletter.
+- **v1.1 — Path B Stage 1 (shipped):** visual upgrades inside the Markdown — score bars, tag chips, callouts, collapsible appendix grouped by section.
+- **v1.2 — Path B Stage 2 (shipped):** SSG migration to Astro 5. The writer now emits YAML-frontmatter MD into `site/src/content/issues/`; URLs are spliced from the DB rather than written by the LLM (URL hallucination is mechanically impossible). Site deploys to GitHub Pages on push to `main`.
+- **v1.3 — Unattended delivery (shipped):** `run.sh` orchestrator with `--force` and `--refetch` flags; per-stage idempotency for resume-after-failure; launchd plists for the daily pipeline + hourly watchdog; macOS notifications on failure (no email).
+
+### Live status (as of 2026-05-14)
+
+The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. A typical run takes ~10 min wall time, costs ~$1-2 in Claude usage, produces 12-17 featured items + ~50-100 appendix items.
+
+### Up next (unstarted)
+
+Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. The issue tracker is the source of truth for prioritization and definition-of-done; this spec stays focused on architecture and lessons learned.
 
 ## Decisions (resolved)
 
@@ -377,8 +385,45 @@ The operator-supplied seed list, to be fleshed out with concrete feed URLs durin
 
 **Out of scope for v1:** Twitter/X, podcasts (no transcript pipeline), YouTube, Discord/Slack communities.
 
-## Open Items
+## Lessons learned (operational)
 
-These remain unresolved and will be settled during implementation, not before:
+Non-obvious things discovered during real runs that future-you should know without rediscovering them.
 
-1. **Resolve remaining "needs investigation" sources** above into concrete RSS URLs or drop them (Substack-the-platform, gmicloud blog).
+### Anthropic API + Claude Code headless
+
+- `claude -p --json-schema '<schema>'` requires the schema's **top-level type to be `object`**, not `array`. Wrap arrays in `{"items": [...]}`.
+- With `--json-schema`, the model's structured output lands in the envelope's `structured_output` field. The plain `result` field is empty in that mode. Code that reads `result` will fail mysteriously; always check `structured_output` first.
+- Per-section ranking calls (one per `papers`/`news`/`blogs`) work much better than one big call. ~$0.30-1.20 per section, 3-7 minutes each. A single 150-item call risks timeouts and quality degradation.
+- Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only ~12 featured items, not 100+ candidates.
+- Set `RANKER_TIMEOUT_S=1800` (30 min). 15 min was too tight on chatty news days with verbose release-note `raw_text`. Truncating `raw_text` to ~1500 chars in `write.py` was a measurable cost reducer.
+
+### URL hallucination
+
+- The pre-Astro writer occasionally invented URLs (e.g., a Mozilla blog post with a fabricated `hacks.mozilla.org` path) by reading content like a Simon Willison post that *talked about* Mozilla.
+- The fix wasn't a tighter prompt rule — those failed. The fix was structural: in the Astro split, **the writer LLM no longer emits URLs at all.** It produces only prose; URLs/titles/scores/tags are spliced from the DB by `write.py` into the YAML frontmatter. URL hallucination is now mechanically impossible at the writer step.
+- Astro's content-collection schema (in `site/src/content.config.ts`) validates frontmatter at build time as a second line of defense.
+
+### arXiv
+
+- arXiv enforces ≥3 sec between API calls per IP. With 3 sequential collectors firing in <1 sec we tripped 429s repeatedly. `time.sleep(3.0)` between arxiv calls in `fetch.py` resolves it.
+- Even with the sleep, fast retries (`--refetch` then `--refetch` again) can still 429. Wait 10+ minutes between forced refetches.
+- arXiv URLs come in `/abs/`, `/pdf/`, and `/html/` variants with `vN` suffixes. `db.canonicalize_url()` collapses all of these to `/abs/<id>`. Critical for cross-source dedup (HN often links to `/pdf/`).
+
+### Idempotency design
+
+- Every stage skips its work if the work product already exists in DB or filesystem. A pipeline failure → fix → `./run.sh` resume model only works because of this. Without idempotency, a transient timeout would force re-running $1+ of LLM work.
+- `--force` resets *post-fetch* state (sets featured/appendix/published items back to `candidate`, drops today's runs row, deletes today's issue file). It does **not** re-fetch.
+- `--refetch` additionally deletes today's items from the DB before invoking `--force`. Use this rarely; arxiv won't be happy.
+- `fetch.py` exits 0 if any source produced data, even with errors logged for individual sources. Earlier behavior (exit nonzero on any error) was wrong — a single arxiv 429 shouldn't taint a 400+-item fetch.
+
+### Source list realities
+
+- Half the "obvious" RSS feeds for AI publications are dead, moved, or were never published. Anthropic, OpenAI, every.to, deeplearning.ai, langchain.com — none expose working RSS as of 2026-05-14. The README's source-count claim should be read as a snapshot, not a stable promise.
+- Practitioner blogs (Simon Willison, Latent Space, Interconnects, Eugene Yan, Hamel, Raschka, Karuparti) are reliable. Vendor blogs are not.
+- GitHub releases were initially fetched (LangGraph, Claude Code, OpenAI Agents, etc.) but **removed 2026-05-14**: release-note dumps were verbose enough to push the ranker past its old timeout, and most release notes don't carry editorial value at this audience tier. Re-add the `github_releases:` block if needed.
+
+### Voice/format calibration
+
+- The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
+- TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
+- Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
