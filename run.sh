@@ -16,6 +16,9 @@
 #   ./run.sh --force     — reset today's post-fetch state and re-run everything
 #                          downstream of fetch (preserves fetched data; arXiv is
 #                          rate-limited so we don't redo network pulls)
+#   ./run.sh --refetch   — also delete today's fetched items so fetch runs again
+#                          from scratch. Implies --force. Use sparingly: arXiv
+#                          may 429 if you re-pull too often.
 #
 set -euo pipefail
 
@@ -23,12 +26,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
 FORCE=false
+REFETCH=false
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=true ;;
+    --refetch) REFETCH=true; FORCE=true ;;
     -h|--help)
       # Print the header comment (stops output from going to the run log).
-      sed -n '3,18p' "$0"
+      sed -n '3,21p' "$0"
       exit 0
       ;;
     *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
@@ -73,6 +78,33 @@ ENV_FILE="$HOME/.config/agent-newsletter/env"
 if [ -f "$ENV_FILE" ]; then
   # shellcheck disable=SC1090
   set -a; . "$ENV_FILE"; set +a
+fi
+
+# ─── Refetch: delete today's fetched items so fetch runs again ─────────────
+# This must run BEFORE the --force block, since --force resets statuses based
+# on rows that we're about to delete here.
+if [ "$REFETCH" = true ]; then
+  log "REFETCH: deleting today's fetched items so fetch runs again"
+  uv run python - <<'PY'
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+repo = Path.cwd()
+db = repo / "state.db"
+today = datetime.now(timezone.utc).date().isoformat()
+
+if not db.exists():
+    print(f"no state.db at {db}; nothing to delete")
+else:
+    conn = sqlite3.connect(db)
+    cur = conn.execute(
+        "DELETE FROM items WHERE last_seen_date = ?", (today,)
+    )
+    conn.commit()
+    print(f"deleted {cur.rowcount} items dated {today}")
+    conn.close()
+PY
 fi
 
 # ─── Force: reset today's post-fetch state ─────────────────────────────────

@@ -124,26 +124,11 @@ reddit:
     min_score: 100
     weight: 0.7
 
-github_releases:
-  # Watchlist for `gh api repos/<owner>/<name>/releases` — picked up in fetch.py.
-  - owner: langchain-ai
-    repo: langgraph
-  - owner: langchain-ai
-    repo: langchain
-  - owner: anthropics
-    repo: claude-code
-  - owner: anthropics
-    repo: anthropic-sdk-python
-  - owner: modelcontextprotocol
-    repo: servers
-  - owner: stanfordnlp
-    repo: dspy
-  - owner: microsoft
-    repo: autogen
-  - owner: joaomdmoura
-    repo: crewAI
-  - owner: openai
-    repo: openai-agents-python
+# GitHub releases removed as a source (2026-05-14). Release-note dumps were
+# crowding the News bucket with low-signal version churn that the LLM ranker
+# struggled to score concisely, occasionally pushing the rank step past its
+# 15-minute timeout. Re-add via the github_releases: key if needed.
+github_releases: []
 
 hf_daily:
   # Hugging Face daily papers — scrape, no official API.

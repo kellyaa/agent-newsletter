@@ -2,7 +2,7 @@
 
 A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit, GitHub releases), ranks every item with Claude, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
-The site is at: **https://kellyaa.github.io/incubation/** *(once deploy lands)*.
+The site is at: **https://kellyaa.github.io/agent-newsletter** *(once deploy lands)*.
 
 ## What's here
 

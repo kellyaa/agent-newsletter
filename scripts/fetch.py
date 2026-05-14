@@ -361,7 +361,14 @@ def main() -> int:
 
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
     conn.close()
-    return 0 if errors == 0 else 1
+    # Per-source errors are logged but don't abort the run, as long as at
+    # least one source produced data. This matches the docstring's contract
+    # and avoids the common case where one rate-limited collector (arxiv 429)
+    # taints an otherwise-successful 400+-item fetch.
+    if total_seen == 0 and errors > 0:
+        log.error("fetch: ALL collectors failed; aborting")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

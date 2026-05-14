@@ -32,7 +32,7 @@ RANKED_PATH = REPO_ROOT / "ranked.json"
 CLAUDE_MODEL = os.environ.get("RANKER_MODEL", "sonnet")
 # Per-section call timeout. Per-call output is bounded by section size, so this
 # is generous — papers (up to 100+) is the long pole.
-CLAUDE_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "900"))
+CLAUDE_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
 
 # Per-section thresholds and caps. See SPEC.md "Ranking rubric".
 SECTION_RULES = {
