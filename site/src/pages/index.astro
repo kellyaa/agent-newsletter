@@ -1,31 +1,80 @@
 ---
 import { getCollection } from "astro:content";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import TagChip from "../components/TagChip.astro";
 
 const issues = await getCollection("issues");
 issues.sort((a, b) => (a.data.date < b.data.date ? 1 : -1));
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+function parseISODate(s: string) {
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  return { dow: DOW[dt.getUTCDay()], mon: MON[dt.getUTCMonth()], day: String(d) };
+}
+
+function countsString(m: {
+  items_featured_papers: number;
+  items_featured_news: number;
+  items_featured_blogs: number;
+  items_appendix: number;
+}) {
+  const parts: string[] = [];
+  if (m.items_featured_papers > 0) parts.push(`${m.items_featured_papers} ${m.items_featured_papers === 1 ? "paper" : "papers"}`);
+  if (m.items_featured_news > 0) parts.push(`${m.items_featured_news} news`);
+  if (m.items_featured_blogs > 0) parts.push(`${m.items_featured_blogs} ${m.items_featured_blogs === 1 ? "blog" : "blogs"}`);
+  if (m.items_appendix > 0) parts.push(`${m.items_appendix} appendix`);
+  return parts.join(" · ");
+}
 ---
 <BaseLayout title="AI Agents Daily">
   {issues.length === 0 ? (
     <p class="empty-state">No issues yet. The first run lands tomorrow.</p>
   ) : (
-    <ul class="issue-list">
+    <ol class="timeline">
       {issues.map((issue) => {
         const m = issue.data.metadata;
-        const counts = `${m.items_featured_papers}p · ${m.items_featured_news}n · ${m.items_featured_blogs}b · ${m.items_appendix} appendix`;
+        const top = [...issue.data.featured].sort((a, b) => b.score - a.score).slice(0, 3);
+        const tags = [...new Set(issue.data.featured.flatMap((f) => f.tags))].slice(0, 6);
+        const dt = parseISODate(issue.data.date);
+        const counts = countsString(m);
         return (
-          <li class="issue-list__item">
-            <div class="issue-list__date">{issue.data.date}</div>
-            <h2 class="issue-list__title">
-              <a href={`${base}/issues/${issue.id}/`}>
-                {issue.data.theme || `Issue ${issue.data.date}`}
-              </a>
-            </h2>
-            <div class="issue-list__counts">{counts}</div>
+          <li class="timeline__item">
+            <div class="timeline__rail" aria-hidden="true">
+              <span class="timeline__dot"></span>
+            </div>
+            <article class="timeline__card">
+              <header class="timeline__date">
+                <span>{dt.dow}</span> · <span>{dt.mon} {dt.day}</span>
+              </header>
+              {issue.data.theme && (
+                <p class="timeline__theme">{issue.data.theme}</p>
+              )}
+              {top.length > 0 && (
+                <ul class="timeline__featured">
+                  {top.map((f) => (
+                    <li><a href={f.url} rel="noopener">{f.title}</a></li>
+                  ))}
+                </ul>
+              )}
+              <footer class="timeline__foot">
+                <div class="timeline__meta">
+                  {counts && <span class="timeline__counts">{counts}</span>}
+                  {tags.length > 0 && (
+                    <div class="tag-list">
+                      {tags.map((t) => <TagChip label={t} />)}
+                    </div>
+                  )}
+                </div>
+                <a class="timeline__more" href={`${base}/issues/${issue.id}/`}>Read issue →</a>
+              </footer>
+            </article>
           </li>
         );
       })}
-    </ul>
+    </ol>
   )}
 </BaseLayout>
