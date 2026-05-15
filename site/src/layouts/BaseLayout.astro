@@ -8,6 +8,7 @@ interface Props {
 const { title, description = "A daily, opinionated digest on building and running AI agents." } = Astro.props;
 const baseUrl = import.meta.env.BASE_URL || "/";
 const searchUrl = baseUrl.endsWith("/") ? `${baseUrl}search/` : `${baseUrl}/search/`;
+const rssUrl = baseUrl.endsWith("/") ? `${baseUrl}rss.xml` : `${baseUrl}/rss.xml`;
 ---
 <!doctype html>
 <html lang="en">
@@ -21,6 +22,7 @@ const searchUrl = baseUrl.endsWith("/") ? `${baseUrl}search/` : `${baseUrl}/sear
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" />
+    <link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href={rssUrl} />
     <title>{title}</title>
   </head>
   <body>
@@ -37,7 +39,7 @@ const searchUrl = baseUrl.endsWith("/") ? `${baseUrl}search/` : `${baseUrl}/sear
     <footer class="site-footer">
       <div class="site-footer__inner">
         <span>AI Agents Daily — automated digest, opinions sharpened by Claude</span>
-        <span>updated daily ~07:00 PT</span>
+        <span>updated daily ~07:00 PT · <a href={rssUrl}>RSS</a></span>
       </div>
     </footer>
   </body>
