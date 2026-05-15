@@ -129,6 +129,19 @@ img, svg { display: block; max-width: 100%; }
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-subtle);
+  flex: 1;
+}
+.site-header__search {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-subtle);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1px;
+}
+.site-header__search:hover {
+  color: var(--fg);
+  border-bottom-color: currentColor;
 }
 
 .site-footer {

@@ -40,6 +40,8 @@ class Item:
     published_at: str | None  # ISO8601
     raw_text: str | None
     section_override: str | None = None  # explicit section: from sources.yaml
+    keyword_gate_bypass: bool = False  # explicit keyword_gate_bypass: from sources.yaml
+    recency_days_override: int | None = None  # explicit recency_days: from sources.yaml
 
 
 def _to_iso(value) -> str | None:
@@ -244,19 +246,26 @@ def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
             """
             INSERT INTO items (id, source, url, canonical_url, title, author,
                                published_at, fetched_at, raw_text, status,
-                               section_override,
+                               section_override, keyword_gate_bypass,
+                               recency_days_override,
                                first_seen_date, last_seen_date, appearances)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, 1)
             ON CONFLICT(id) DO UPDATE SET
                 last_seen_date = excluded.last_seen_date,
                 appearances = items.appearances + 1,
                 section_override = COALESCE(excluded.section_override,
-                                            items.section_override)
+                                            items.section_override),
+                keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
+                                          items.keyword_gate_bypass),
+                recency_days_override = COALESCE(excluded.recency_days_override,
+                                                 items.recency_days_override)
             """,
             (
                 item_id, it.source, it.url, canonical, it.title, it.author,
                 it.published_at, fetched_at, it.raw_text,
-                it.section_override, today, today,
+                it.section_override, 1 if it.keyword_gate_bypass else 0,
+                it.recency_days_override,
+                today, today,
             ),
         )
         if cur.rowcount and cur.lastrowid:
@@ -285,13 +294,44 @@ def _validate_section(value, source_id: str) -> str | None:
     return None
 
 
-def _stamp_override(items: Iterable[Item], override: str | None) -> Iterable[Item]:
-    """Set section_override on each item if the source declared one."""
-    if override is None:
-        yield from items
-        return
+def _validate_keyword_gate_bypass(value, source_id: str) -> bool:
+    if value is None or value is False:
+        return False
+    if value is True:
+        return True
+    log.warning("source %s: invalid keyword_gate_bypass %r (must be bool); treating as false",
+                source_id, value)
+    return False
+
+
+def _validate_recency_days(value, source_id: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):  # bool is an int subclass in Python; reject explicitly
+        log.warning("source %s: invalid recency_days %r (must be positive int); ignoring",
+                    source_id, value)
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    log.warning("source %s: invalid recency_days %r (must be positive int); ignoring",
+                source_id, value)
+    return None
+
+
+def _stamp_overrides(
+    items: Iterable[Item],
+    section_override: str | None,
+    keyword_gate_bypass: bool,
+    recency_days_override: int | None,
+) -> Iterable[Item]:
+    """Set per-source overrides on each item."""
     for it in items:
-        it.section_override = override
+        if section_override is not None:
+            it.section_override = section_override
+        if keyword_gate_bypass:
+            it.keyword_gate_bypass = True
+        if recency_days_override is not None:
+            it.recency_days_override = recency_days_override
         yield it
 
 
@@ -335,8 +375,11 @@ def main() -> int:
         total_inserted += inserted
 
     def with_override(src: dict, gen):
-        override = _validate_section(src.get("section"), src.get("id", "?"))
-        return _stamp_override(gen, override)
+        sid = src.get("id", "?")
+        section_override = _validate_section(src.get("section"), sid)
+        kgb = _validate_keyword_gate_bypass(src.get("keyword_gate_bypass"), sid)
+        rdo = _validate_recency_days(src.get("recency_days"), sid)
+        return _stamp_overrides(gen, section_override, kgb, rdo)
 
     for src in sources.get("rss", []):
         run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src)))

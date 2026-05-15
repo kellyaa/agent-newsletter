@@ -32,6 +32,7 @@ const itemsBySection = {
 };
 ---
 <BaseLayout title={`${date} — AI Agents Daily`} description={theme || `AI Agents Daily issue for ${date}`}>
+  <article data-pagefind-body data-pagefind-meta={`date:${date}`}>
   <header class="issue-header">
     <div class="issue-header__date">{date}</div>
     <h1 class="issue-header__title">AI Agents</h1>
@@ -58,4 +59,5 @@ const itemsBySection = {
   ))}
 
   <AppendixSection appendix={appendix} />
+  </article>
 </BaseLayout>

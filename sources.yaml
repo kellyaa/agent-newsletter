@@ -10,53 +10,85 @@
 #   - id: vendor-x
 #     url: https://x.com/blog/rss
 #     section: news
+#
+# Optional `keyword_gate_bypass: true` skips the prefilter keyword gate for a
+# source. Use sparingly — only for low-volume, hand-curated practitioner blogs
+# whose every post is plausibly relevant. The LLM ranker still scores them
+# downstream. High-volume noisy sources (HN/Reddit/arxiv) should keep the gate.
+#
+# Optional `recency_days: N` (positive int) overrides the family default
+# recency window in scripts/prefilter.py RECENCY_DAYS. Use for slow-publishing
+# sources (e.g., Hamel posts every 4-7 weeks; bump to 90). Invalid values are
+# logged and ignored. Don't set this on high-volume sources.
 
 rss:
   - id: simonw
     name: "Simon Willison's Weblog"
     url: https://simonwillison.net/atom/everything/
     weight: 1.0
+    keyword_gate_bypass: true
 
   - id: latent-space
     name: "Latent Space"
     url: https://www.latent.space/feed
     weight: 1.0
+    keyword_gate_bypass: true
 
   - id: interconnects
     name: "Interconnects (Nathan Lambert)"
     url: https://www.interconnects.ai/feed
     weight: 1.0
+    keyword_gate_bypass: true
 
   - id: raschka
     name: "Sebastian Raschka — Ahead of AI"
     url: https://magazine.sebastianraschka.com/feed
     weight: 1.0
+    keyword_gate_bypass: true
+    recency_days: 90
 
   - id: eugene-yan
     name: "Eugene Yan"
     url: https://eugeneyan.com/rss/
     weight: 1.0
+    keyword_gate_bypass: true
 
   - id: hamel
     name: "Hamel Husain"
     url: https://hamel.dev/index.xml
     weight: 1.0
+    keyword_gate_bypass: true
+    recency_days: 90
 
   - id: karuparti
     name: "Karuparti"
     url: https://newsletter.karuparti.com/feed
     weight: 0.7
+    keyword_gate_bypass: true
 
-  # Investigated & dropped (2026-05-14). Revisit if upstream restores RSS or
-  # if we add an HTML-scrape adapter to fetch.py:
+  - id: cameron-wolfe
+    name: "Cameron R. Wolfe — Deep (Learning) Focus"
+    url: https://cameronrwolfe.substack.com/feed
+    weight: 1.0
+    keyword_gate_bypass: true
+
+  - id: ethan-mollick
+    name: "Ethan Mollick — One Useful Thing"
+    url: https://www.oneusefulthing.org/feed
+    weight: 0.8
+    # No keyword_gate_bypass: Mollick covers AI broadly; let the keyword gate
+    # filter to agent-relevant posts. Senior-engineer audience is the same.
+
+  # Investigated & dropped (2026-05-15). Revisit if upstream restores RSS.
+  # Sources requiring HTML scraping are tracked in #10 (fetch_html adapter),
+  # not here:
   #   - The AI Exchange / Every (Dan Shipper)  — every.to has no public RSS path
   #   - The Batch (DeepLearning.AI)            — all RSS endpoints return 404/500
   #   - LangChain Blog                         — Webflow site, /blog/rss serves HTML
   #                                              (covered by GitHub releases watchlist)
   #   - Galileo AI Blog                        — no working endpoint
-  #   - Anthropic /news, OpenAI /research      — no RSS; would need HTML scraper
-  #   - GMI Cloud Blog                         — feed URL never identified
-  #   notes: "Find RSS feed for gmicloud.ai/en/blog or drop."
+  #   - Anthropic /news, OpenAI /research      — no RSS; deferred to #10
+  #   - GMI Cloud Blog                         — no RSS as of 2026-05-15; deferred to #10
 
 arxiv:
   # arXiv Atom-API queries. Each query runs daily and returns most recent matches.

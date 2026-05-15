@@ -65,20 +65,6 @@ RECENCY_DAYS = {
     "default": 3,
 }
 
-# Trusted sources skip the keyword gate. These are low-volume, hand-curated
-# practitioner blogs whose every post is plausibly relevant; the LLM ranker
-# scores them downstream. High-volume noisy sources (HN/Reddit/arxiv) still
-# need the keyword filter.
-KEYWORD_GATE_BYPASS = {
-    "rss:simonw",
-    "rss:latent-space",
-    "rss:interconnects",
-    "rss:raschka",
-    "rss:eugene-yan",
-    "rss:hamel",
-    "rss:karuparti",
-}
-
 # Source priority for cross-source collapse (higher beats lower).
 SOURCE_PRIORITY = {
     "arxiv": 5,
@@ -116,7 +102,11 @@ def _source_family(source: str) -> str:
 
 def _passes_recency(item: dict, now: datetime) -> bool:
     family = _source_family(item["source"])
-    window = RECENCY_DAYS.get(family, RECENCY_DAYS["default"])
+    override = item.get("recency_days_override")
+    if isinstance(override, int) and override > 0:
+        window = override
+    else:
+        window = RECENCY_DAYS.get(family, RECENCY_DAYS["default"])
     pub = item.get("published_at")
     if not pub:
         # No publication timestamp — fall back to fetched_at (always present).
@@ -131,7 +121,7 @@ def _passes_recency(item: dict, now: datetime) -> bool:
 
 
 def _passes_keyword_gate(item: dict) -> bool:
-    if item.get("source") in KEYWORD_GATE_BYPASS:
+    if item.get("keyword_gate_bypass"):
         return True
     haystack = (item.get("title") or "") + "\n" + (item.get("raw_text") or "")
     return bool(KEYWORD_RE.search(haystack))
@@ -179,7 +169,8 @@ def main() -> int:
     rows = conn.execute(
         """
         SELECT id, source, url, canonical_url, title, author, published_at,
-               fetched_at, raw_text, status, appearances, section_override
+               fetched_at, raw_text, status, appearances, section_override,
+               keyword_gate_bypass, recency_days_override
         FROM items
         WHERE status = 'new'
            OR (status = 'appendix' AND appearances < ?)

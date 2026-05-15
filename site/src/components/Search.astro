@@ -1,0 +1,79 @@
+---
+// Pagefind UI loader. The `pagefind` directory is generated at build time by
+// `pagefind --site dist` (see package.json `build` script). It does not exist
+// during `astro dev`, so the search box renders but won't return results
+// locally unless you run `pnpm build && pnpm preview`.
+const base = import.meta.env.BASE_URL || "/";
+const pagefindBase = base.endsWith("/") ? base : base + "/";
+---
+<div id="search" class="pagefind-search"></div>
+
+<link rel="stylesheet" href={`${pagefindBase}pagefind/pagefind-ui.css`} />
+<script is:inline define:vars={{ pagefindBase }}>
+  // Defer load until DOM is ready so the mount target exists.
+  window.addEventListener("DOMContentLoaded", () => {
+    const script = document.createElement("script");
+    script.src = `${pagefindBase}pagefind/pagefind-ui.js`;
+    script.onload = () => {
+      // eslint-disable-next-line no-undef
+      new PagefindUI({
+        element: "#search",
+        showSubResults: true,
+        resetStyles: false,
+      });
+    };
+    document.head.appendChild(script);
+  });
+</script>
+
+<style>
+  /* Map Pagefind's CSS variables onto the site's theme tokens so the search
+     UI follows light/dark mode automatically. Pagefind's variables are
+     documented at https://pagefind.app/docs/ui/#styling */
+  .pagefind-search {
+    margin: 1.5rem 0 2.5rem;
+
+    --pagefind-ui-scale: 0.9;
+    --pagefind-ui-primary: var(--fg);
+    --pagefind-ui-text: var(--fg);
+    --pagefind-ui-background: var(--bg-elevated);
+    --pagefind-ui-border: var(--border);
+    --pagefind-ui-tag: var(--bg-elevated);
+    --pagefind-ui-border-width: 1px;
+    --pagefind-ui-border-radius: var(--radius-md);
+    --pagefind-ui-font: var(--font-sans);
+  }
+  /* Pagefind's default highlight (on search-term matches in excerpts) is a
+     yellow background with no explicit text color — readable in light mode
+     but unreadable on the dark theme's bright yellow. Force a dark text
+     color so the highlight stays legible in both schemes. */
+  .pagefind-search :global(mark) {
+    color: #1a1a1a;
+  }
+  /* Pagefind renders excerpts and meta (the "Date: ..." chip) at low opacity
+     by default; bump them so they're readable against the elevated bg. */
+  .pagefind-search :global(.pagefind-ui__result-excerpt),
+  .pagefind-search :global(.pagefind-ui__result-tags),
+  .pagefind-search :global(.pagefind-ui__result-tag) {
+    color: var(--fg-muted);
+  }
+  .pagefind-search :global(.pagefind-ui__result-title),
+  .pagefind-search :global(.pagefind-ui__result-link) {
+    color: var(--fg);
+  }
+  .pagefind-search :global(.pagefind-ui__message),
+  .pagefind-search :global(.pagefind-ui__result-count) {
+    color: var(--fg-muted);
+  }
+  /* Pagefind's default UI sets a background on the input but never a text
+     color, so the typed query falls back to the browser default (black) and
+     becomes invisible in dark mode. Force the input + clear button to use
+     the site's foreground token. */
+  .pagefind-search :global(.pagefind-ui__search-input),
+  .pagefind-search :global(.pagefind-ui__search-clear) {
+    color: var(--fg);
+  }
+  .pagefind-search :global(.pagefind-ui__search-input::placeholder) {
+    color: var(--fg-subtle);
+  }
+</style>

@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS items (
   tags TEXT,
   section TEXT,
   section_override TEXT,
+  keyword_gate_bypass INTEGER NOT NULL DEFAULT 0,
+  recency_days_override INTEGER,
   why TEXT,
   status TEXT NOT NULL,
   first_seen_date TEXT NOT NULL,
@@ -78,9 +80,28 @@ def init_db(db_path: Path = DB_PATH) -> None:
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns that newer schema versions introduced.
+
+    SCHEMA uses CREATE TABLE IF NOT EXISTS, so existing DBs miss new columns.
+    Each ALTER is wrapped in a try/except so re-running on a fresh DB (where
+    the column already exists from SCHEMA) is a no-op.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
+    if "keyword_gate_bypass" not in cols:
+        conn.execute(
+            "ALTER TABLE items ADD COLUMN keyword_gate_bypass INTEGER NOT NULL DEFAULT 0"
+        )
+    if "recency_days_override" not in cols:
+        conn.execute(
+            "ALTER TABLE items ADD COLUMN recency_days_override INTEGER"
+        )
 
 
 def canonicalize_url(url: str) -> str:
