@@ -80,3 +80,60 @@ A typical run takes ~10 minutes wall time (most of it the three ranker LLM calls
 ## Design
 
 Read [SPEC.md](./SPEC.md) for the full design rationale: the section-aware rubric, dedup strategy, source-section override mechanism, and editorial voice guide.
+
+## Troubleshooting a stalled run
+
+If the morning run never produced a newsletter commit, walk the pipeline stage by stage. The launchd job writes everything to `logs/`.
+
+### 1. What got run, and where did it stop?
+
+```bash
+# Today's pipeline log — stage banners are "── <stage> ── start/ok"
+cat logs/run-$(date +%Y-%m-%d).log
+
+# Same content from launchd's perspective (stdout of run.sh)
+tail -100 logs/launchd.out
+tail logs/launchd.err
+```
+
+The last `── <stage> ── start` without a matching `── ok` is where the pipeline is stuck.
+
+### 2. Is anything still running?
+
+```bash
+ps aux | grep -E "run.sh|fetch.py|prefilter|rank.py|write.py|claude -p" | grep -v grep
+```
+
+A live `run.sh` plus a `claude -p` subprocess means a ranker or writer LLM call is in flight. Note the start time — sonnet ranking should finish in seconds to a couple minutes; anything past ~10 minutes is anomalous.
+
+### 3. Common stall modes
+
+- **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
+- **rank stuck on a section.** `rank.py` invokes `claude -p` once per section (papers / news / blogs). The log line `invoking claude (<section>, model=sonnet)` with no following `cost ~$X, N turns` line means that subprocess hasn't returned. Check the PID's start time against now.
+- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever HEAD is a non-newsletter commit (spec edits, pipeline changes). That's expected; it's not a failure signal.
+
+### 4. Unsticking it
+
+```bash
+# Kill a hung claude subprocess; run.sh will surface the error and exit
+kill <pid-of-claude-p>
+
+# Or kill the whole pipeline
+pkill -f run.sh
+
+# Then re-run idempotently — completed stages are skipped
+./run.sh
+
+# Or wipe today's post-fetch state and start clean (keeps the fetched candidates)
+./run.sh --force
+```
+
+### 5. Cross-checks
+
+```bash
+# Did publish.py record a run today?
+sqlite3 state.db "SELECT date, status, cost_usd, started_at, finished_at FROM runs ORDER BY started_at DESC LIMIT 5;"
+
+# Is there a newsletter file for today?
+ls site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing
+```
