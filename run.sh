@@ -99,10 +99,10 @@ if not db.exists():
 else:
     conn = sqlite3.connect(db)
     cur = conn.execute(
-        "DELETE FROM items WHERE last_seen_date = ?", (today,)
+        "DELETE FROM items WHERE first_seen_date = ?", (today,)
     )
     conn.commit()
-    print(f"deleted {cur.rowcount} items dated {today}")
+    print(f"deleted {cur.rowcount} items first seen on {today}")
     conn.close()
 PY
 fi
