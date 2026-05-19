@@ -1,5 +1,5 @@
-"""Build the day's newsletter via claude -p, emitting an issue file the
-Astro site consumes.
+"""Build the day's newsletter via an OpenAI-compatible LLM endpoint, emitting
+an issue file the Astro site consumes.
 
 The writer LLM produces only editorial prose (theme + per-item summaries +
 optional takeaway/open_question). All structured data — URLs, titles, scores,
@@ -14,13 +14,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
-import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 from db import REPO_ROOT, connect, init_db
+from llm import call_llm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,8 +29,8 @@ log = logging.getLogger("write")
 PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
 ISSUES_DIR = REPO_ROOT / "site" / "src" / "content" / "issues"
 
-CLAUDE_MODEL = os.environ.get("WRITER_MODEL", "sonnet")
-CLAUDE_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "gpt-4o-mini")
+WRITER_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
 
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
@@ -169,60 +167,21 @@ def build_writer_input(date: str, featured, appendix_by_section, metadata, prev)
     return payload
 
 
-def invoke_claude(prompt: str) -> tuple[dict, dict]:
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", CLAUDE_MODEL,
-        "--output-format", "json",
-        "--json-schema", json.dumps(WRITER_SCHEMA),
-        "--allowedTools", "",
-        "--permission-mode", "bypassPermissions",
-        "--no-session-persistence",
-    ]
-    log.info("invoking claude (writer, model=%s)", CLAUDE_MODEL)
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=CLAUDE_TIMEOUT_S, check=True, cwd=str(REPO_ROOT),
-        )
-    except subprocess.CalledProcessError as e:
-        log.error("claude exited %d", e.returncode)
-        log.error("stdout: %s", (e.stdout or "")[:2000])
-        log.error("stderr: %s", (e.stderr or "")[:2000])
-        raise
-
-    envelope = json.loads(proc.stdout)
-    if envelope.get("is_error"):
-        log.error("claude error envelope: %s", str(envelope)[:500])
-        raise RuntimeError(f"claude error: {envelope.get('result')}")
-
-    cost = envelope.get("total_cost_usd")
-    if cost is not None:
-        log.info("writer: cost ~$%.4f, %d turns", cost, envelope.get("num_turns", 0))
-
-    structured = envelope.get("structured_output")
-    if isinstance(structured, dict) and "items" in structured:
-        return structured, envelope
-
-    # Fallback: try to parse `result` text.
-    result = envelope.get("result")
-    if isinstance(result, str) and result.strip():
-        txt = result.strip()
-        if txt.startswith("```"):
-            txt = txt.split("\n", 1)[1] if "\n" in txt else txt
-            if txt.endswith("```"):
-                txt = txt.rsplit("```", 1)[0]
-        try:
-            parsed = json.loads(txt)
-            if isinstance(parsed, dict) and "items" in parsed:
-                return parsed, envelope
-        except json.JSONDecodeError:
-            pass
-
-    debug_path = REPO_ROOT / "logs/writer-envelope.json"
-    debug_path.parent.mkdir(exist_ok=True)
-    debug_path.write_text(json.dumps(envelope, indent=2))
-    raise RuntimeError(f"writer returned no usable structured output; envelope at {debug_path}")
+def invoke_writer(prompt: str) -> dict:
+    out = call_llm(
+        prompt,
+        WRITER_SCHEMA,
+        schema_name="writer_output",
+        model=WRITER_MODEL,
+        timeout_s=WRITER_TIMEOUT_S,
+        label="writer",
+    )
+    if "items" not in out:
+        debug_path = REPO_ROOT / "logs/writer-output.json"
+        debug_path.parent.mkdir(exist_ok=True)
+        debug_path.write_text(json.dumps(out, indent=2))
+        raise RuntimeError(f"writer returned no items; output at {debug_path}")
+    return out
 
 
 # ---------- Frontmatter assembly ----------
@@ -412,7 +371,7 @@ def main() -> int:
     )
 
     if featured:
-        writer_output, _envelope = invoke_claude(prompt)
+        writer_output = invoke_writer(prompt)
     else:
         # Edge case: zero featured items but appendix non-empty. Skip the LLM
         # entirely; the issue page can still render an appendix-only digest.

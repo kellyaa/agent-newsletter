@@ -71,14 +71,17 @@ fail_handler() {
 }
 trap fail_handler ERR
 
-# ─── Optional environment from ~/.config/agent-newsletter/env ──────────────
-# (Currently unused — kept so future config like RANKER_MODEL or BUDGET_USD
-# can be set without editing the script.)
-ENV_FILE="$HOME/.config/agent-newsletter/env"
-if [ -f "$ENV_FILE" ]; then
-  # shellcheck disable=SC1090
-  set -a; . "$ENV_FILE"; set +a
-fi
+# ─── Environment loading ───────────────────────────────────────────────────
+# Load LLM credentials and other config. Sourced in order, so the *last* file
+# wins for any given key:
+#   1. ~/.config/agent-newsletter/env  — machine-wide defaults (optional)
+#   2. .env                            — repo-local, gitignored (overrides)
+for ENV_FILE in "$HOME/.config/agent-newsletter/env" "$REPO_ROOT/.env"; do
+  if [ -f "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    set -a; . "$ENV_FILE"; set +a
+  fi
+done
 
 # ─── Refetch: delete today's fetched items so fetch runs again ─────────────
 # This must run BEFORE the --force block, since --force resets statuses based

@@ -1,23 +1,22 @@
-"""Invoke Claude Code to rank candidate items, then apply per-section
-thresholds and caps to assign each item a final status.
+"""Invoke an OpenAI-compatible LLM to rank candidate items, then apply
+per-section thresholds and caps to assign each item a final status.
 
 Reads:  candidates.json (grouped by section, written by prefilter.py)
 Writes: ranked.json (raw ranker output, for debugging)
         DB:  items.score, items.tags, items.why, items.status
 
-Architecture: one `claude -p` call per section. Each call gets the section name
-and that section's candidates inlined into the prompt — no tool calls needed.
+Architecture: one LLM call per section. Each call gets the section name and
+that section's candidates inlined into the prompt — no tool calls needed.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
-import subprocess
 import sys
-from pathlib import Path
 
 from db import REPO_ROOT, connect, init_db
+from llm import call_llm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,10 +28,10 @@ PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
 CANDIDATES_PATH = REPO_ROOT / "candidates.json"
 RANKED_PATH = REPO_ROOT / "ranked.json"
 
-CLAUDE_MODEL = os.environ.get("RANKER_MODEL", "sonnet")
+RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 # Per-section call timeout. Per-call output is bounded by section size, so this
 # is generous — papers (up to 100+) is the long pole.
-CLAUDE_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
+RANKER_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
 
 # Per-section thresholds and caps. See SPEC.md "Ranking rubric".
 SECTION_RULES = {
@@ -83,78 +82,22 @@ def build_prompt(section: str, items: list[dict], rubric: str) -> str:
     )
 
 
-def invoke_claude(prompt: str, label: str) -> tuple[list[dict], dict]:
-    """Run `claude -p`; return (rankings, envelope).
-
-    With --json-schema, CC parses + validates the model's output and surfaces
-    it under the envelope's `structured_output` key. The plain `result` text
-    field will be empty in that mode.
-    """
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", CLAUDE_MODEL,
-        "--output-format", "json",
-        "--json-schema", json.dumps(RANKER_OUTPUT_SCHEMA),
-        "--allowedTools", "",
-        "--permission-mode", "bypassPermissions",
-        "--no-session-persistence",
-    ]
-    log.info("invoking claude (%s, model=%s)", label, CLAUDE_MODEL)
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=CLAUDE_TIMEOUT_S, check=True, cwd=str(REPO_ROOT),
-        )
-    except subprocess.CalledProcessError as e:
-        log.error("claude exited %d for %s", e.returncode, label)
-        log.error("stdout (head): %s", (e.stdout or "")[:2000])
-        log.error("stderr (head): %s", (e.stderr or "")[:2000])
-        raise
-    except subprocess.TimeoutExpired:
-        log.error("claude timed out after %ds (%s)", CLAUDE_TIMEOUT_S, label)
-        raise
-
-    try:
-        envelope = json.loads(proc.stdout)
-    except json.JSONDecodeError as e:
-        log.error("could not parse claude envelope: %s", e)
-        log.error("raw stdout (first 2KB): %s", proc.stdout[:2000])
-        raise
-    if envelope.get("is_error"):
-        log.error("claude returned error envelope: %s", str(envelope)[:500])
-        raise RuntimeError(f"claude error: {envelope.get('result')}")
-
-    cost = envelope.get("total_cost_usd")
-    if cost is not None:
-        log.info("%s: cost ~$%.4f, %d turns", label, cost, envelope.get("num_turns", 0))
-
-    structured = envelope.get("structured_output")
-    if isinstance(structured, dict) and "rankings" in structured:
-        return structured["rankings"], envelope
-
-    # Fallback: try parsing `result` as JSON text (older CC versions or no schema).
-    result = envelope.get("result")
-    if isinstance(result, str) and result.strip():
-        txt = result.strip()
-        if txt.startswith("```"):
-            txt = txt.split("\n", 1)[1] if "\n" in txt else txt
-            if txt.endswith("```"):
-                txt = txt.rsplit("```", 1)[0]
-        try:
-            obj = json.loads(txt)
-            if isinstance(obj, dict) and "rankings" in obj:
-                return obj["rankings"], envelope
-        except json.JSONDecodeError:
-            pass
-
-    debug_path = REPO_ROOT / f"logs/ranker-envelope-{label}.json"
-    debug_path.parent.mkdir(exist_ok=True)
-    debug_path.write_text(json.dumps(envelope, indent=2))
-    log.error(
-        "neither structured_output nor result usable for %s; saved to %s",
-        label, debug_path,
+def invoke_ranker(prompt: str, label: str) -> list[dict]:
+    out = call_llm(
+        prompt,
+        RANKER_OUTPUT_SCHEMA,
+        schema_name="ranker_output",
+        model=RANKER_MODEL,
+        timeout_s=RANKER_TIMEOUT_S,
+        label=label,
     )
-    raise RuntimeError(f"claude returned no usable rankings for {label}")
+    rankings = out.get("rankings")
+    if not isinstance(rankings, list):
+        debug_path = REPO_ROOT / f"logs/ranker-output-{label}.json"
+        debug_path.parent.mkdir(exist_ok=True)
+        debug_path.write_text(json.dumps(out, indent=2))
+        raise RuntimeError(f"ranker returned no rankings for {label}; output at {debug_path}")
+    return rankings
 
 
 def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]:
@@ -249,7 +192,6 @@ def main() -> int:
         return 0
 
     scored_by_section: dict[str, list[dict]] = {}
-    envelopes: dict[str, dict] = {}
 
     for section in ("papers", "news", "blogs"):
         items = candidates.get(section, [])
@@ -257,8 +199,7 @@ def main() -> int:
             scored_by_section[section] = []
             continue
         prompt = build_prompt(section, items, rubric)
-        scored, envelope = invoke_claude(prompt, label=section)
-        envelopes[section] = envelope
+        scored = invoke_ranker(prompt, label=section)
         log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
         scored_by_section[section] = scored
 

@@ -47,7 +47,7 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 
 ## Setup (one-time)
 
-Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), [gh](https://cli.github.com/), Claude Code installed and authenticated.
+Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), [gh](https://cli.github.com/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.).
 
 ```bash
 # Python deps
@@ -56,9 +56,36 @@ uv sync
 # Site deps
 pnpm --prefix site install
 
+# LLM credentials — copy the template and fill in your values
+cp .env.template .env
+$EDITOR .env
+
 # Schedule the daily run + hourly watchdog
 ./launchd/install.sh
 ```
+
+### LLM configuration (`.env`)
+
+The ranker and writer scripts read their endpoint, key, and model ids from environment variables. `run.sh` sources `.env` (repo-local, gitignored) at startup; you can also put values in `~/.config/agent-newsletter/env` for machine-wide defaults that `.env` overrides.
+
+| Var | Required | Purpose |
+|---|---|---|
+| `LLM_BASE_URL` | yes | Endpoint base URL, e.g. `https://api.openai.com/v1` |
+| `LLM_API_KEY` | yes | Bearer token (some local servers accept any non-empty value) |
+| `RANKER_MODEL` | yes | Model id for the per-section ranker (small/cheap is fine) |
+| `WRITER_MODEL` | yes | Model id for the editorial writer (quality matters more) |
+| `RANKER_TIMEOUT_S` | no | Per-call timeout, default 1800 |
+| `WRITER_TIMEOUT_S` | no | Per-call timeout, default 1200 |
+| `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
+
+Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
+
+```bash
+LLM_EXTRA_HEADERS='{"RITS_API_KEY": "xyz"}'
+LLM_EXTRA_HEADERS='{"X-Tenant-Id": "abc"}'
+```
+
+When invoked outside `run.sh` (e.g. ad-hoc `uv run scripts/rank.py`), export the variables yourself or run via `set -a; . .env; set +a; uv run …`.
 
 To trigger a run on demand (without waiting for 07:00):
 
@@ -75,7 +102,7 @@ To uninstall the schedulers:
 
 ## Cost & runtime
 
-A typical run takes ~10 minutes wall time (most of it the three ranker LLM calls and the writer call), at roughly **$1-1.50 in Claude API costs**. Per-run cost is logged in the `runs` table.
+A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run cost is logged in the `runs` table.
 
 ## Design
 
