@@ -126,9 +126,12 @@ conn = sqlite3.connect(db)
 # Send today's processed items back to 'candidate' so rank/write can re-run.
 # Leave 'new' alone (prefilter handles those naturally) and leave 'dropped'
 # alone (those are deliberate negatives we don't want to re-evaluate).
+# Match by first_seen_date — last_seen_date matches any prior-day published
+# item that today's feeds re-surfaced (fetch bumps last_seen_date on conflict),
+# which would re-promote already-published items into today's issue.
 conn.execute(
     "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL "
-    "WHERE status IN ('featured', 'appendix', 'published') AND last_seen_date = ?",
+    "WHERE status IN ('featured', 'appendix', 'published') AND first_seen_date = ?",
     (today,),
 )
 conn.execute("DELETE FROM runs WHERE date = ?", (today,))
