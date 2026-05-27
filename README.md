@@ -1,6 +1,6 @@
 # AI Agents Daily
 
-A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit, GitHub releases), ranks every item with Claude, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
+A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit, GitHub releases), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
 The site is at: **https://kellyaa.github.io/agent-newsletter** *(once deploy lands)*.
 
@@ -15,8 +15,9 @@ prompts/
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates
-  rank.py               — three claude -p calls, one per section
-  write.py              — emits site/src/content/issues/YYYY-MM-DD.md
+  rank.py               — three LLM calls (OpenAI-compatible), one per section
+  write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
+  llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   db.py                 — schema, URL canonicalization
 run.sh                  — daily orchestrator; idempotent
@@ -128,22 +129,22 @@ The last `── <stage> ── start` without a matching `── ok` is where t
 ### 2. Is anything still running?
 
 ```bash
-ps aux | grep -E "run.sh|fetch.py|prefilter|rank.py|write.py|claude -p" | grep -v grep
+ps aux | grep -E "run.sh|fetch.py|prefilter|rank.py|write.py" | grep -v grep
 ```
 
-A live `run.sh` plus a `claude -p` subprocess means a ranker or writer LLM call is in flight. Note the start time — sonnet ranking should finish in seconds to a couple minutes; anything past ~10 minutes is anomalous.
+A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer LLM call is in flight against the configured OpenAI-compatible endpoint. Note the start time — small/fast models should finish in seconds to a couple minutes; anything past ~10 minutes is anomalous (consider tuning `RANKER_TIMEOUT_S` / `WRITER_TIMEOUT_S`).
 
 ### 3. Common stall modes
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
-- **rank stuck on a section.** `rank.py` invokes `claude -p` once per section (papers / news / blogs). The log line `invoking claude (<section>, model=sonnet)` with no following `cost ~$X, N turns` line means that subprocess hasn't returned. Check the PID's start time against now.
+- **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
 - **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever HEAD is a non-newsletter commit (spec edits, pipeline changes). That's expected; it's not a failure signal.
 
 ### 4. Unsticking it
 
 ```bash
-# Kill a hung claude subprocess; run.sh will surface the error and exit
-kill <pid-of-claude-p>
+# Kill a hung ranker/writer process; run.sh will surface the error and exit
+kill <pid-of-rank.py-or-write.py>
 
 # Or kill the whole pipeline
 pkill -f run.sh
