@@ -1,0 +1,29 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import MonthView from "../../components/MonthView.astro";
+import { groupByMonth, buildMonthList } from "../../scripts/months";
+
+export async function getStaticPaths() {
+  const issues = await getCollection("issues");
+  const buckets = groupByMonth(issues);
+  if (buckets.length <= 1) return [];
+  const months = buildMonthList(buckets);
+  return buckets.slice(1).map((b) => ({
+    params: { yyyymm: b.key },
+    props: { issues: b.issues, months, currentMonth: b.key },
+  }));
+}
+
+interface Props {
+  issues: any[];
+  months: any[];
+  currentMonth: string;
+}
+
+const { issues, months, currentMonth } = Astro.props;
+const monthLabel = months.find((m) => m.key === currentMonth)?.label ?? currentMonth;
+---
+<BaseLayout title={`AI Agents Daily — ${monthLabel}`}>
+  <MonthView issues={issues} months={months} currentMonth={currentMonth} />
+</BaseLayout>

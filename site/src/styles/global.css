@@ -428,6 +428,102 @@ code {
   color: var(--fg-subtle);
 }
 
+/* ─── Month view (sidebar + timeline) ───────────────────────────────────── */
+
+.container:has(.month-view) {
+  max-width: 1040px;
+}
+
+.month-view {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: var(--s-7);
+  align-items: start;
+}
+
+.month-nav {
+  position: sticky;
+  top: var(--s-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.month-nav__heading {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-subtle);
+  margin-bottom: var(--s-3);
+}
+.month-nav__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+.month-nav__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.month-nav__item:hover {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+  text-decoration: none;
+}
+.month-nav__item--current {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  font-weight: 600;
+}
+.month-nav__item--current:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+.month-nav__count {
+  color: var(--fg-subtle);
+  font-weight: 400;
+}
+.month-nav__item--current .month-nav__count {
+  color: var(--fg-muted);
+}
+
+@media (max-width: 767px) {
+  .container:has(.month-view) { max-width: var(--content-max); }
+  .month-view {
+    grid-template-columns: 1fr;
+    gap: var(--s-5);
+  }
+  .month-nav {
+    position: static;
+  }
+  .month-nav__heading { display: none; }
+  .month-nav__list {
+    display: flex;
+    flex-direction: row;
+    gap: var(--s-2);
+    overflow-x: auto;
+    padding-bottom: var(--s-2);
+    scrollbar-width: thin;
+  }
+  .month-nav__list > li { flex: 0 0 auto; }
+  .month-nav__item {
+    white-space: nowrap;
+    padding: var(--s-1) var(--s-3);
+  }
+  .month-nav__item .month-nav__count::before { content: "· "; }
+}
+
 /* ─── Index page (timeline) ──────────────────────────────────────────────── */
 
 .timeline { list-style: none; margin: 0; padding: 0; }
