@@ -227,6 +227,19 @@ The single most important correctness property. Three layers:
 - **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
 - Topic-level dedup: a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") is passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news.
 
+**Papers multi-day candidate pool (issue #16, score-once semantics).**
+
+arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the daily newsletter wants ~3–5 papers every issue. The fix is to amortize supply across the week:
+
+- Papers that pass prefilter sit in `status = 'candidate'` for up to `PAPER_POOL_MAX_AGE_DAYS = 7` days from their `published_at`, *or* until they have lost `PAPER_POOL_MAX_COMPETES = 7` competitions, whichever comes first. Prefilter ages out anything past either ceiling at the start of each run.
+- The papers ranker scores each paper exactly once. After that first scoring, the score stays on the row and the LLM is not invoked for it again — the rubric in `prompts/rank.md` is absolute (0–10 against fixed thresholds), not relative to the batch, so re-scoring would be redundant cost.
+- Each daily run, prefilter emits two papers buckets in `candidates.json`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 50` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union.
+- Papers with `score >= featured_min` that *lose the featured cap* on a heavy day stay at `status = 'candidate'` to re-compete the next day. Today (pre-issue-16) those papers get sealed to `appendix` and never reappear, even if they scored 9 or 10 — on a 30-paper day, the bottom 25 of the would-be-featured set are wasted. The pool flips this: a strong paper appears in the issue at most once, on whichever day it actually wins a featured slot, and is held back from the appendix until then.
+- Mid-band papers (`appendix_min <= score < featured_min`) still go to `appendix` (terminal). They're not strong enough to ever win featured, so leaving them in the pool would just bloat it without ever surfacing them. Papers with `score < appendix_min` go to `dropped` (same as today).
+- A per-row `times_competed` counter (incremented on each run where a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them.
+- The cached score is only valid against the rubric it was scored under. When `prompts/rank.md` changes, prefilter detects the new file hash and bulk-resets `score = NULL` for all papers candidates so they get re-scored on the next run. The previous hash is persisted in `.rubric_hash`.
+- Cost impact: papers ranking only runs on days with new arrivals, and only against those new arrivals (typically 5–30 abstracts on weekdays, 0 on weekends — the LLM call is skipped entirely on weekends). News and blogs are unchanged.
+
 **Tests:** a small suite that replays a fixture day twice and asserts idempotency.
 
 ## Data Model (SQLite)
@@ -250,7 +263,8 @@ CREATE TABLE items (
   status TEXT NOT NULL,           -- new|candidate|ranked|featured|appendix|published|dropped
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
-  appearances INTEGER NOT NULL DEFAULT 1
+  appearances INTEGER NOT NULL DEFAULT 1,
+  times_competed INTEGER NOT NULL DEFAULT 0  -- papers multi-day pool counter (issue #16)
 );
 
 CREATE TABLE runs (

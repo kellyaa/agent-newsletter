@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS items (
   status TEXT NOT NULL,
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
-  appearances INTEGER NOT NULL DEFAULT 1
+  appearances INTEGER NOT NULL DEFAULT 1,
+  times_competed INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
@@ -101,6 +102,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "recency_days_override" not in cols:
         conn.execute(
             "ALTER TABLE items ADD COLUMN recency_days_override INTEGER"
+        )
+    if "times_competed" not in cols:
+        conn.execute(
+            "ALTER TABLE items ADD COLUMN times_competed INTEGER NOT NULL DEFAULT 0"
         )
 
 

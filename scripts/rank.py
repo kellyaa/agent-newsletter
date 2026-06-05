@@ -101,7 +101,21 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
 
 
 def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]:
-    """Apply thresholds + per-section caps. Returns id -> {status, ...}."""
+    """Apply thresholds + per-section caps. Returns id -> {status, ...}.
+
+    Papers special case (issue #16): on heavy supply days the section can land
+    20+ papers above featured_min, but only 5 win the cap. Today those 15+
+    high-quality items get sealed to appendix and never reappear. The pool
+    fix: papers that score >= featured_min but lose the cap stay 'candidate'
+    to re-compete tomorrow against a (likely smaller) field, until they win a
+    featured slot or age out via the multi-day pool gate in prefilter.py.
+
+    Mid-band papers (appendix_min <= score < featured_min) still go to appendix
+    as today — they're not strong enough to ever win featured, so leaving them
+    in the pool would just bloat it. Below-appendix-min still drops.
+
+    News/blogs unchanged.
+    """
     final: dict[str, dict] = {}
     for section, items in scored_by_section.items():
         rules = SECTION_RULES[section]
@@ -112,10 +126,16 @@ def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]
             if score >= rules["featured_min"] and featured_count < rules["cap"]:
                 status = "featured"
                 featured_count += 1
+            elif score >= rules["featured_min"] and section == "papers":
+                # Cleared the bar but lost the cap → keep in the pool for
+                # tomorrow. The reader sees this paper at most once, in its
+                # featured slot on whichever day it eventually wins one.
+                status = "candidate"
             elif score >= rules["appendix_min"]:
                 status = "appendix"
             elif score >= rules["featured_min"]:
-                # Cleared the bar but lost the cap → demote to appendix.
+                # News/blogs: cleared the bar but lost the cap → appendix
+                # (today's behavior; news/blogs don't have a multi-day pool).
                 status = "appendix"
             else:
                 status = "dropped"
@@ -154,6 +174,11 @@ def main() -> int:
     candidates = json.loads(CANDIDATES_PATH.read_text())
     rubric = PROMPT_PATH.read_text()
 
+    # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
+    # Items here have score+tags+why already; we skip the LLM and merge them
+    # with whatever the LLM returns for the unscored `papers` bucket.
+    BUCKETS = ("papers", "papers_prescored", "news", "blogs")
+
     # Idempotent resume: filter out items already past 'candidate' status.
     # If rank.py crashed after papers but before blogs, papers items are now
     # 'featured/appendix/dropped' and we should not re-send them to the LLM.
@@ -166,12 +191,12 @@ def main() -> int:
         conn_check.close()
     still_candidate = {r["id"] for r in candidate_rows}
     skipped_already_ranked = 0
-    for section in ("papers", "news", "blogs"):
-        before = len(candidates.get(section, []))
-        candidates[section] = [
-            it for it in candidates.get(section, []) if it["id"] in still_candidate
+    for bucket in BUCKETS:
+        before = len(candidates.get(bucket, []))
+        candidates[bucket] = [
+            it for it in candidates.get(bucket, []) if it["id"] in still_candidate
         ]
-        skipped_already_ranked += before - len(candidates[section])
+        skipped_already_ranked += before - len(candidates[bucket])
     if skipped_already_ranked > 0:
         log.info(
             "rank: resume — skipping %d items already ranked in a prior run",
@@ -179,10 +204,11 @@ def main() -> int:
         )
 
     # Total count for sanity logging.
-    total = sum(len(candidates.get(s, [])) for s in ("papers", "news", "blogs"))
+    total = sum(len(candidates.get(b, [])) for b in BUCKETS)
     log.info(
-        "candidates: papers=%d news=%d blogs=%d total=%d",
+        "candidates: papers=%d (prescored=%d) news=%d blogs=%d total=%d",
         len(candidates.get("papers", [])),
+        len(candidates.get("papers_prescored", [])),
         len(candidates.get("news", [])),
         len(candidates.get("blogs", [])),
         total,
@@ -191,12 +217,35 @@ def main() -> int:
         log.warning("no candidates to rank; exiting cleanly")
         return 0
 
-    scored_by_section: dict[str, list[dict]] = {}
+    scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
 
-    for section in ("papers", "news", "blogs"):
+    # Papers: only invoke the LLM on the unscored bucket. Prescored items
+    # already have a score from a prior day's run and bypass the LLM entirely.
+    unscored_papers = candidates.get("papers", [])
+    prescored_papers = candidates.get("papers_prescored", [])
+    if unscored_papers:
+        prompt = build_prompt("papers", unscored_papers, rubric)
+        scored = invoke_ranker(prompt, label="papers")
+        log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
+        scored_by_section["papers"].extend(scored)
+    else:
+        log.info("papers: no unscored items, skipping LLM call")
+    # Merge in prescored items (they pass through assign_statuses with their
+    # cached score and compete head-to-head with the freshly-scored ones).
+    for it in prescored_papers:
+        scored_by_section["papers"].append({
+            "id": it["id"],
+            "score": it["score"],
+            "tags": it.get("tags", []),
+            "why": it.get("why", ""),
+        })
+    if prescored_papers:
+        log.info("papers: merged %d prescored items from the multi-day pool", len(prescored_papers))
+
+    # News + blogs unchanged.
+    for section in ("news", "blogs"):
         items = candidates.get(section, [])
         if not items:
-            scored_by_section[section] = []
             continue
         prompt = build_prompt(section, items, rubric)
         scored = invoke_ranker(prompt, label=section)
@@ -207,14 +256,20 @@ def main() -> int:
     RANKED_PATH.write_text(json.dumps(scored_by_section, indent=2, ensure_ascii=False))
 
     # Build id → section map from input candidates for fallback handling.
+    # Papers (both unscored + prescored) all collapse to section='papers'.
     by_id_section: dict[str, str] = {}
-    for section, items in candidates.items():
+    for bucket, items in candidates.items():
+        section = "papers" if bucket in ("papers", "papers_prescored") else bucket
+        if section not in SECTION_RULES:
+            continue
         for it in items:
             by_id_section[it["id"]] = section
 
     decisions = assign_statuses(scored_by_section)
 
     # Defensive fallback: any candidate not scored → appendix with score 0.
+    # (Only triggers when the LLM omits an id it was sent. Prescored items
+    # are merged into scored_by_section directly so they can never end up here.)
     missing = [iid for iid in by_id_section if iid not in decisions]
     if missing:
         log.warning("%d candidates not scored → fallback to appendix", len(missing))
@@ -229,13 +284,33 @@ def main() -> int:
 
     conn = connect()
     counts = persist(conn, decisions)
+    # Bump times_competed for every paper that competed and stayed in the
+    # candidate pool (i.e. didn't get sealed to featured or appendix). Gating
+    # on status='candidate' makes the increment a no-op for sealed items, so
+    # featured/appendix winners can't have their counter inflated.
+    papers_competitors = [
+        iid for iid, d in decisions.items() if d["section"] == "papers"
+    ]
+    if papers_competitors:
+        placeholders = ",".join("?" * len(papers_competitors))
+        bumped = conn.execute(
+            f"UPDATE items SET times_competed = times_competed + 1 "
+            f"WHERE status = 'candidate' AND id IN ({placeholders})",
+            papers_competitors,
+        )
+        conn.commit()
+        log.info(
+            "papers: bumped times_competed on %d pool items (of %d competitors)",
+            bumped.rowcount or 0, len(papers_competitors),
+        )
     conn.close()
 
     log.info(
-        "DONE: featured=%d appendix=%d dropped=%d",
+        "DONE: featured=%d appendix=%d dropped=%d candidate=%d",
         counts.get("featured", 0),
         counts.get("appendix", 0),
         counts.get("dropped", 0),
+        counts.get("candidate", 0),
     )
     return 0
 
