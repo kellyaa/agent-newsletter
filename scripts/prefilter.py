@@ -5,6 +5,7 @@ as status='candidate' and emits candidates.json for the ranker.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -95,6 +96,24 @@ def assign_section(source: str, override: str | None = None) -> str:
 # Featured items are sealed; appendix items get up to 2 chances total.
 APPENDIX_MAX_APPEARANCES = 2
 
+# Multi-day candidate pool for the papers section (see issue #16).
+# Papers that pass prefilter sit in `status = candidate` for up to
+# PAPER_POOL_MAX_AGE_DAYS days from their published_at, competing each run
+# for one of the 5 featured slots. PAPER_POOL_MAX_COMPETES caps how many
+# competitions a single paper can lose before being aged out — independent of
+# wall-clock age, so a paper that lands during a quiet week still gets a fair
+# number of attempts. PAPER_PRERANK_CAP bounds the LLM input size on the
+# rare burst day where >50 unscored papers land at once.
+PAPER_POOL_MAX_COMPETES = 7
+PAPER_POOL_MAX_AGE_DAYS = 7
+PAPER_PRERANK_CAP = 50
+
+# Cached rubric hash. When prompts/rank.md changes, all cached papers scores
+# become stale (they were assigned under a different rubric), so we wipe them
+# and let rank.py re-score from scratch on the next run.
+RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
+RUBRIC_HASH_PATH = REPO_ROOT / ".rubric_hash"
+
 
 def _source_family(source: str) -> str:
     return source.split(":", 1)[0]
@@ -141,6 +160,62 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _prerank_score(item: dict, now: datetime) -> float:
+    """Cheap composite for capping the unscored-papers pool before the LLM.
+
+    Source weight is omitted: all papers items today are arxiv:*, so a weight
+    factor would be a constant. If hf-daily or another paper source is added
+    later with a non-1.0 weight, plumb it through here.
+    """
+    pub = item.get("published_at") or item.get("fetched_at")
+    try:
+        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+    except (ValueError, AttributeError):
+        age_days = 0.0
+    recency = 1.0 / (1.0 + age_days)
+    haystack = ((item.get("title") or "") + "\n" + (item.get("raw_text") or "")).lower()
+    kw_hits = len(KEYWORD_RE.findall(haystack))
+    kw = min(kw_hits, 5) / 5.0
+    return recency * (0.5 + kw)
+
+
+def _rubric_hash() -> str:
+    if not RUBRIC_PATH.exists():
+        return ""
+    return hashlib.sha256(RUBRIC_PATH.read_bytes()).hexdigest()
+
+
+def _maybe_invalidate_papers_scores(conn) -> int:
+    """If prompts/rank.md changed since the last run, wipe cached papers
+    scores so rank.py re-scores them under the new rubric. Returns the count
+    invalidated (0 on first run or when the hash hasn't changed)."""
+    current = _rubric_hash()
+    if not current:
+        return 0
+    last = RUBRIC_HASH_PATH.read_text().strip() if RUBRIC_HASH_PATH.exists() else ""
+    if last == current:
+        return 0
+    cur = conn.execute(
+        "UPDATE items SET score = NULL "
+        "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
+    )
+    invalidated = cur.rowcount or 0
+    conn.commit()
+    RUBRIC_HASH_PATH.write_text(current)
+    if invalidated:
+        log.info(
+            "rubric changed (hash %s → %s) — invalidated %d cached papers scores",
+            last[:8] or "<none>", current[:8], invalidated,
+        )
+    else:
+        # First run, or rubric changed but no papers were prescored yet.
+        log.info("rubric hash recorded: %s", current[:8])
+    return invalidated
+
+
 def collapse_near_dups(items: list[dict], threshold: float = 0.85) -> list[dict]:
     """Within this run, drop items whose title is ~the same as a higher-priority one."""
     sorted_items = sorted(
@@ -164,6 +239,30 @@ def main() -> int:
     init_db()
     conn = connect()
     now = datetime.now(timezone.utc)
+
+    # Wipe cached papers scores if the rubric changed since the last run.
+    _maybe_invalidate_papers_scores(conn)
+
+    # Age out papers candidates that have hit the per-paper competition cap or
+    # exceeded the recency ceiling. Done up front so they don't appear in
+    # candidates.json this run. Recency uses julianday() which treats
+    # published_at/fetched_at as UTC dates; the cutoff matches the
+    # PAPER_POOL_MAX_AGE_DAYS constant.
+    aged = conn.execute(
+        """
+        UPDATE items
+        SET status = 'dropped'
+        WHERE status = 'candidate'
+          AND section = 'papers'
+          AND (times_competed >= ?
+               OR julianday('now') - julianday(COALESCE(published_at, fetched_at)) >= ?)
+        """,
+        (PAPER_POOL_MAX_COMPETES, PAPER_POOL_MAX_AGE_DAYS),
+    )
+    aged_out = aged.rowcount or 0
+    conn.commit()
+    if aged_out:
+        log.info("aged out %d papers candidates (cap or recency)", aged_out)
 
     # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
     rows = conn.execute(
@@ -225,11 +324,22 @@ def main() -> int:
     # Emit candidates.json grouped by section, sourced from the DB's *current*
     # `status = candidate` rows. Re-running prefilter regenerates the same
     # snapshot regardless of whether new items were added this invocation.
-    grouped: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    #
+    # Papers handling (issue #16): papers items live in the candidate pool
+    # for up to PAPER_POOL_MAX_COMPETES days, scored once and re-selected each
+    # day. Items with score IS NOT NULL go into `papers_prescored` so rank.py
+    # can skip the LLM call for them. Items with score IS NULL are unscored
+    # newcomers — these are the only ones subject to PAPER_PRERANK_CAP.
+    grouped: dict[str, list[dict]] = {
+        "papers": [],
+        "papers_prescored": [],
+        "news": [],
+        "blogs": [],
+    }
     rows = conn.execute(
         """
         SELECT id, source, url, title, author, published_at, raw_text,
-               section, section_override
+               section, section_override, score, tags, why
         FROM items
         WHERE status = 'candidate'
         """
@@ -239,7 +349,7 @@ def main() -> int:
         section = d.get("section") or assign_section(
             d["source"], d.get("section_override")
         )
-        grouped[section].append({
+        emitted = {
             "id": d["id"],
             "source": d["source"],
             "url": d["url"],
@@ -247,12 +357,40 @@ def main() -> int:
             "author": d["author"],
             "published_at": d["published_at"],
             "raw_text": d["raw_text"],
-        })
+        }
+        if section == "papers" and d.get("score") is not None:
+            # Carry the cached score + tags + why so rank.py can merge without
+            # re-invoking the LLM. tags is a JSON-encoded array on disk.
+            emitted["score"] = d["score"]
+            try:
+                emitted["tags"] = json.loads(d["tags"]) if d["tags"] else []
+            except (TypeError, ValueError):
+                emitted["tags"] = []
+            emitted["why"] = d["why"] or ""
+            grouped["papers_prescored"].append(emitted)
+        else:
+            grouped[section].append(emitted)
+
+    # Pre-rank cap: only applies to unscored papers, since prescored ones are
+    # free to keep around (no LLM cost). Sort by composite heuristic and keep
+    # top-N; the rest are NOT dropped from the DB — they'll re-compete tomorrow
+    # with whatever fresh arrivals show up, and can win a slot via the heuristic
+    # then.
+    if len(grouped["papers"]) > PAPER_PRERANK_CAP:
+        before = len(grouped["papers"])
+        grouped["papers"].sort(key=lambda it: _prerank_score(it, now), reverse=True)
+        grouped["papers"] = grouped["papers"][:PAPER_PRERANK_CAP]
+        log.info(
+            "papers pre-rank cap: %d unscored → %d (top by recency × keyword density)",
+            before, len(grouped["papers"]),
+        )
+
     CANDIDATES_OUT.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
     log.info(
-        "wrote %s — papers=%d news=%d blogs=%d",
+        "wrote %s — papers=%d (prescored=%d) news=%d blogs=%d",
         CANDIDATES_OUT,
         len(grouped["papers"]),
+        len(grouped["papers_prescored"]),
         len(grouped["news"]),
         len(grouped["blogs"]),
     )

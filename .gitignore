@@ -6,6 +6,7 @@ __pycache__/
 logs/
 candidates.json
 ranked.json
+.rubric_hash
 .claude/settings.local.json
 
 # Astro
