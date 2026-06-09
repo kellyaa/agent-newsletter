@@ -132,11 +132,13 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 **Rationale:** papers need a higher bar because they're often dense and specialized — featuring a mediocre paper wastes the reader's time more than featuring a mediocre release note. News and blogs run on a 6-threshold because timeliness and practitioner perspective give them value at a lower depth-bar than academic work.
 
 **Per-section caps for the daily output** (to keep the newsletter readable):
-- Papers: max 5 featured.
+- Papers: max 5 featured by default; **burst cap of 10** kicks in on heavy days (when today's count of score-10 papers reaches 10 — see `effective_cap` in `scripts/rank.py`).
 - News: max 6 featured.
 - Blogs: max 6 featured.
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
+
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `.nous/newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. Burn-in: review the score-10 miss rate ~4 weeks after this deploy (early July 2026) and tune `burst_trigger_count` if the trigger fires too rarely or too often.
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.

@@ -34,11 +34,43 @@ RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 RANKER_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
 
 # Per-section thresholds and caps. See SPEC.md "Ranking rubric".
+# Papers also has burst_cap/burst_trigger_score/burst_trigger_count for the
+# adaptive cap policy: when today's count of papers at score >= burst_trigger_score
+# reaches burst_trigger_count, the cap rises from `cap` to `burst_cap`.
 SECTION_RULES = {
-    "papers": {"featured_min": 7, "appendix_min": 5, "cap": 5},
+    "papers": {
+        "featured_min": 7,
+        "appendix_min": 5,
+        "cap": 5,
+        "burst_cap": 10,
+        "burst_trigger_score": 10,
+        "burst_trigger_count": 10,
+    },
     "news":   {"featured_min": 6, "appendix_min": 4, "cap": 6},
     "blogs":  {"featured_min": 6, "appendix_min": 4, "cap": 6},
 }
+
+
+def effective_cap(section: str, items: list[dict]) -> int:
+    """Pick today's cap for a section.
+
+    Papers uses an adaptive policy: count papers at score >= burst_trigger_score;
+    if that count reaches burst_trigger_count, return burst_cap, else return cap.
+    Sections without burst_* keys always return their static cap.
+    """
+    rules = SECTION_RULES[section]
+    burst_score = rules.get("burst_trigger_score")
+    if burst_score is None:
+        return rules["cap"]
+    trigger_count = sum(1 for e in items if e["score"] >= burst_score)
+    if trigger_count >= rules["burst_trigger_count"]:
+        log.info(
+            "%s: burst cap engaged (%d items at score>=%d, threshold=%d) → cap=%d",
+            section, trigger_count, burst_score,
+            rules["burst_trigger_count"], rules["burst_cap"],
+        )
+        return rules["burst_cap"]
+    return rules["cap"]
 
 VALID_TAGS = {
     "frameworks", "tool-use", "memory", "planning", "evals",
@@ -120,10 +152,11 @@ def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]
     for section, items in scored_by_section.items():
         rules = SECTION_RULES[section]
         items.sort(key=lambda e: (-e["score"], e["id"]))
+        cap = effective_cap(section, items)
         featured_count = 0
         for entry in items:
             score = entry["score"]
-            if score >= rules["featured_min"] and featured_count < rules["cap"]:
+            if score >= rules["featured_min"] and featured_count < cap:
                 status = "featured"
                 featured_count += 1
             elif score >= rules["featured_min"] and section == "papers":
