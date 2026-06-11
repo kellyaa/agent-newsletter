@@ -31,6 +31,12 @@ Limitations, all forced by the missing fetch:
     day, so the multi-day pool's aging is off by one against what would
     have happened with a real run. Minor — affects when a paper ages out
     by at most one day.
+
+Pass --apply-published to promote the featured ids to status='published'
+in the live state.db once the issue file is written. Without it, those ids
+remain status='candidate' in the live DB and would compete again on the
+next normal run — meaning the same paper could end up featured twice.
+Default is off so you can dry-run; pass it for real backfills.
 """
 from __future__ import annotations
 
@@ -96,6 +102,12 @@ def setup_sandbox(target_date: str) -> Path:
     return sandbox
 
 
+# Keep references to the unpatched connect/init_db so --apply-published can
+# reach the real state.db after the sandbox-bound run is done.
+_LIVE_CONNECT = None
+_LIVE_DB_PATH = None
+
+
 def bind_db_to_sandbox(sandbox_db: Path) -> None:
     """Patch db.connect/init_db so all callers land on the sandbox.
 
@@ -104,13 +116,15 @@ def bind_db_to_sandbox(sandbox_db: Path) -> None:
     import time. Patching db_mod.connect first means those imports pick up
     the patched function.
     """
+    global _LIVE_CONNECT, _LIVE_DB_PATH
     import db as db_mod
 
-    orig_connect = db_mod.connect
+    _LIVE_CONNECT = db_mod.connect
+    _LIVE_DB_PATH = db_mod.DB_PATH
     orig_init_db = db_mod.init_db
 
     def sandbox_connect(db_path=None):
-        return orig_connect(db_path or sandbox_db)
+        return _LIVE_CONNECT(db_path or sandbox_db)
 
     def sandbox_init_db(db_path=None):
         return orig_init_db(db_path or sandbox_db)
@@ -118,6 +132,30 @@ def bind_db_to_sandbox(sandbox_db: Path) -> None:
     db_mod.DB_PATH = sandbox_db
     db_mod.connect = sandbox_connect
     db_mod.init_db = sandbox_init_db
+
+
+def apply_published_to_live(featured_ids: list[str]) -> int:
+    """Promote the backfill's featured ids to status='published' in the LIVE
+    state.db. Without this step, those ids stay 'candidate' in the live pool
+    and would compete (and could re-feature) on the next normal run.
+
+    Idempotent and gated on status='candidate' so a re-run, or a row that's
+    already been promoted by some other path, is left alone.
+    """
+    if _LIVE_CONNECT is None or _LIVE_DB_PATH is None:
+        raise RuntimeError("bind_db_to_sandbox must be called before apply_published_to_live")
+    conn = _LIVE_CONNECT(_LIVE_DB_PATH)
+    try:
+        placeholders = ",".join("?" * len(featured_ids))
+        cur = conn.execute(
+            f"UPDATE items SET status = 'published' "
+            f"WHERE status = 'candidate' AND id IN ({placeholders})",
+            featured_ids,
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    finally:
+        conn.close()
 
 
 def age_out_for_synthetic_date(conn, target_date: str) -> int:
@@ -314,6 +352,15 @@ def parse_args() -> argparse.Namespace:
         "--force", action="store_true",
         help="Overwrite an existing issue file at site/src/content/issues/<date>.md.",
     )
+    p.add_argument(
+        "--apply-published", action="store_true",
+        help=(
+            "After writing the issue file, promote the featured ids to "
+            "status='published' in the LIVE state.db so they don't compete "
+            "again on the next normal run. Off by default for dry-runs; "
+            "pass this for real backfills."
+        ),
+    )
     return p.parse_args()
 
 
@@ -360,7 +407,31 @@ def main() -> int:
 
     out = run_writer_for_date(conn, args.date, args.force)
     conn.close()
-    return 0 if out is not None else 1
+    if out is None:
+        return 1
+
+    if args.apply_published:
+        featured_ids = [
+            iid for iid, d in decisions.items() if d["status"] == "featured"
+        ]
+        promoted = apply_published_to_live(featured_ids)
+        log.info(
+            "promoted %d/%d featured ids to status='published' in live %s",
+            promoted, len(featured_ids), _LIVE_DB_PATH,
+        )
+        if promoted < len(featured_ids):
+            log.warning(
+                "%d featured ids were NOT in live status='candidate' (likely "
+                "already promoted or not present); skipped to preserve idempotency",
+                len(featured_ids) - promoted,
+            )
+    else:
+        log.warning(
+            "issue file written but featured ids remain status='candidate' in "
+            "the live DB. They will compete on the next normal run and could "
+            "re-feature. Re-run with --apply-published to seal them."
+        )
+    return 0
 
 
 if __name__ == "__main__":
