@@ -42,8 +42,8 @@ done
 
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR"
-DATE_UTC="$(date -u +%F)"
-LOG_FILE="$LOG_DIR/run-$DATE_UTC.log"
+DATE_TODAY="$(date +%F)"
+LOG_FILE="$LOG_DIR/run-$DATE_TODAY.log"
 
 # tee everything through to a per-day log so we can grep failures later.
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -90,12 +90,12 @@ if [ "$REFETCH" = true ]; then
   log "REFETCH: deleting today's fetched items so fetch runs again"
   uv run python - <<'PY'
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 repo = Path.cwd()
 db = repo / "state.db"
-today = datetime.now(timezone.utc).date().isoformat()
+today = datetime.now().date().isoformat()
 
 if not db.exists():
     print(f"no state.db at {db}; nothing to delete")
@@ -115,12 +115,12 @@ if [ "$FORCE" = true ]; then
   log "FORCE: resetting today's post-fetch state"
   uv run python - <<'PY'
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 repo = Path(__file__).resolve().parent if False else Path.cwd()
 db = repo / "state.db"
-today = datetime.now(timezone.utc).date().isoformat()
+today = datetime.now().date().isoformat()
 
 conn = sqlite3.connect(db)
 # Send today's processed items back to 'candidate' so rank/write can re-run.
@@ -192,8 +192,8 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "newsletter: $DATE_UTC daily run" >/dev/null
-log "git: committed $DATE_UTC daily run"
+git commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
+log "git: committed $DATE_TODAY daily run"
 
 # Push only if we have a remote — handy during local dev before the GitHub
 # repo is wired up.

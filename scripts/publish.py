@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from db import REPO_ROOT, connect, init_db
@@ -71,7 +71,7 @@ def record_run(
 
 def main() -> int:
     init_db()
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().date().isoformat()
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)

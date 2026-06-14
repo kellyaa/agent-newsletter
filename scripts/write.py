@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
@@ -333,7 +333,7 @@ def main() -> int:
         log.error("missing %s", PROMPT_PATH)
         return 2
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().date().isoformat()
     out_path = ISSUES_DIR / f"{today}.md"
     if out_path.exists():
         log.info(

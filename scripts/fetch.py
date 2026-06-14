@@ -236,7 +236,7 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
 
 def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
     seen, inserted = 0, 0
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().date().isoformat()
     fetched_at = datetime.now(timezone.utc).isoformat()
     for it in items:
         seen += 1
@@ -336,7 +336,7 @@ def _stamp_overrides(
 
 
 def _already_fetched_today(conn) -> int:
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().date().isoformat()
     row = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
     ).fetchone()
