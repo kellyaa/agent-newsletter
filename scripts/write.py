@@ -53,7 +53,7 @@ WRITER_SCHEMA = {
     "required": ["theme", "items"],
     "additionalProperties": False,
     "properties": {
-        "theme": {"type": ["string", "null"], "maxLength": 400},
+        "theme": {"type": ["string", "null"], "maxLength": 800},
         "items": {
             "type": "array",
             "items": {

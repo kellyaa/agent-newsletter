@@ -39,7 +39,7 @@ The featured list is sorted descending by score within each section. Render in i
 
 ```json
 {
-  "theme": "Optional 1-2 sentence framing IF a clear theme emerges across multiple featured items, otherwise null. Never invent a theme to fill space.",
+  "theme": "2-3 sentence concrete digest of today's specific contributions: name actual mechanisms, papers, numbers, or systems. Never a category label. May be null only when fewer than 3 featured items exist.",
   "items": [
     {
       "id": "<exact id from the input item>",
@@ -56,7 +56,7 @@ The featured list is sorted descending by score within each section. Render in i
 
 - The `items` array must contain exactly one entry per featured input item, with `id` matching the input verbatim. No extras, no merges, no skips.
 - For each item, set **at most one** of `takeaway` and `open_question`. The other must be `null`. Both being `null` is also fine if neither fits — silence is preferable to padding.
-- `theme`: include only when two or more featured items share a real thread. If today's items are scattered across unrelated topics, return `null`.
+- `theme`: a 2-3 sentence digest that names *specific* things from today — paper titles, mechanisms, system names, numbers, claims. It is **not** a category label, **not** a meta-narrative about the field, and **not** a framing of "today's items focus on X." If you find yourself writing about "the field," "production-readiness," or "moving past capability," delete it and start over with the actual content. See the "Theme" section below.
 - Do not include any markdown formatting in the JSON values beyond what's natural to prose (occasional `inline code`, `**bold**` for proper emphasis, links written as `[text](url)` only if you're citing something *from the input's `raw_text`*; do not invent URLs).
 
 ## Voice and style
@@ -87,6 +87,44 @@ Each item belongs to one of three sections (you don't render the section heading
 - **Blogs** — practitioner writeups. The voice can be sharpest here. Earned skepticism welcome.
 
 If `previous_newsletter` is present, glance at it for tone calibration only. Do not repeat phrases or framing from yesterday.
+
+## Theme
+
+The theme is a 2-3 sentence digest that goes on the front-page card. It is the reader's one-glance answer to "what's actually in today's issue." It must name *specific* things from today's featured items: paper titles or system names, the mechanism or number that makes each one interesting, the concrete claim being made. A reader who reads only the theme should walk away knowing 3-5 specific things that happened today, not a vague sense of what category the day belongs to.
+
+### What a good theme looks like
+
+> Three new failure modes documented today: Memory Contagion shows evaluator bias propagating across agent generations via shared memory stores; Premature Commitment finds agents lock answers at step 2 of a 10-step trace, detectable via hidden-state convergence; and a 400-developer study shows reviewer approval rates rise +14.5pp while comment volume drops 22% as AI PR exposure grows. GroundEval drops the LLM-as-judge approach for deterministic evidence-path scoring, scoring a hallucinated answer at 0.000 where a frontier judge gave 0.85.
+
+This works because every clause names a specific paper, system, mechanism, or number. A reader can decide which item to click based on the theme alone.
+
+### What a bad theme looks like
+
+> Today's papers and posts focus on the engineering of production-ready agentic systems, moving beyond proofs-of-concept to introduce concrete architectural patterns, programming models, and evaluation frameworks for building and operating them reliably.
+
+This is a category label dressed as prose. It would describe roughly 60% of every issue you've ever written. Strip the date and the reader cannot tell which issue it came from. **Do not write themes like this.**
+
+### Banned framings
+
+The following templates have been used so often they are now forbidden. If your theme paraphrases any of these, rewrite it from scratch using specific names from the items:
+
+- "moving past 'can it work?' to 'how does it fail?'"
+- "the field is maturing / shifting from X to Y"
+- "production-ready" / "production reality" / "the engineering of robust agents"
+- "today's items focus on / converge on / highlight"
+- "a wave of new benchmarks/papers/research"
+- "moving beyond proofs-of-concept"
+- "the hard engineering of"
+- Any sentence whose subject is "the field," "the focus," "today's research," "this week's work"
+
+### Theme construction rules
+
+- Lead with the most concrete, surprising, or actionable thing from today's featured list.
+- Name at least 3 specific things (papers, systems, mechanisms, numbers, claims).
+- Use the items' own vocabulary — if a paper introduces "Memory Contagion" or "GroundEval," use that name.
+- If two papers report contradictory findings, name both and the contradiction. That's a real theme.
+- Cap at ~75 words. The front-page card is small; tight beats comprehensive.
+- Return `null` only if there are fewer than 3 featured items. With 3+, you can always assemble a specific digest from what's there.
 
 ## Handling sparse input
 
