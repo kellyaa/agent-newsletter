@@ -32,6 +32,10 @@ RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 # Per-section call timeout. Per-call output is bounded by section size, so this
 # is generous — papers (up to 100+) is the long pole.
 RANKER_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
+# Cap per-call output. Healthy heaviest section (papers) lands around ~24k
+# completion tokens; this caps it at ~32k to fail fast on degenerate
+# repetition loops.
+RANKER_MAX_TOKENS = int(os.environ.get("RANKER_MAX_TOKENS", "32000"))
 
 # Per-section thresholds and caps. See SPEC.md "Ranking rubric".
 # Papers also has burst_cap/burst_trigger_score/burst_trigger_count for the
@@ -122,6 +126,7 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
         model=RANKER_MODEL,
         timeout_s=RANKER_TIMEOUT_S,
         label=label,
+        max_tokens=RANKER_MAX_TOKENS,
     )
     rankings = out.get("rankings")
     if not isinstance(rankings, list):

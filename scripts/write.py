@@ -31,6 +31,10 @@ ISSUES_DIR = REPO_ROOT / "site" / "src" / "content" / "issues"
 
 WRITER_MODEL = os.environ.get("WRITER_MODEL", "gpt-4o-mini")
 WRITER_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
+# Cap per-call output. Healthy writer runs land around 6-8k completion tokens;
+# this leaves comfortable headroom while failing fast on degenerate repetition
+# loops (which we've seen burn 65k tokens producing unparseable truncated JSON).
+WRITER_MAX_TOKENS = int(os.environ.get("WRITER_MAX_TOKENS", "16000"))
 
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
@@ -175,6 +179,7 @@ def invoke_writer(prompt: str) -> dict:
         model=WRITER_MODEL,
         timeout_s=WRITER_TIMEOUT_S,
         label="writer",
+        max_tokens=WRITER_MAX_TOKENS,
     )
     if "items" not in out:
         debug_path = REPO_ROOT / "logs/writer-output.json"

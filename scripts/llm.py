@@ -57,26 +57,20 @@ def _client() -> OpenAI:
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
-def call_llm(
+def _one_shot(
+    client: OpenAI,
+    *,
     prompt: str,
     schema: dict[str, Any],
     schema_name: str,
-    *,
     model: str,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
-    label: str = "llm",
+    timeout_s: int,
+    headers: dict[str, str],
+    max_tokens: int | None,
+    label: str,
 ) -> dict[str, Any]:
-    """Send a single-turn prompt and return a dict matching the schema.
-
-    Raises RuntimeError if the response cannot be parsed into a dict.
-    """
-    client = _client()
-    headers = _extra_headers()
-    log.info(
-        "invoking llm (%s, model=%s, extra_headers=%s)",
-        label, model, sorted(headers.keys()) or "none",
-    )
-    resp = client.chat.completions.create(
+    """Single attempt: call the API, parse, validate. Raises on any failure."""
+    kwargs: dict[str, Any] = dict(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_format={
@@ -90,6 +84,10 @@ def call_llm(
         timeout=timeout_s,
         extra_headers=headers or None,
     )
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+    resp = client.chat.completions.create(**kwargs)
 
     usage = getattr(resp, "usage", None)
     if usage is not None:
@@ -101,12 +99,22 @@ def call_llm(
             getattr(usage, "total_tokens", "?"),
         )
 
+    finish = getattr(resp.choices[0], "finish_reason", None)
     content = resp.choices[0].message.content or ""
     txt = content.strip()
     if txt.startswith("```"):
         txt = txt.split("\n", 1)[1] if "\n" in txt else txt
         if txt.endswith("```"):
             txt = txt.rsplit("```", 1)[0]
+
+    if finish == "length":
+        # Truncated mid-response — almost always a degenerate repetition loop
+        # hitting max_tokens. Don't bother trying to parse; surface a clear
+        # error so the retry path takes over.
+        log.error("%s: response truncated (finish_reason=length); first 2KB: %s",
+                  label, content[:2000])
+        raise RuntimeError(f"llm response truncated at max_tokens for {label}")
+
     try:
         parsed = json.loads(txt)
     except json.JSONDecodeError as e:
@@ -117,3 +125,63 @@ def call_llm(
     if not isinstance(parsed, dict):
         raise RuntimeError(f"llm returned non-object for {label}: {type(parsed).__name__}")
     return parsed
+
+
+def call_llm(
+    prompt: str,
+    schema: dict[str, Any],
+    schema_name: str,
+    *,
+    model: str,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+    label: str = "llm",
+    max_tokens: int | None = None,
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    """Send a single-turn prompt and return a dict matching the schema.
+
+    `max_tokens` caps the response length per attempt. When the model goes
+    into a degenerate repetition loop, this fails fast at the cap instead of
+    burning the model's full output budget.
+
+    `max_attempts` controls how many times we'll retry on parse / truncation
+    failures. The SDK already retries network and 5xx errors itself; this
+    handles the case where the API returned 200 OK but the content was
+    unparseable (truncation, repetition loop). Default is 2 (one retry).
+
+    Raises RuntimeError if every attempt fails.
+    """
+    client = _client()
+    headers = _extra_headers()
+    log.info(
+        "invoking llm (%s, model=%s, extra_headers=%s, max_tokens=%s, max_attempts=%d)",
+        label, model, sorted(headers.keys()) or "none",
+        max_tokens if max_tokens is not None else "unset",
+        max_attempts,
+    )
+
+    last_err: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            log.warning("%s: retry %d/%d after parse/truncation failure",
+                        label, attempt, max_attempts)
+        try:
+            return _one_shot(
+                client,
+                prompt=prompt,
+                schema=schema,
+                schema_name=schema_name,
+                model=model,
+                timeout_s=timeout_s,
+                headers=headers,
+                max_tokens=max_tokens,
+                label=f"{label} (attempt {attempt})" if max_attempts > 1 else label,
+            )
+        except RuntimeError as e:
+            last_err = e
+            continue
+
+    # All attempts exhausted.
+    raise RuntimeError(
+        f"llm failed after {max_attempts} attempts for {label}: {last_err}"
+    ) from last_err
