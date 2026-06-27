@@ -101,6 +101,10 @@ To uninstall the schedulers:
 ./launchd/install.sh --uninstall
 ```
 
+## Development
+
+Tests: `uv run --extra test pytest`
+
 ## Cost & runtime
 
 A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run cost is logged in the `runs` table.
