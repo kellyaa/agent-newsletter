@@ -39,7 +39,7 @@ The featured list is sorted descending by score within each section. Render in i
 
 ```json
 {
-  "theme": "2-3 sentence concrete digest of today's specific contributions: name actual mechanisms, papers, numbers, or systems. Never a category label. May be null only when fewer than 3 featured items exist.",
+  "theme": "Front-page card copy in two parts: a lede (1-2 sentences introducing 1-2 featured items in plain framing) plus a territory sentence (gesturing at what else is in the issue without naming systems). ~60 words. May be null only when fewer than 3 featured items exist.",
   "items": [
     {
       "id": "<exact id from the input item>",
@@ -56,7 +56,7 @@ The featured list is sorted descending by score within each section. Render in i
 
 - The `items` array must contain exactly one entry per featured input item, with `id` matching the input verbatim. No extras, no merges, no skips.
 - For each item, set **at most one** of `takeaway` and `open_question`. The other must be `null`. Both being `null` is also fine if neither fits — silence is preferable to padding.
-- `theme`: a 2-3 sentence digest that names *specific* things from today — paper titles, mechanisms, system names, numbers, claims. It is **not** a category label, **not** a meta-narrative about the field, and **not** a framing of "today's items focus on X." If you find yourself writing about "the field," "production-readiness," or "moving past capability," delete it and start over with the actual content. See the "Theme" section below.
+- `theme`: two-part front-page card copy — a lede (1-2 sentences framing 1-2 featured items plainly, for a cold reader) plus a territory sentence (gesturing at the rest of the day by kinds of work, not system names). ~60 words total. It is **not** a category label, **not** a meta-narrative about the field, **not** a run-on list of system names, and **not** a framing of "today's items focus on X." See the "Theme" section below.
 - Do not include any markdown formatting in the JSON values beyond what's natural to prose (occasional `inline code`, `**bold**` for proper emphasis, links written as `[text](url)` only if you're citing something *from the input's `raw_text`*; do not invent URLs).
 
 ## Voice and style
@@ -90,23 +90,60 @@ If `previous_newsletter` is present, glance at it for tone calibration only. Do 
 
 ## Theme
 
-The theme is a 2-3 sentence digest that goes on the front-page card. It is the reader's one-glance answer to "what's actually in today's issue." It must name *specific* things from today's featured items: paper titles or system names, the mechanism or number that makes each one interesting, the concrete claim being made. A reader who reads only the theme should walk away knowing 3-5 specific things that happened today, not a vague sense of what category the day belongs to.
+The theme is a two-part front-page card. It is the reader's one-glance answer to "what's actually in today's issue," written for a **cold reader who has not clicked through and does not know any of the paper or system names.**
+
+### Shape
+
+**Part 1 — Lede (1-2 sentences).** Introduce 1-2 featured items using the "front-page test" below. Frame each item by what it *is* (a paper looking at X, a postmortem of Y, a benchmark measuring Z) *before* quoting its finding. Prefer plain English over the paper's internal jargon. Project or paper names are **optional** here — include a name only when it will mean something to the reader without further context; otherwise defer names to the per-item summary.
+
+**Voice patterns.** *"A new paper looks at X and finds Y."* / *"A production postmortem describes how Z broke and what fixed it."* / *"Two blog posts push back on the assumption that…"* The subject of the sentence is the *kind of work* and its *finding*, not the project name.
+
+**Part 2 — Territory (1 sentence).** Gestures at what else is in the issue *without naming systems*. Talks about kinds of work — "three more papers on memory attacks", "two production postmortems", "a batch of eval methodology posts". Reader learns the shape of the day.
+
+Cap: ~60 words total. Tight beats comprehensive.
+
+### The front-page test
+
+Of today's featured items, pick 1-2 that best fit at least one of:
+
+- **(a)** most surprising or counterintuitive claim
+- **(b)** sharpest contradiction with prior work or another featured item
+- **(c)** most actionable finding for a senior engineer
+- **(d)** explainable in one sentence to a reader who has not heard of the specific project — if you can't frame it plainly, it's probably not the right lede
+
+Highest score is **not** automatically the lede. A smaller item with a striking claim outranks a solid-but-expected paper.
+
+### Source constraint
+
+The items you introduce in the lede **must appear in the input's `featured` array**. Do not name or describe papers, systems, or claims from the appendix, from `previous_newsletter`, or from your training data. If the item you want to lead with is not in `featured[]`, pick a different one.
 
 ### What a good theme looks like
 
-> Three new failure modes documented today: Memory Contagion shows evaluator bias propagating across agent generations via shared memory stores; Premature Commitment finds agents lock answers at step 2 of a 10-step trace, detectable via hidden-state convergence; and a 400-developer study shows reviewer approval rates rise +14.5pp while comment volume drops 22% as AI PR exposure grows. GroundEval drops the LLM-as-judge approach for deterministic evidence-path scoring, scoring a hallucinated answer at 0.000 where a frontier judge gave 0.85.
+> A new paper looks at what happens to code review inside teams that adopt AI-generated PRs — and finds that reviewers approve more (+14.5pp) but write 22% fewer comments, an erosion that survives four organizational controls. Two other papers explore related memory-store attacks; a Simon Willison post argues the same review-atrophy pattern shows up at his consulting clients.
 
-This works because every clause names a specific paper, system, mechanism, or number. A reader can decide which item to click based on the theme alone.
+This works because the lede *frames* the paper (what it looked at) before quoting its finding — a cold reader understands what is interesting without needing to know the paper's name. The territory sentence gestures at the rest of the day by kind of work, not by more system names.
 
-### What a bad theme looks like
+### What a bad theme looks like (dense list)
+
+> FARMA details attacks on remembered reasoning history, MemGhost shows how to inject stealthy memories via a single email, ADI bypasses instruction-focused defenses by poisoning metadata, Governed Individuation proposes an architectural fix using cryptographic identity, and R2Act reveals models choose valid recovery actions 37-60% of the time.
+
+This is a catalog, not editorial. A cold reader has no idea what any of these names are.
+
+### What a bad theme looks like (abstract-shaped)
+
+> Habituation at the Gate documents a 22% drop in reviewer comments as AI PR exposure grows, even as approval rates rise +14.5pp — a review-erosion signal that survives four organizational controls.
+
+Reads like the paper's own abstract. Cold reader can't tell what "Habituation at the Gate" is or what the paper is *about* — only what it *found*.
+
+### What a bad theme looks like (generic)
 
 > Today's papers and posts focus on the engineering of production-ready agentic systems, moving beyond proofs-of-concept to introduce concrete architectural patterns, programming models, and evaluation frameworks for building and operating them reliably.
 
-This is a category label dressed as prose. It would describe roughly 60% of every issue you've ever written. Strip the date and the reader cannot tell which issue it came from. **Do not write themes like this.**
+A category label dressed as prose. Would describe 60% of every issue.
 
 ### Banned framings
 
-The following templates have been used so often they are now forbidden. If your theme paraphrases any of these, rewrite it from scratch using specific names from the items:
+The following templates are forbidden. If your theme paraphrases any of these, rewrite it from scratch:
 
 - "moving past 'can it work?' to 'how does it fail?'"
 - "the field is maturing / shifting from X to Y"
@@ -116,15 +153,15 @@ The following templates have been used so often they are now forbidden. If your 
 - "moving beyond proofs-of-concept"
 - "the hard engineering of"
 - Any sentence whose subject is "the field," "the focus," "today's research," "this week's work"
+- Any lede that names 3+ items in a row (that's a catalog, not a lede)
+- Any territory sentence that names a specific system or paper (territory is kinds-of-work only)
 
-### Theme construction rules
+### Construction rules
 
-- Lead with the most concrete, surprising, or actionable thing from today's featured list.
-- Name at least 3 specific things (papers, systems, mechanisms, numbers, claims).
-- Use the items' own vocabulary — if a paper introduces "Memory Contagion" or "GroundEval," use that name.
-- If two papers report contradictory findings, name both and the contradiction. That's a real theme.
-- Cap at ~75 words. The front-page card is small; tight beats comprehensive.
-- Return `null` only if there are fewer than 3 featured items. With 3+, you can always assemble a specific digest from what's there.
+- Lede first: pick 1-2 items via the front-page test, frame each by *what it is* before quoting its number or claim.
+- Territory second: one sentence gesturing at what else is in the issue by category — "three more papers on X", "two postmortems", "a batch of Y."
+- Cap ~60 words total.
+- Return `null` only if there are fewer than 3 featured items. With 3+, you can always assemble a lede+territory pair from what's there.
 
 ## Handling sparse input
 
