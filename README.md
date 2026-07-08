@@ -169,3 +169,7 @@ sqlite3 state.db "SELECT date, status, cost_usd, started_at, finished_at FROM ru
 # Is there a newsletter file for today?
 ls site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing
 ```
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).
