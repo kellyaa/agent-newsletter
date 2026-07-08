@@ -109,6 +109,20 @@ Tests: `uv run --extra test pytest`
 
 A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run cost is logged in the `runs` table.
 
+## state.db
+
+`state.db` is a SQLite file committed to the repo. It's small (single-digit MB, growing slowly) and holding it in git is deliberate — the daily macOS cron run is self-healing: re-cloning on a new machine reproduces dedup state, run history, and topic coverage tracking without a bootstrap step. Because commits go up alongside daily runs, the DB at `HEAD` roughly matches what's live at https://kellyaa.github.io/agent-newsletter/. (Soft: individual runs can fail or be retried, so this is a match "as of the last successful publish," not a strict invariant.)
+
+The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker's LLM-generated scores and rationales — **no secrets, no PII, no credentials**. LLM endpoints and keys live in `.env` (gitignored).
+
+Three tables:
+
+- **`items`** — every fetched item, with status (`candidate` / `ranked` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count).
+- **`runs`** — one row per daily pipeline run: item counts by section, wall-clock duration; `tokens_in` / `tokens_out` / `cost_usd` columns are scaffolded (see #13) and populated when the LLM endpoint exposes usage.
+- **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
+
+See [SPEC.md § Data Model](./SPEC.md#data-model-sqlite) for the column-level schema.
+
 ## Design
 
 Read [SPEC.md](./SPEC.md) for the full design rationale: the section-aware rubric, dedup strategy, source-section override mechanism, and editorial voice guide.

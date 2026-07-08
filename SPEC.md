@@ -261,6 +261,8 @@ CREATE TABLE items (
   tags TEXT,                      -- JSON array
   section TEXT,                   -- 'papers' | 'news' | 'blogs', set by prefilter
   section_override TEXT,          -- per-source override from sources.yaml; null otherwise
+  keyword_gate_bypass INTEGER NOT NULL DEFAULT 0,  -- per-source: skip prefilter keyword gate
+  recency_days_override INTEGER,  -- per-source: recency window override, in days
   why TEXT,                       -- ranker's one-line rationale
   status TEXT NOT NULL,           -- new|candidate|ranked|featured|appendix|published|dropped
   first_seen_date TEXT NOT NULL,
