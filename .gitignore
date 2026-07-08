@@ -8,6 +8,8 @@ candidates.json
 ranked.json
 .rubric_hash
 .claude/settings.local.json
+coverage.xml
+.coverage
 
 # Astro
 site/node_modules/
