@@ -19,3 +19,18 @@ test = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+# Coverage options applied whenever pytest is run locally or in CI.
+# --cov-fail-under is the regression gate: the build fails if total
+# coverage drops below this percentage.  Raise it as tests are added.
+addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=30"
+
+[tool.coverage.report]
+# Lines only reachable when the module is run as __main__ don't count
+# against coverage — they're tested implicitly by the CLI.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

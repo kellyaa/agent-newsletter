@@ -20,7 +20,11 @@ jobs:
 
       - run: uv sync --extra test
 
-      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term
+      # --cov-fail-under=30 gates against coverage regression.
+      # Current baseline is ~35%; the threshold is set 5 points below to
+      # allow minor fluctuation while blocking large regressions. Raise this
+      # threshold as more tests are added.
+      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term --cov-fail-under=30
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -28,3 +32,15 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
+
+      # Post a coverage summary comment on PRs so contributors can see which
+      # lines are uncovered without downloading the artifact manually.
+      # Runs on pull_request events only; skipped on direct pushes to main.
+      - name: Coverage comment
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Annotate changed lines that lack coverage directly in the PR diff.
+          ANNOTATE_MISSING_LINES: true
+          ANNOTATION_TYPE: warning
