@@ -1,0 +1,11 @@
+# Whitelist-style: ignore everything except tracked deploy artifacts.
+/*
+!/state.db
+!/site
+/site/*
+!/site/src
+/site/src/*
+!/site/src/content
+/site/src/content/*
+!/site/src/content/issues
+!/.gitignore
