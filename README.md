@@ -80,6 +80,8 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MODEL` | yes | Model id for the editorial writer (quality matters more) |
 | `RANKER_TIMEOUT_S` | no | Per-call timeout, default 1800 |
 | `WRITER_TIMEOUT_S` | no | Per-call timeout, default 1200 |
+| `RANKER_MAX_TOKENS` | no | Max completion tokens for ranker calls, default 32000 |
+| `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
