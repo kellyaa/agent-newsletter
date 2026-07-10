@@ -119,8 +119,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-repo = Path.cwd()
-db = repo / "state.db"
+import os
+
+content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
+db = content_root / "state.db"
 today = datetime.now().date().isoformat()
 
 if not db.exists():
@@ -144,8 +146,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-repo = Path(__file__).resolve().parent if False else Path.cwd()
-db = repo / "state.db"
+import os
+
+content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
+db = content_root / "state.db"
 today = datetime.now().date().isoformat()
 
 conn = sqlite3.connect(db)
@@ -165,7 +169,7 @@ conn.commit()
 conn.close()
 
 # Drop today's issue file so write.py runs.
-issue = repo / "site" / "src" / "content" / "issues" / f"{today}.md"
+issue = content_root / "site" / "src" / "content" / "issues" / f"{today}.md"
 if issue.exists():
     issue.unlink()
     print(f"removed {issue}")
