@@ -268,7 +268,7 @@ def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
                 today, today,
             ),
         )
-        if cur.rowcount and cur.lastrowid:
+        if cur.rowcount and cur.lastrowid:  # pragma: no cover — ON CONFLICT DO UPDATE always sets both
             inserted += 1
     conn.commit()
     return seen, inserted
