@@ -196,40 +196,37 @@ run_stage "rank"      uv run python scripts/rank.py
 run_stage "write"     uv run python scripts/write.py
 run_stage "publish"   uv run python scripts/publish.py
 
-# ─── Git commit/push ───────────────────────────────────────────────────────
-# Stage everything that actually changed. We deliberately list paths rather
-# than `git add -A` to avoid sweeping in untracked files (.venv, logs, etc.).
+# ─── Git commit/push (content branch) ──────────────────────────────────────
+# Commit and push generated artifacts to the 'content' branch via the
+# worktree. All git ops run with -C "$CONTENT_WORKTREE" so we don't touch
+# the main working tree's index.
 git_paths=(
   "site/src/content/issues"
   "state.db"
 )
 
-# Only stage paths that exist. (state.db is committed per spec; the issue dir
-# may not exist on a brand-new clone before the first run.)
 existing_paths=()
 for p in "${git_paths[@]}"; do
-  [ -e "$p" ] && existing_paths+=("$p")
+  [ -e "$CONTENT_WORKTREE/$p" ] && existing_paths+=("$p")
 done
 
 if [ "${#existing_paths[@]}" -eq 0 ]; then
-  log "git: nothing to commit (no tracked artifacts on disk)"
+  log "git: nothing to commit (no tracked artifacts in content worktree)"
   exit 0
 fi
 
-git add "${existing_paths[@]}"
-if git diff --cached --quiet; then
+git -C "$CONTENT_WORKTREE" add "${existing_paths[@]}"
+if git -C "$CONTENT_WORKTREE" diff --cached --quiet; then
   log "git: nothing to commit"
   exit 0
 fi
 
-git commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
-log "git: committed $DATE_TODAY daily run"
+git -C "$CONTENT_WORKTREE" commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
+log "git: committed $DATE_TODAY daily run (content)"
 
-# Push only if we have a remote — handy during local dev before the GitHub
-# repo is wired up.
-if git remote get-url origin >/dev/null 2>&1; then
-  if git push --quiet; then
-    log "git: pushed"
+if git -C "$CONTENT_WORKTREE" remote get-url origin >/dev/null 2>&1; then
+  if git -C "$CONTENT_WORKTREE" push --quiet; then
+    log "git: pushed to content"
   else
     log "git: push failed (will retry on next run)"
     exit 1
