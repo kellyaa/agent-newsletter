@@ -92,6 +92,23 @@ done
 log "── self-update ── pulling current branch"
 git pull --ff-only
 
+# ─── Content worktree ──────────────────────────────────────────────────────
+# The 'content' orphan branch holds machine-authored deploy artifacts
+# (state.db, site/src/content/issues/*). Pipeline scripts write into this
+# worktree via the CONTENT_ROOT env var. The worktree is created on first
+# run and reused thereafter; the pull catches up any commits pushed from
+# another machine or a manual edit.
+CONTENT_WORKTREE="$REPO_ROOT/.worktrees/content"
+
+if ! git worktree list --porcelain | grep -q "$CONTENT_WORKTREE\$"; then
+  log "── content worktree ── creating at .worktrees/content"
+  git worktree add "$CONTENT_WORKTREE" content
+fi
+log "── content worktree ── pulling"
+git -C "$CONTENT_WORKTREE" pull --ff-only
+
+export CONTENT_ROOT="$CONTENT_WORKTREE"
+
 # ─── Refetch: delete today's fetched items so fetch runs again ─────────────
 # This must run BEFORE the --force block, since --force resets statuses based
 # on rows that we're about to delete here.
