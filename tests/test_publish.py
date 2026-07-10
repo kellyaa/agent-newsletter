@@ -1,6 +1,17 @@
 """Tests for publish.py: record_run(), main() exit paths, and idempotency."""
 from __future__ import annotations
 
+
+def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
+    """publish.ISSUES_DIR resolves under CONTENT_ROOT when the env var is set."""
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    import importlib
+    import db
+    importlib.reload(db)
+    import publish
+    importlib.reload(publish)
+    assert publish.ISSUES_DIR == tmp_path / "site" / "src" / "content" / "issues"
+
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch

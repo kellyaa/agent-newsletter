@@ -18,7 +18,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from db import REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("publish")
 
-ISSUES_DIR = REPO_ROOT / "site" / "src" / "content" / "issues"
+ISSUES_DIR = CONTENT_ROOT / "site" / "src" / "content" / "issues"
 
 MIN_FEATURED_FOR_PUBLISH = 1  # tunable; lower = more permissive
 MIN_FILE_SIZE_BYTES = 400     # frontmatter+body should comfortably exceed this
