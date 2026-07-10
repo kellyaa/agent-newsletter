@@ -9,3 +9,10 @@
 /site/src/content/*
 !/site/src/content/issues
 !/.gitignore
+# Workflow file must live on this branch so pushes to content trigger deploy.
+# (GitHub Actions loads workflow definitions from the pushed commit's branch.)
+!/.github
+/.github/*
+!/.github/workflows
+/.github/workflows/*
+!/.github/workflows/deploy.yml
