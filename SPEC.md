@@ -1,6 +1,6 @@
 # AI Agents Daily Newsletter — Design Spec v0.1
 
-A locally-run, Claude-Code-orchestrated pipeline that produces a daily Markdown newsletter covering the practical state of the art in AI agents, targeted at senior engineers and architects.
+A locally-run pipeline that produces a daily Markdown newsletter covering the practical state of the art in AI agents, targeted at senior engineers and architects.
 
 ## Goals & Non-Goals
 
@@ -31,27 +31,31 @@ Explicitly down-weighted: consumer AI hype, funding announcements, VC takes, "pr
 
 ```
   ┌──────────────┐
-  │ launchd cron │  (daily, ~06:00 local)
+  │ launchd cron │  (daily, ~07:00 local)
   └──────┬───────┘
          │ invokes
          ▼
-  ┌──────────────────────────────────────────────┐
-  │  run.sh                                      │
-  │    1. python fetch.py      (deterministic)   │
-  │    2. python prefilter.py  (deterministic)   │
-  │    3. claude -p "rank..."  (LLM, via CC)     │
-  │    4. claude -p "summarize & write..." (CC)  │
-  │    5. python publish.py    (deterministic)   │
-  │    6. git add / commit / push                │
-  └──────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────┐
+  │  run.sh                                              │
+  │    1. uv run scripts/fetch.py      (no LLM)          │
+  │    2. uv run scripts/prefilter.py  (no LLM)          │
+  │    3. uv run scripts/rank.py       (LLM via llm.py)  │
+  │    4. uv run scripts/write.py      (LLM via llm.py)  │
+  │    5. uv run scripts/publish.py    (no LLM)          │
+  │    6. git commit/push → content branch               │
+  └──────────────────────────────────────────────────────┘
          │              │
          ▼              ▼
-    state.db       newsletters/YYYY-MM-DD.md
-    (SQLite,       + index.md (for Pages)
-     committed)
+  .worktrees/     .worktrees/content/
+  content/        site/src/content/issues/YYYY-MM-DD.md
+  state.db        (Astro content collection; git push →
+  (SQLite,         GitHub Actions → Astro build → Pages)
+   content branch)
 ```
 
-Claude Code is invoked twice in headless mode (`claude -p`) for the two tasks that need judgment: ranking and summarizing. Everything else is plain Python.
+`scripts/llm.py` is a thin wrapper around OpenAI-compatible chat-completions HTTP calls (`openai.OpenAI.chat.completions.create()`). It replaced the original `claude -p` (Claude Code headless) invocations as of v1.2. Everything except the two LLM calls is plain Python.
+
+**Two-branch model.** `run.sh` commits machine-authored artifacts (`state.db`, issue files) to an orphan `content` branch via a worktree at `.worktrees/content`, keeping `main`'s history clean. See README §Repository layout and §6 Publisher below for details.
 
 ## Components
 
@@ -97,13 +101,11 @@ Rules (all configurable in `scripts/prefilter.py`):
 
 Survivors get `status = 'candidate'`.
 
-### 4. Ranker — Claude Code (headless)
+### 4. Ranker — `rank.py` (OpenAI-compatible LLM)
 
-```bash
-claude -p "$(cat prompts/rank.md)" --output-format=json > ranked.json
-```
+`rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. The model and endpoint are configured via `RANKER_MODEL` and `LLM_BASE_URL` in `.env`.
 
-`prompts/rank.md` instructs CC to:
+`prompts/rank.md` instructs the ranker to:
 1. Read `candidates.json`, which contains items already grouped by section (`papers`, `news`, `blogs`) by `prefilter.py`.
 2. Score each item 1-10 against the rubric below, applying the **section-specific** axis emphasis and threshold.
 3. Return a JSON array: `[{id, score, tags, one_line_why}]`. Section is not emitted — it was set deterministically upstream.
@@ -146,18 +148,16 @@ Also emit:
 
 Writes scores, tags, and section back to `state.db`, sets `status = 'ranked'`.
 
-### 5. Summarizer / Writer — Claude Code (headless)
+### 5. Summarizer / Writer — `write.py` (OpenAI-compatible LLM)
 
-```bash
-claude -p "$(cat prompts/write.md)" > newsletters/$(date +%F).md
-```
+`write.py` makes one OpenAI-compatible chat-completions call via `scripts/llm.py` and writes the output to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md` (the `content` branch worktree). The model is configured via `WRITER_MODEL` in `.env`.
 
-The prompt gives CC:
+The prompt gives the writer:
 - The top ~8-12 featured items (id, url, title, abstract, source, tags, one_line_why).
 - The appendix list (title + url only).
 - A style guide (see below) and yesterday's newsletter for continuity/tone calibration.
 
-CC writes:
+The writer produces:
 1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
@@ -206,10 +206,10 @@ Style guide (embedded in the prompt):
 ### 6. Publisher — `publish.py`
 
 - Marks featured/appendix items `status = 'published'` in DB.
-- Regenerates `index.md` (reverse-chronological list of all newsletters with first-line excerpt).
-- Updates `feed.xml` (Atom) if we add it later.
-- `git add newsletters/ state.db index.md && git commit && git push`.
-- GitHub Pages serves from the repo — no build step needed (Jekyll renders MD).
+- Writes the issue file to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md`. `CONTENT_ROOT` defaults to the `content`-branch worktree at `.worktrees/content` (set by `run.sh`).
+- Does **not** generate `index.md` or `feed.xml` — Astro's build step handles navigation automatically.
+- `run.sh` then commits `state.db` and `site/src/content/issues/` to the `content` branch (via the worktree) and pushes. `main` is never touched by the daily run.
+- GitHub Actions `deploy.yml` triggers on push to either `main` or `content`, checks out both branches, copies `content`'s issue files into the Astro source tree, builds with Astro 5, and deploys to GitHub Pages. The Astro build is the deploy gate — a malformed issue file fails the build.
 
 ## Dedup Strategy
 
@@ -296,38 +296,49 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 ## Repo Layout
 
 ```
-incubation/
+.                              ← repo root (main branch)
 ├── SPEC.md                    ← this file
 ├── README.md
-├── run.sh                     ← entry point (pipeline)
+├── run.sh                     ← entry point (pipeline); sets up content worktree
 ├── watchdog.sh                ← stale-commit checker (separate launchd job)
 ├── sources.yaml               ← feed list, tunable
 ├── prompts/
-│   ├── rank.md
-│   └── write.md
+│   ├── rank.md                ← ranker rubric + JSON output schema
+│   └── write.md               ← writer voice/style + JSON output schema
 ├── scripts/
-│   ├── fetch.py
-│   ├── prefilter.py
-│   ├── publish.py
-│   └── cost.py                ← parse CC session output → runs.cost_usd
-├── newsletters/
-│   ├── 2026-05-13.md
-│   └── ...
-├── state.db                   ← committed
-├── index.md                   ← for GitHub Pages
-├── logs/
-└── tests/
-    └── test_dedup.py
+│   ├── fetch.py               ← collectors (no LLM)
+│   ├── prefilter.py           ← recency + keyword + dedup gates
+│   ├── rank.py                ← per-section LLM ranker (3× calls via llm.py)
+│   ├── write.py               ← LLM writer (1× call via llm.py)
+│   ├── publish.py             ← promote items; record runs row
+│   ├── llm.py                 ← thin wrapper around OpenAI-compatible chat-completions
+│   ├── db.py                  ← schema, URL canonicalization
+│   ├── backfill.py            ← reconstruct missed daily runs from candidate pool
+│   └── replay_writer.py       ← replay writer against past issues (prompt verification)
+├── site/                      ← Astro 5 static site scaffold
+│   └── src/content/issues/    ← issue files on the 'content' branch (see below)
+├── .worktrees/
+│   └── content/               ← orphan-branch worktree; auto-created by run.sh
+│       ├── state.db           ← SQLite pipeline state (content branch only)
+│       └── site/src/content/issues/YYYY-MM-DD.md
+├── .github/workflows/
+│   ├── deploy.yml             ← Astro build + Pages deploy (triggers on main or content push)
+│   └── tests.yml              ← pytest CI
+├── launchd/                   ← macOS plists + install.sh
+├── logs/                      ← per-day run logs (gitignored)
+└── tests/                     ← pytest suite
 ```
+
+**Note on branch layout.** `main` holds code and config (everything above). The `content` orphan branch holds only machine-authored artifacts: `state.db` and `site/src/content/issues/*.md`. `run.sh` writes to `content` via the `.worktrees/content` worktree and pushes on every daily run. See README §Repository layout for the full rationale.
 
 ## Failure Modes & Mitigations
 
 | Failure                           | Mitigation                                                   |
 |-----------------------------------|--------------------------------------------------------------|
 | A feed is down                    | Per-source try/except; log and continue; skip source for day |
-| CC session times out / crashes    | Stage exits nonzero; `run.sh` aborts; macOS notification fires; re-run is idempotent |
-| CC produces malformed JSON        | `rank.py` validates with jsonschema; on fail, retry with stricter prompt, then fall back to score-by-source-reputation |
-| CC hallucinates a URL             | Summarizer prompt only sees items+URLs from the DB; publish.py verifies every linked URL in output exists in DB |
+| LLM call times out / errors       | Stage exits nonzero; `run.sh` aborts; macOS notification fires; re-run is idempotent (completed stages are skipped) |
+| LLM produces malformed JSON       | `rank.py` validates output schema; on fail, retries with stricter prompt, then falls back to score-by-source-reputation |
+| LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
 | Cost runaway                      | Per-run cost recorded in `runs.cost_usd`; `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
@@ -347,7 +358,7 @@ macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 
 - `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns.
-- `claude -p` invocations capture cost from CC's session output (or, if not directly available, estimate from tokens). Helper `scripts/cost.py` parses and writes to the DB.
+- `llm.py` captures token usage from the OpenAI API response (`usage.prompt_tokens`, `usage.completion_tokens`) and passes it back to `rank.py` / `write.py`, which write it to the `runs` row.
 - `BUDGET_USD` env var is read at the top of `run.sh` and logged. **Not enforced** in v1 — just observed.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
 
@@ -407,13 +418,15 @@ The operator-supplied seed list, to be fleshed out with concrete feed URLs durin
 
 Non-obvious things discovered during real runs that future-you should know without rediscovering them.
 
-### Anthropic API + Claude Code headless
+### LLM API (OpenAI-compatible via `scripts/llm.py`)
 
-- `claude -p --json-schema '<schema>'` requires the schema's **top-level type to be `object`**, not `array`. Wrap arrays in `{"items": [...]}`.
-- With `--json-schema`, the model's structured output lands in the envelope's `structured_output` field. The plain `result` field is empty in that mode. Code that reads `result` will fail mysteriously; always check `structured_output` first.
+The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-compatible chat-completions calls as of v1.2. Current lessons:
+
 - Per-section ranking calls (one per `papers`/`news`/`blogs`) work much better than one big call. ~$0.30-1.20 per section, 3-7 minutes each. A single 150-item call risks timeouts and quality degradation.
 - Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only ~12 featured items, not 100+ candidates.
 - Set `RANKER_TIMEOUT_S=1800` (30 min). 15 min was too tight on chatty news days with verbose release-note `raw_text`. Truncating `raw_text` to ~1500 chars in `write.py` was a measurable cost reducer.
+- `llm.py` reads `LLM_EXTRA_HEADERS` from the environment — useful for endpoints that require additional auth headers (e.g., `RITS_API_KEY`, `X-Tenant-Id`).
+- The structured output schema must have a **top-level type of `object`**, not `array`. Wrap arrays in `{"items": [...]}` if needed.
 
 ### URL hallucination
 
