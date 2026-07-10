@@ -170,10 +170,8 @@ def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]
                 # featured slot on whichever day it eventually wins one.
                 status = "candidate"
             elif score >= rules["appendix_min"]:
-                status = "appendix"
-            elif score >= rules["featured_min"]:
-                # News/blogs: cleared the bar but lost the cap → appendix
-                # (today's behavior; news/blogs don't have a multi-day pool).
+                # Also covers news/blogs that cleared featured_min but lost
+                # the cap (appendix_min < featured_min, so they land here).
                 status = "appendix"
             else:
                 status = "dropped"
