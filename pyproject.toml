@@ -24,7 +24,9 @@ package = false
 # Coverage options applied whenever pytest is run locally or in CI.
 # --cov-fail-under is the regression gate: the build fails if total
 # coverage drops below this percentage.  Raise it as tests are added.
-addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=30"
+# Baseline after quality/test-publish-py (PR #37): ~46%. Gate set at 45
+# (5 points of headroom) to block regressions while allowing minor fluctuation.
+addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=45"
 
 [tool.coverage.report]
 # Lines only reachable when the module is run as __main__ don't count
