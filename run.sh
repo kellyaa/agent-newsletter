@@ -83,6 +83,15 @@ for ENV_FILE in "$HOME/.config/agent-newsletter/env" "$REPO_ROOT/.env"; do
   fi
 done
 
+# ─── Self-update ───────────────────────────────────────────────────────────
+# Pull the current branch so pipeline code, prompts, and site scaffold are
+# current before generating content against them. For the launchd daily run
+# this is a no-op catchup on main. For a human running ./run.sh from a
+# feature branch, it updates that branch. --ff-only lets git's native error
+# surface if the working tree is dirty or the pull isn't fast-forward.
+log "── self-update ── pulling current branch"
+git pull --ff-only
+
 # ─── Refetch: delete today's fetched items so fetch runs again ─────────────
 # This must run BEFORE the --force block, since --force resets statuses based
 # on rows that we're about to delete here.
