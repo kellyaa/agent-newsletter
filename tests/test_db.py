@@ -54,3 +54,21 @@ def test_url_id_differs_across_canonical_inputs() -> None:
     assert url_id("https://example.com/items/42") != url_id(
         "https://example.com/items/43"
     )
+
+
+def test_db_path_uses_content_root_env(monkeypatch, tmp_path):
+    """DB_PATH resolves under CONTENT_ROOT when the env var is set."""
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    import importlib
+    import db
+    importlib.reload(db)
+    assert db.DB_PATH == tmp_path / "state.db"
+
+
+def test_db_path_defaults_to_repo_root(monkeypatch):
+    """DB_PATH falls back to REPO_ROOT when CONTENT_ROOT is unset."""
+    monkeypatch.delenv("CONTENT_ROOT", raising=False)
+    import importlib
+    import db
+    importlib.reload(db)
+    assert db.DB_PATH == db.REPO_ROOT / "state.db"

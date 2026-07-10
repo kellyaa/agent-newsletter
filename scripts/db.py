@@ -5,12 +5,15 @@ The schema is idempotent — calling init_db() repeatedly is safe.
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = REPO_ROOT / "state.db"
+_CONTENT_ROOT_ENV = os.environ.get("CONTENT_ROOT")
+CONTENT_ROOT = Path(_CONTENT_ROOT_ENV) if _CONTENT_ROOT_ENV else REPO_ROOT
+DB_PATH = CONTENT_ROOT / "state.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (

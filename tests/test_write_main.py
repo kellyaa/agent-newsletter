@@ -183,3 +183,14 @@ class TestInvokeWriter:
         with patch("write.call_llm", return_value=expected):
             result = write_mod.invoke_writer("prompt")
         assert result is expected
+
+
+def test_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
+    """ISSUES_DIR resolves under CONTENT_ROOT when the env var is set."""
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    import importlib
+    import db
+    importlib.reload(db)
+    import write
+    importlib.reload(write)
+    assert write.ISSUES_DIR == tmp_path / "site" / "src" / "content" / "issues"

@@ -83,6 +83,32 @@ for ENV_FILE in "$HOME/.config/agent-newsletter/env" "$REPO_ROOT/.env"; do
   fi
 done
 
+# ─── Self-update ───────────────────────────────────────────────────────────
+# Pull the current branch so pipeline code, prompts, and site scaffold are
+# current before generating content against them. For the launchd daily run
+# this is a no-op catchup on main. For a human running ./run.sh from a
+# feature branch, it updates that branch. --ff-only lets git's native error
+# surface if the working tree is dirty or the pull isn't fast-forward.
+log "── self-update ── pulling current branch"
+git pull --ff-only
+
+# ─── Content worktree ──────────────────────────────────────────────────────
+# The 'content' orphan branch holds machine-authored deploy artifacts
+# (state.db, site/src/content/issues/*). Pipeline scripts write into this
+# worktree via the CONTENT_ROOT env var. The worktree is created on first
+# run and reused thereafter; the pull catches up any commits pushed from
+# another machine or a manual edit.
+CONTENT_WORKTREE="$REPO_ROOT/.worktrees/content"
+
+if ! git worktree list --porcelain | grep -q "$CONTENT_WORKTREE\$"; then
+  log "── content worktree ── creating at .worktrees/content"
+  git worktree add "$CONTENT_WORKTREE" content
+fi
+log "── content worktree ── pulling"
+git -C "$CONTENT_WORKTREE" pull --ff-only
+
+export CONTENT_ROOT="$CONTENT_WORKTREE"
+
 # ─── Refetch: delete today's fetched items so fetch runs again ─────────────
 # This must run BEFORE the --force block, since --force resets statuses based
 # on rows that we're about to delete here.
@@ -93,8 +119,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-repo = Path.cwd()
-db = repo / "state.db"
+import os
+
+content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
+db = content_root / "state.db"
 today = datetime.now().date().isoformat()
 
 if not db.exists():
@@ -118,8 +146,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-repo = Path(__file__).resolve().parent if False else Path.cwd()
-db = repo / "state.db"
+import os
+
+content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
+db = content_root / "state.db"
 today = datetime.now().date().isoformat()
 
 conn = sqlite3.connect(db)
@@ -139,7 +169,7 @@ conn.commit()
 conn.close()
 
 # Drop today's issue file so write.py runs.
-issue = repo / "site" / "src" / "content" / "issues" / f"{today}.md"
+issue = content_root / "site" / "src" / "content" / "issues" / f"{today}.md"
 if issue.exists():
     issue.unlink()
     print(f"removed {issue}")
@@ -166,40 +196,37 @@ run_stage "rank"      uv run python scripts/rank.py
 run_stage "write"     uv run python scripts/write.py
 run_stage "publish"   uv run python scripts/publish.py
 
-# ─── Git commit/push ───────────────────────────────────────────────────────
-# Stage everything that actually changed. We deliberately list paths rather
-# than `git add -A` to avoid sweeping in untracked files (.venv, logs, etc.).
+# ─── Git commit/push (content branch) ──────────────────────────────────────
+# Commit and push generated artifacts to the 'content' branch via the
+# worktree. All git ops run with -C "$CONTENT_WORKTREE" so we don't touch
+# the main working tree's index.
 git_paths=(
   "site/src/content/issues"
   "state.db"
 )
 
-# Only stage paths that exist. (state.db is committed per spec; the issue dir
-# may not exist on a brand-new clone before the first run.)
 existing_paths=()
 for p in "${git_paths[@]}"; do
-  [ -e "$p" ] && existing_paths+=("$p")
+  [ -e "$CONTENT_WORKTREE/$p" ] && existing_paths+=("$p")
 done
 
 if [ "${#existing_paths[@]}" -eq 0 ]; then
-  log "git: nothing to commit (no tracked artifacts on disk)"
+  log "git: nothing to commit (no tracked artifacts in content worktree)"
   exit 0
 fi
 
-git add "${existing_paths[@]}"
-if git diff --cached --quiet; then
+git -C "$CONTENT_WORKTREE" add "${existing_paths[@]}"
+if git -C "$CONTENT_WORKTREE" diff --cached --quiet; then
   log "git: nothing to commit"
   exit 0
 fi
 
-git commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
-log "git: committed $DATE_TODAY daily run"
+git -C "$CONTENT_WORKTREE" commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
+log "git: committed $DATE_TODAY daily run (content)"
 
-# Push only if we have a remote — handy during local dev before the GitHub
-# repo is wired up.
-if git remote get-url origin >/dev/null 2>&1; then
-  if git push --quiet; then
-    log "git: pushed"
+if git -C "$CONTENT_WORKTREE" remote get-url origin >/dev/null 2>&1; then
+  if git -C "$CONTENT_WORKTREE" push --quiet; then
+    log "git: pushed to content"
   else
     log "git: push failed (will retry on next run)"
     exit 1

@@ -25,7 +25,7 @@ watchdog.sh             — fires macOS notification if no commit in >36h
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
-state.db                — SQLite (committed; small enough; serves as the audit log)
+state.db                — SQLite pipeline state (on the 'content' branch; see "Repository layout")
 ```
 
 ## Daily pipeline
@@ -40,7 +40,8 @@ state.db                — SQLite (committed; small enough; serves as the audit
                                                        ▼
                                           site/src/content/issues/YYYY-MM-DD.md
                                                        │
-                                                       ▼ git push → GitHub Actions →
+                                                       ▼ git push → content branch →
+                                                       ▼ deploy.yml (main + content) →
                                                        ▼ Astro build → Pages deploy
 ```
 
@@ -111,7 +112,7 @@ A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls
 
 ## state.db
 
-`state.db` is a SQLite file committed to the repo. It's small (single-digit MB, growing slowly) and holding it in git is deliberate — the daily macOS cron run is self-healing: re-cloning on a new machine reproduces dedup state, run history, and topic coverage tracking without a bootstrap step. Because commits go up alongside daily runs, the DB at `HEAD` roughly matches what's live at https://kellyaa.github.io/agent-newsletter/. (Soft: individual runs can fail or be retried, so this is a match "as of the last successful publish," not a strict invariant.)
+`state.db` is a SQLite file tracked on the **`content` branch** (not `main` — see "Repository layout" below). It's small (single-digit MB, growing slowly) and holding it in git is deliberate: the daily macOS cron run is self-healing, and re-cloning `content` on a new machine reproduces dedup state, run history, and topic coverage tracking without a bootstrap step. Because commits go up alongside daily runs, the DB at `content`'s HEAD roughly matches what's live at https://kellyaa.github.io/agent-newsletter/. (Soft: individual runs can fail or be retried, so this is a match "as of the last successful publish," not a strict invariant.)
 
 The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker's LLM-generated scores and rationales — **no secrets, no PII, no credentials**. LLM endpoints and keys live in `.env` (gitignored).
 
@@ -126,6 +127,19 @@ See [SPEC.md § Data Model](./SPEC.md#data-model-sqlite) for the column-level sc
 ## Design
 
 Read [SPEC.md](./SPEC.md) for the full design rationale: the section-aware rubric, dedup strategy, source-section override mechanism, and editorial voice guide.
+
+## Repository layout
+
+The repo uses two long-lived branches, split by *authorship*:
+
+- **`main`** — human-authored code: scripts, tests, prompts, site scaffold, deploy config, `pyproject.toml`. This is where PRs land and where code changes are reviewed. Generated deploy artifacts are gitignored on this branch.
+- **`content`** — an *orphan branch* (no shared history with `main`) that holds machine-authored deploy artifacts: `state.db` and `site/src/content/issues/*.md`. `run.sh` writes here via a worktree at `.worktrees/content` and pushes on every daily run.
+
+The two branches never merge. This keeps `main`'s history readable (no daily automated commits obscuring code changes) and cleanly separates "what humans decided to change" from "what the pipeline produced." The pattern is the same one GitHub Pages uses for its `gh-pages` branch.
+
+**Deploy combines the two.** `.github/workflows/deploy.yml` triggers on push to either branch. It checks out `main` as the primary tree (site scaffold, config, `package.json`) and `content` into a subpath (`_content/`), copies `_content/site/src/content/issues/` into place, then runs Astro's build. The Astro build itself is the deploy gate — a malformed issue file fails the build and the last-good deploy stays live.
+
+**Local development.** When iterating on code from `main`, the Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. If you don't have the worktree set up locally, create it once: `git worktree add .worktrees/content content`.
 
 ## Troubleshooting a stalled run
 
@@ -178,10 +192,10 @@ pkill -f run.sh
 
 ```bash
 # Did publish.py record a run today?
-sqlite3 state.db "SELECT date, status, cost_usd, started_at, finished_at FROM runs ORDER BY started_at DESC LIMIT 5;"
+sqlite3 .worktrees/content/state.db "SELECT date, status, cost_usd, started_at, finished_at FROM runs ORDER BY started_at DESC LIMIT 5;"
 
 # Is there a newsletter file for today?
-ls site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing
+ls .worktrees/content/site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing
 ```
 
 ## License

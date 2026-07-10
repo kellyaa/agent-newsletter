@@ -18,3 +18,9 @@ site/.astro/
 
 # Old v0 artifacts (kept in repo as v0 archive but not actively published)
 # (newsletters/ and index.md are in git history but no new commits should add to them)
+
+# Machine-authored deploy artifacts (now on the 'content' orphan branch)
+state.db
+site/src/content/issues/*.md
+# Content worktree
+.worktrees/
