@@ -24,10 +24,9 @@ package = false
 # Coverage options applied whenever pytest is run locally or in CI.
 # --cov-fail-under is the regression gate: the build fails if total
 # coverage drops below this percentage.  Raise it as tests are added.
-# Baseline after PRs #43-#45, #49-#51 merged (364 tests): ~90%.
-# Gate raised to 85 (5 points of headroom below actual 89.9%).
-# Remaining gap: backfill.py at 43% — subprocess/git mocking needed (issue #53).
-addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=85"
+# Baseline after PRs #43-#61 (402 tests): 100% line coverage, 99.39% branch.
+# Gate set at 95 (5 points of headroom below branch baseline).
+addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=95"
 
 [tool.coverage.run]
 # Write relative source paths so coverage.xml works in CI (py-cov-action v3
