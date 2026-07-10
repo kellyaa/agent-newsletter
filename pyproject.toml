@@ -24,10 +24,14 @@ package = false
 # Coverage options applied whenever pytest is run locally or in CI.
 # --cov-fail-under is the regression gate: the build fails if total
 # coverage drops below this percentage.  Raise it as tests are added.
-# Baseline after PRs #43+#44+#45 (write.py DB, backfill, prefilter/rank main):
-# ~57%. Gate set at 55 (2 points of headroom).
-# Next target: 65% (fetch.py adapters + replay_writer.main()).
-addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=55"
+# Baseline after PRs #43-#51 + #57 (full backfill coverage): 98.50%.
+# Gate set at 85 (13 points of headroom to absorb minor fluctuation and
+# future code additions before new tests are written).
+# The 13-point buffer is intentionally larger than usual: the remaining
+# uncovered lines (rank.py 177/302 dead code, fetch.py/llm.py/prefilter.py
+# edge branches, replay_writer.py) are all low-risk paths that may be
+# excluded via pragma: no cover in a follow-up PR (see issue #47).
+addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=85"
 
 [tool.coverage.report]
 # Lines only reachable when the module is run as __main__ don't count

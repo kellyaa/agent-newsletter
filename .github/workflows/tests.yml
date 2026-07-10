@@ -20,11 +20,12 @@ jobs:
 
       - run: uv sync --extra test
 
-      # --cov-fail-under=55 gates against coverage regression.
-      # Baseline after PRs #43+#44+#45 (write.py DB, backfill, prefilter/rank main): ~57%.
-      # Gate is set 2 points below actual to allow minor fluctuation while
-      # blocking large regressions. Raise as more tests are added (see issue #48).
-      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term --cov-fail-under=55
+      # --cov-fail-under=85 gates against coverage regression.
+      # Baseline after PRs #43-#51 + #57 (full backfill.py coverage): 98.50%.
+      # Gate set at 85 (13 points below actual) to block large regressions while
+      # allowing headroom for future code additions before new tests are written.
+      # Raise this threshold as additional tests are added (see issue #52).
+      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term --cov-fail-under=85
 
       - uses: actions/upload-artifact@v4
         if: always()
