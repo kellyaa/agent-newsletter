@@ -2,7 +2,7 @@
 
 A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit, GitHub releases), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
-The site is at: **https://kellyaa.github.io/agent-newsletter** *(once deploy lands)*.
+The site is at: **https://kellyaa.github.io/agent-newsletter**
 
 ## What's here
 
@@ -20,6 +20,8 @@ scripts/
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   db.py                 — schema, URL canonicalization
+  backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
+  replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
 watchdog.sh             — fires macOS notification if no commit in >36h
 launchd/                — plists + install.sh for the two daily/hourly jobs
@@ -78,6 +80,8 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MODEL` | yes | Model id for the editorial writer (quality matters more) |
 | `RANKER_TIMEOUT_S` | no | Per-call timeout, default 1800 |
 | `WRITER_TIMEOUT_S` | no | Per-call timeout, default 1200 |
+| `RANKER_MAX_TOKENS` | no | Max completion tokens for ranker calls, default 32000 |
+| `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
