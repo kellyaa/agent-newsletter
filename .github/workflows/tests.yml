@@ -20,11 +20,10 @@ jobs:
 
       - run: uv sync --extra test
 
-      # --cov-fail-under=55 gates against coverage regression.
-      # Baseline after PRs #43+#44+#45 (write.py DB, backfill, prefilter/rank main): ~57%.
-      # Gate is set 2 points below actual to allow minor fluctuation while
-      # blocking large regressions. Raise as more tests are added (see issue #48).
-      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term --cov-fail-under=55
+      # Gate is read from pyproject.toml [tool.pytest.ini_options] addopts.
+      # Do NOT hardcode --cov-fail-under here — change it in pyproject.toml
+      # so both local runs and CI use the same threshold (refs #52, #55).
+      - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -44,3 +43,6 @@ jobs:
           # Annotate changed lines that lack coverage directly in the PR diff.
           ANNOTATE_MISSING_LINES: true
           ANNOTATION_TYPE: warning
+          # Required: paths in coverage.xml are relative; without this flag the
+          # action fails to match files (refs ci-maintainer advisory, issues #52).
+          RELATIVE_FILES: true
