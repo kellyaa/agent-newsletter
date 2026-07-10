@@ -17,7 +17,7 @@ import os
 import sys
 from datetime import datetime
 
-from db import REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import call_llm
 
 logging.basicConfig(
@@ -27,7 +27,7 @@ logging.basicConfig(
 log = logging.getLogger("write")
 
 PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
-ISSUES_DIR = REPO_ROOT / "site" / "src" / "content" / "issues"
+ISSUES_DIR = CONTENT_ROOT / "site" / "src" / "content" / "issues"
 
 WRITER_MODEL = os.environ.get("WRITER_MODEL", "gpt-4o-mini")
 WRITER_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
