@@ -238,3 +238,55 @@ class TestMaybeInvalidatePapersScores:
 
         expected = hashlib.sha256(b"rubric v2").hexdigest()
         assert hash_file.read_text().strip() == expected
+
+    def test_returns_zero_when_rubric_file_absent(self, db_with_scored_papers, monkeypatch):
+        """Returns 0 without DB changes when rank.md is absent (line 197: if not current)."""
+        conn, tmp_path = db_with_scored_papers
+        import prefilter as pf_mod
+
+        # Point to a non-existent rubric file
+        rubric = tmp_path / "missing_rank.md"
+        hash_file = tmp_path / ".rubric_hash"
+        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
+        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+
+        count = _maybe_invalidate_papers_scores(conn)
+        assert count == 0
+
+        # Score should be untouched
+        row = conn.execute("SELECT score FROM items WHERE id='p1'").fetchone()
+        assert row["score"] == 8
+
+    def test_first_run_records_hash_without_invalidation(self, db_with_scored_papers, monkeypatch):
+        """Line 215: when hash changed but no scored papers exist, logs 'rubric hash recorded'."""
+        import prefilter as pf_mod
+        import hashlib
+        import db as db_mod
+        tmp_path = db_with_scored_papers[1]  # only use tmp_path, not the scored-papers conn
+
+        # Use a FRESH db with no scored papers (so invalidated == 0, triggering line 215)
+        fresh_db = tmp_path / "fresh.db"
+        db_mod.init_db(fresh_db)
+        conn_fresh = db_mod.connect(fresh_db)
+
+        rubric = tmp_path / "rank.md"
+        rubric.write_text("rubric first run")
+        hash_file = tmp_path / ".rubric_hash"
+        # Ensure no existing hash file
+        if hash_file.exists():
+            hash_file.unlink()
+
+        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
+        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+
+        try:
+            count = _maybe_invalidate_papers_scores(conn_fresh)
+            # No papers to invalidate → returns 0
+            assert count == 0
+
+            # Hash file should now exist with current rubric hash
+            assert hash_file.exists()
+            expected = hashlib.sha256(b"rubric first run").hexdigest()
+            assert hash_file.read_text().strip() == expected
+        finally:
+            conn_fresh.close()

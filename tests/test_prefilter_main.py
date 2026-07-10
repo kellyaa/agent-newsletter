@@ -404,3 +404,33 @@ class TestPrefilterMainPrerankCap:
 
         data = json.loads(candidates_out.read_text())
         assert len(data["papers"]) == PAPER_PRERANK_CAP
+
+
+class TestPrefilterMainMalformedTags:
+    """Tests for edge cases in the prescored-paper tag JSON parsing (lines 367-368)."""
+
+    def test_malformed_tags_json_falls_back_to_empty_list(
+        self, db_path, candidates_out, rubric_file, monkeypatch
+    ):
+        """Malformed tags JSON in a prescored paper produces [] in candidates.json (lines 367-368)."""
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        conn.execute(
+            """
+            INSERT INTO items (id, source, url, canonical_url, title, fetched_at,
+                status, section, score, tags, why, first_seen_date, last_seen_date, appearances)
+            VALUES ('mt1','arxiv:x','https://a.com/mt1','https://a.com/mt1',
+                    'Malformed Tags Paper','2026-07-09T00:00:00Z','candidate','papers',
+                    7,'not valid json','good paper','2026-07-09','2026-07-09',1)
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        _run_main(db_path, candidates_out, rubric_file, monkeypatch)
+
+        data = json.loads(candidates_out.read_text())
+        prescored = data["papers_prescored"]
+        item = next((it for it in prescored if it["id"] == "mt1"), None)
+        assert item is not None
+        assert item["tags"] == []
