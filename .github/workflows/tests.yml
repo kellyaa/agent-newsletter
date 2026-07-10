@@ -43,6 +43,5 @@ jobs:
           # Annotate changed lines that lack coverage directly in the PR diff.
           ANNOTATE_MISSING_LINES: true
           ANNOTATION_TYPE: warning
-          # Required: paths in coverage.xml are relative; without this flag the
-          # action fails to match files (refs ci-maintainer advisory, issues #52).
-          RELATIVE_FILES: true
+          # Note: relative_files = true is set in [tool.coverage.run] in pyproject.toml
+          # (py-cov-action v3 does not accept RELATIVE_FILES as an input param).
