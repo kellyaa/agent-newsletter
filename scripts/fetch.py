@@ -54,7 +54,7 @@ def _to_iso(value) -> str | None:
             return datetime(*value[:6], tzinfo=timezone.utc).isoformat()
         except Exception:
             return None
-    return None
+    return None  # pragma: no cover — feedparser only yields str or struct_time
 
 
 # ---------- Source adapters ----------

@@ -324,3 +324,34 @@ class TestLoadFromIssueFile:
         assert metadata["items_featured_news"] == 1
         assert metadata["items_featured_blogs"] == 0
         assert metadata["items_featured_total"] == 3
+
+    def test_malformed_tags_json_falls_back_to_empty(self, db, tmp_path, monkeypatch):
+        """json.JSONDecodeError for tags falls back to [] (lines 88-89)."""
+        import replay_writer as rw_mod
+        import sqlite3
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+
+        # Insert item with malformed tags JSON directly
+        db.execute("""
+            INSERT OR REPLACE INTO items (
+                id, source, url, canonical_url, title, author, published_at,
+                fetched_at, raw_text, score, tags, why, status, section,
+                first_seen_date, last_seen_date, appearances
+            ) VALUES (
+                'mt1', 'arxiv:cs.AI', 'https://arxiv.org/abs/mt1',
+                'https://arxiv.org/abs/mt1', 'Malformed Tags Paper', 'Author',
+                '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z',
+                'Abstract.', 8, 'NOT VALID JSON', 'good', 'published', 'papers',
+                '2026-06-01', '2026-06-01', 1
+            )
+        """)
+        db.commit()
+
+        _write_issue(issues_dir, "2026-06-01", ["mt1"])
+        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+
+        featured, _, _ = load_from_issue_file(db, "2026-06-01")
+        assert len(featured) == 1
+        assert featured[0]["tags"] == []

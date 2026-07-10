@@ -333,6 +333,39 @@ class TestFetchArxiv:
         called_url = mock_ctx.get.call_args[0][0]
         assert "arxiv.org" in called_url
 
+    def test_entry_without_link_skipped(self):
+        """Arxiv entries with no link are silently skipped (line 113)."""
+        # feedparser uses <id> as link when <link> is absent in Atom feeds.
+        # To produce an entry with entry.get("link") == None, we need an
+        # entry with no <id> and no <link> — achieved by omitting both.
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ArXiv Query</title>
+  <entry>
+    <title>Paper Without Link Or Id</title>
+    <summary>No link or id here.</summary>
+    <author><name>Alice</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002v1</id>
+    <link href="http://arxiv.org/abs/2401.00002"/>
+    <title>Paper With Link</title>
+    <summary>Has a link.</summary>
+    <author><name>Bob</name></author>
+  </entry>
+</feed>"""
+        mock_resp = _mock_httpx_response(xml.encode())
+        with patch("httpx.Client") as mock_client_cls:
+            mock_ctx = MagicMock()
+            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
+            mock_ctx.__exit__ = MagicMock(return_value=False)
+            mock_ctx.get.return_value = mock_resp
+            mock_client_cls.return_value = mock_ctx
+            items = list(fetch_arxiv({"id": "x", "query": "cat:cs.AI"}))
+        # Only the entry with a link should be yielded
+        assert len(items) == 1
+        assert "With Link" in items[0].title
+
 
 # ---------------------------------------------------------------------------
 # fetch_hn()

@@ -297,7 +297,7 @@ def main() -> int:
     for bucket, items in candidates.items():
         section = "papers" if bucket in ("papers", "papers_prescored") else bucket
         if section not in SECTION_RULES:
-            continue
+            continue  # pragma: no cover — candidates.json only has valid bucket keys
         for it in items:
             by_id_section[it["id"]] = section
 

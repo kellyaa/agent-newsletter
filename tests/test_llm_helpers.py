@@ -173,3 +173,58 @@ class TestOneShotMarkdownFence:
     def test_non_dict_json_raises(self):
         with pytest.raises(RuntimeError, match="non-object"):
             self._call_one_shot("[1, 2, 3]")
+
+    def test_max_tokens_passed_to_create(self):
+        """When max_tokens is set, it is included in the completions.create() call (line 88)."""
+        from llm import _one_shot
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=512,
+            label="test",
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert call_kwargs.get("max_tokens") == 512
+
+    def test_usage_stats_logged_when_present(self, caplog):
+        """When resp.usage is present, prompt/completion tokens are logged (line 94)."""
+        import logging
+        from llm import _one_shot
+
+        usage = MagicMock()
+        usage.prompt_tokens = 100
+        usage.completion_tokens = 50
+        usage.total_tokens = 150
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message.content = '{"answer": "yes"}'
+
+        resp = MagicMock()
+        resp.choices = [choice]
+        resp.usage = usage
+
+        client = MagicMock()
+        client.chat.completions.create.return_value = resp
+
+        with caplog.at_level(logging.INFO, logger="llm"):
+            _one_shot(
+                client,
+                prompt="test",
+                schema=SCHEMA,
+                schema_name="test",
+                model="m",
+                timeout_s=10,
+                headers={},
+                max_tokens=None,
+                label="test-label",
+            )
+
+        assert any("prompt_tokens" in r.message or "100" in r.message
+                   for r in caplog.records)
