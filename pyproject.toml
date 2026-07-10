@@ -29,6 +29,11 @@ package = false
 # Next target: 65% (fetch.py adapters + replay_writer.main()).
 addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=55"
 
+[tool.coverage.run]
+# Write relative source paths so coverage.xml works in CI (py-cov-action v3
+# requires relative paths; absolute paths cause "No source for code" errors).
+relative_files = true
+
 [tool.coverage.report]
 # Lines only reachable when the module is run as __main__ don't count
 # against coverage — they're tested implicitly by the CLI.
