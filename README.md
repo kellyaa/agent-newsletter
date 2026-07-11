@@ -36,7 +36,7 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 ┌─────────────┐  ┌────────────┐  ┌───────────┐  ┌───────────┐  ┌────────────┐
 │  fetch.py   │→ │ prefilter  │→ │  rank.py  │→ │  write.py │→ │ publish.py │
 │ (RSS/arXiv  │  │ (gates,    │  │ (3× LLM,  │  │ (1× LLM,  │  │ (promote,  │
-│  /HN/gh…)   │  │  dedup)    │  │  per sec.)│  │  prose)   │  │  runs row) │
+│  /HN/…)     │  │  dedup)    │  │  per sec.)│  │  prose)   │  │  runs row) │
 └─────────────┘  └────────────┘  └───────────┘  └───────────┘  └────────────┘
                                                        │
                                                        ▼

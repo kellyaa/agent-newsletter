@@ -76,7 +76,7 @@ Pure Python, no LLM calls. Pulls from:
 | Semantic Schl | REST API                           | Backfill citation counts on arxiv hits                                                     |
 | HN            | Algolia API                        | `query=agent OR LLM`, min points threshold, last 48h                                       |
 | Reddit        | `.json` endpoints                  | `r/LocalLLaMA`, `r/MachineLearning`, min upvotes                                           |
-| GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent`; releases from a watchlist                   |
+| GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent` (releases source removed 2026-05-14)         |
 | HF Daily      | Scrape HTML of daily-papers page   | Pre-curated academic signal                                                                |
 
 Feed list lives in `sources.yaml` — easy to edit without touching code.
@@ -161,7 +161,7 @@ The writer produces:
 1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
-   2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items where `source` starts with `gh:` (releases), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
+   2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from RSS/HN/Reddit that are announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes. (`gh:` source family exists in the code but `github_releases:` is empty in `sources.yaml` — removed 2026-05-14.)
    3. **Blogs** — practitioner writeups, deep dives, tutorials, opinion. Items from RSS feeds (Simon Willison, Latent Space, Interconnects, etc.) and HN/Reddit discussions of practitioner posts. This is where the editorial voice should be sharpest.
 
    Each item within a section:
@@ -182,7 +182,7 @@ Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY
 | Source family | Default section |
 |---|---|
 | `arxiv:*`, `hf-daily:*` | `papers` |
-| `gh:*` (release watchlist) | `news` |
+| `gh:*` (release watchlist — removed 2026-05-14) | `news` |
 | `hn:*`, `reddit:*` | `news` |
 | `rss:*` | `blogs` |
 
@@ -410,7 +410,7 @@ The operator-supplied seed list, to be fleshed out with concrete feed URLs durin
 - arXiv (`cs.AI`, `cs.CL`, `cs.SE` agent-related queries)
 - Hugging Face Daily Papers
 - Hacker News (Algolia API, score-gated)
-- Selected GitHub release watchlist (LangGraph, CrewAI, AutoGen, Claude Agent SDK, MCP servers, DSPy, etc.)
+- Selected GitHub release watchlist (LangGraph, CrewAI, AutoGen, Claude Agent SDK, MCP servers, DSPy, etc.) — **removed 2026-05-14** from active sources (see §Source list realities)
 
 **Out of scope for v1:** Twitter/X, podcasts (no transcript pipeline), YouTube, Discord/Slack communities.
 
