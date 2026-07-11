@@ -289,7 +289,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     """Pin write.py's logic to target_date and write the issue file."""
     import write as write_mod
 
-    issues_dir = REPO / "site" / "src" / "content" / "issues"
+    issues_dir = write_mod.ISSUES_DIR
     out_path = issues_dir / f"{target_date}.md"
     if out_path.exists() and not force:
         log.error(

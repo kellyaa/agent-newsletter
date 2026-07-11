@@ -870,3 +870,179 @@ class TestBackfillMainEdgeCases:
         # appendix items exist → file IS written (not None)
         assert result is not None
         assert result.name == "2026-07-15.md"
+
+
+# ---------------------------------------------------------------------------
+# run_writer_for_date — CONTENT_ROOT routing (regression: issue #64)
+# ---------------------------------------------------------------------------
+
+class TestRunWriterForDateContentRoot:
+    """Regression tests for issue #64: backfill.py must use write_mod.ISSUES_DIR
+    (which respects CONTENT_ROOT) rather than the hardcoded REPO path.
+    """
+
+    def _insert_featured(self, db_path: Path) -> None:
+        import db as db_mod
+        db_mod.init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            INSERT INTO items (id, source, url, canonical_url, title, author,
+                               published_at, fetched_at, raw_text, status, section,
+                               score, tags, why, first_seen_date, last_seen_date,
+                               appearances, keyword_gate_bypass, times_competed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("feat1", "arxiv:cs", "http://arxiv.org/1", "http://arxiv.org/1",
+              "Paper Title", "Author A", "2026-07-09", "2026-07-09",
+              "Abstract text.", "featured", "papers", 9, '["agents"]',
+              "excellent paper", "2026-07-09", "2026-07-10", 0, 0, 0))
+        conn.commit()
+        conn.close()
+
+    def test_uses_write_mod_issues_dir_not_repo(self, tmp_path, monkeypatch):
+        """run_writer_for_date() writes to write_mod.ISSUES_DIR, not REPO/.
+
+        This is the core regression test for issue #64.  Before the fix,
+        backfill.py hardcoded `REPO / "site" / "src" / "content" / "issues"`.
+        After the fix it uses `write_mod.ISSUES_DIR`, which means CONTENT_ROOT
+        is respected.  We validate this by pointing write_mod.ISSUES_DIR at a
+        directory DIFFERENT from `REPO/site/...` and confirming the file lands
+        in the write_mod location.
+        """
+        import backfill as bf
+        import db as db_mod
+        import write as write_mod
+
+        db_path = tmp_path / "state.db"
+        self._insert_featured(db_path)
+        conn = db_mod.connect(db_path)
+
+        # Set write_mod.ISSUES_DIR to a separate directory (simulates CONTENT_ROOT worktree)
+        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+
+        # REPO points to tmp_path; old hardcoded path would land here
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "write.md").write_text("rubric")
+
+        fake_output = {"theme": "Agents at scale", "items": [{"id": "feat1", "summary": "Paper."}]}
+        monkeypatch.setattr(write_mod, "invoke_writer", lambda p: fake_output)
+
+        result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
+        conn.close()
+
+        expected = content_issues / "2026-07-15.md"
+        old_path = tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md"
+
+        assert result == expected, (
+            f"File should be in write_mod.ISSUES_DIR ({expected}), got {result}"
+        )
+        assert expected.exists(), "Issue file not found in write_mod.ISSUES_DIR"
+        assert not old_path.exists(), (
+            "File must NOT appear in REPO/site/... — that is the pre-fix bug location"
+        )
+
+    def test_content_root_env_controls_output_dir(self, tmp_path, monkeypatch):
+        """End-to-end: CONTENT_ROOT env var routes backfill output to the correct tree.
+
+        Sets CONTENT_ROOT, reloads db+write to pick it up, then calls
+        run_writer_for_date() and confirms the file lands inside CONTENT_ROOT.
+        """
+        import importlib
+        import backfill as bf
+        import db as db_mod
+        import write as write_mod
+
+        content_root = tmp_path / "content-worktree"
+        content_root.mkdir()
+        monkeypatch.setenv("CONTENT_ROOT", str(content_root))
+        importlib.reload(db_mod)
+        importlib.reload(write_mod)
+
+        db_path = content_root / "state.db"
+        self._insert_featured(db_path)
+        conn = db_mod.connect(db_path)
+
+        content_issues = content_root / "site" / "src" / "content" / "issues"
+        content_issues.mkdir(parents=True)
+
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "write.md").write_text("rubric")
+
+        fake_output = {"theme": "Agents", "items": [{"id": "feat1", "summary": "Solid."}]}
+        monkeypatch.setattr(write_mod, "invoke_writer", lambda p: fake_output)
+
+        result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
+        conn.close()
+
+        expected = content_issues / "2026-07-15.md"
+        assert result is not None, "run_writer_for_date returned None unexpectedly"
+        assert result.is_relative_to(content_root), (
+            f"Output {result} should be inside CONTENT_ROOT ({content_root})"
+        )
+        assert result == expected
+
+    def test_file_exists_check_also_uses_write_mod_issues_dir(self, tmp_path, monkeypatch):
+        """The pre-existence check (force=False) uses write_mod.ISSUES_DIR, not REPO.
+
+        Verifies that if the file already exists in write_mod.ISSUES_DIR, the
+        function correctly returns None (respecting the guard), rather than
+        always returning None because it looks in the wrong directory.
+        """
+        import backfill as bf
+        import db as db_mod
+        import write as write_mod
+
+        db_path = tmp_path / "state.db"
+        self._insert_featured(db_path)
+        conn = db_mod.connect(db_path)
+
+        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues.mkdir(parents=True)
+        # Pre-create the file in the write_mod location
+        (content_issues / "2026-07-15.md").write_text("existing content")
+
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "write.md").write_text("rubric")
+
+        result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
+        conn.close()
+
+        # File exists in write_mod.ISSUES_DIR → should return None
+        assert result is None, (
+            "Expected None when issue file already exists in write_mod.ISSUES_DIR"
+        )
+
+    def test_force_flag_overwrites_in_write_mod_issues_dir(self, tmp_path, monkeypatch):
+        """With --force, run_writer_for_date() overwrites the file in write_mod.ISSUES_DIR."""
+        import backfill as bf
+        import db as db_mod
+        import write as write_mod
+
+        db_path = tmp_path / "state.db"
+        self._insert_featured(db_path)
+        conn = db_mod.connect(db_path)
+
+        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues.mkdir(parents=True)
+        existing = content_issues / "2026-07-15.md"
+        existing.write_text("stale content")
+
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "write.md").write_text("rubric")
+
+        fake_output = {"theme": "New theme", "items": [{"id": "feat1", "summary": "Fresh."}]}
+        monkeypatch.setattr(write_mod, "invoke_writer", lambda p: fake_output)
+
+        result = bf.run_writer_for_date(conn, "2026-07-15", force=True)
+        conn.close()
+
+        assert result is not None
+        assert result == existing
+        assert "stale content" not in result.read_text(), "File should have been overwritten"
