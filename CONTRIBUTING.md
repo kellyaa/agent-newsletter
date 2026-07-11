@@ -22,6 +22,7 @@ Thank you for contributing. This document covers development setup, the test sui
 
 - **macOS** (primary platform — the scheduler uses launchd; Linux is supported for development and CI but the cron wiring is macOS-only)
 - [**uv**](https://docs.astral.sh/uv/) — Python package manager (`brew install uv` or the official installer)
+- [**Node.js ≥ 18.17.1**](https://nodejs.org/) — required for the Astro 5 site build (CI pins Node 22; `node --version` should show ≥ 18.17.1)
 - [**pnpm**](https://pnpm.io/) — Node package manager for the Astro site (`npm install -g pnpm`)
 - Access to an **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, etc.) — needed only if you intend to run the full pipeline; not needed for code or test work
 
@@ -57,6 +58,15 @@ git worktree add .worktrees/content content
 ./run.sh --refetch    # also re-fetch (use sparingly; arXiv rate-limits)
 ```
 
+> ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
+> hard-coded author paths (`/Users/kelly/git/incubation/…`). Edit both
+> `launchd/com.kelly.agent-newsletter.plist` and
+> `launchd/com.kelly.agent-newsletter-watchdog.plist`, replacing every occurrence of
+> `/Users/kelly/git/incubation` with your actual repo root and `/Users/kelly/.local/bin`
+> with your actual local bin path before running `install.sh`. Installing without editing
+> these paths will silently install plists that point at the wrong location and the
+> scheduled job will never run.
+
 **Running the Astro dev server:**
 
 The Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. It requires the content worktree to be set up (step 5 above).
@@ -80,7 +90,7 @@ uv run --extra test pytest --cov-report=html
 uv run --extra test pytest tests/test_fetch_adapters.py -v
 ```
 
-The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current baseline is ~90% coverage.
+The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current gate is `--cov-fail-under=95`; line coverage is at 100% and branch coverage is ~99% as of the last gate-setting PR.
 
 CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR with failing tests or coverage below the gate will not be merged.
 

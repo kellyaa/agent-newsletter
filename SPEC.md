@@ -76,7 +76,7 @@ Pure Python, no LLM calls. Pulls from:
 | Semantic Schl | REST API                           | Backfill citation counts on arxiv hits                                                     |
 | HN            | Algolia API                        | `query=agent OR LLM`, min points threshold, last 48h                                       |
 | Reddit        | `.json` endpoints                  | `r/LocalLLaMA`, `r/MachineLearning`, min upvotes                                           |
-| GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent`; releases from a watchlist                   |
+| GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent` (releases watchlist removed 2026-05-14 — see §Source list realities) |
 | HF Daily      | Scrape HTML of daily-papers page   | Pre-curated academic signal                                                                |
 
 Feed list lives in `sources.yaml` — easy to edit without touching code.
@@ -93,7 +93,7 @@ raw_text (abstract/summary/first N chars), fetched_at, status
 Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 
 Rules (all configurable in `scripts/prefilter.py`):
-- **Recency** (per source family): RSS = 30d, GitHub releases = 14d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items.
+- **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases were removed as an active source on 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need >50 points; Reddit >100 upvotes; arXiv papers need an abstract (not just title).
 - **Dedup across time:** skip any item whose `id` is already `status >= ranked` in the DB. (See Dedup section.)
@@ -110,7 +110,7 @@ Survivors get `status = 'candidate'`.
 2. Score each item 1-10 against the rubric below, applying the **section-specific** axis emphasis and threshold.
 3. Return a JSON array: `[{id, score, tags, one_line_why}]`. Section is not emitted — it was set deterministically upstream.
 
-The ranker is invoked with all three buckets in a single call so it has cross-section context (e.g., it can see that today is paper-heavy and hold the bar higher), but it scores each item against its own section's rubric.
+The ranker makes three separate calls — one per section (`papers`, `news`, `blogs`) — so each section's candidates are scored in isolation against that section's rubric. (A single 150-item call risks timeouts and quality degradation; see §LLM API lessons.)
 
 **Ranking rubric** (codified in the prompt):
 
@@ -140,7 +140,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `.nous/newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. Burn-in: review the score-10 miss rate ~4 weeks after this deploy (early July 2026) and tune `burst_trigger_count` if the trigger fires too rarely or too often.
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. Burn-in review was due early July 2026 — **⚠️ overdue as of 2026-07-11**: check the score-10 miss rate in the `runs` table and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often.
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
@@ -161,7 +161,7 @@ The writer produces:
 1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
-   2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items where `source` starts with `gh:` (releases), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
+   2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from `gh:*` (trending repos), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
    3. **Blogs** — practitioner writeups, deep dives, tutorials, opinion. Items from RSS feeds (Simon Willison, Latent Space, Interconnects, etc.) and HN/Reddit discussions of practitioner posts. This is where the editorial voice should be sharpest.
 
    Each item within a section:
@@ -182,7 +182,7 @@ Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY
 | Source family | Default section |
 |---|---|
 | `arxiv:*`, `hf-daily:*` | `papers` |
-| `gh:*` (release watchlist) | `news` |
+| `gh:*` (trending repos; releases watchlist removed 2026-05-14) | `news` |
 | `hn:*`, `reddit:*` | `news` |
 | `rss:*` | `blogs` |
 
@@ -410,7 +410,7 @@ The operator-supplied seed list, to be fleshed out with concrete feed URLs durin
 - arXiv (`cs.AI`, `cs.CL`, `cs.SE` agent-related queries)
 - Hugging Face Daily Papers
 - Hacker News (Algolia API, score-gated)
-- Selected GitHub release watchlist (LangGraph, CrewAI, AutoGen, Claude Agent SDK, MCP servers, DSPy, etc.)
+- GitHub trending repos tagged `ai-agents`/`llm-agent` (release watchlist removed 2026-05-14 — see §Source list realities)
 
 **Out of scope for v1:** Twitter/X, podcasts (no transcript pipeline), YouTube, Discord/Slack communities.
 
