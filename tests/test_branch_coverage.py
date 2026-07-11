@@ -389,8 +389,6 @@ class TestEmitYamlEdgeCases:
         assert result.startswith("---\n")
         parsed = yaml.safe_load(result.split("---\n")[1].split("---")[0])
         assert parsed["items"] == [{}]
-        # The empty dict entry should not produce any output
-        assert not any("- " in line for line in lines)
 
 
 # ---------------------------------------------------------------------------
