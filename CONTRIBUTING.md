@@ -185,7 +185,7 @@ Use when you've changed `prompts/write.md` and want to compare the new writer ou
 
 ```bash
 # Replay the writer for a past date (reads published items from state.db)
-uv run scripts/replay_writer.py --date 2026-06-10
+uv run scripts/replay_writer.py 2026-06-10
 ```
 
 Output goes to `logs/theme-replay-<YYYY-MM-DD>.json` in the repo root. Use it to review prompt changes before running the live pipeline.
