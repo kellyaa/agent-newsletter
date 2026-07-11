@@ -95,7 +95,7 @@ Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 Rules (all configurable in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases was a supported source family with a 14d window but was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
-- **Source reputation floor:** HN items need >50 points; Reddit >100 upvotes; arXiv papers need an abstract (not just title).
+- **Source reputation floor:** HN items need ≥40 points (default floor is 50 in `fetch.py`, but all active `sources.yaml` HN entries override to 40; MCP queries use 30); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
 - **Dedup across time:** skip any item whose `id` is already `status >= ranked` in the DB. (See Dedup section.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
