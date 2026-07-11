@@ -229,7 +229,7 @@ The single most important correctness property. Three layers:
 - **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
 - Topic-level dedup: a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") is passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news.
 
-**Papers multi-day candidate pool (issue #16, score-once semantics).**
+**Papers multi-day candidate pool ([issue #16](https://github.com/kellyaa/agent-newsletter/issues/16), score-once semantics).**
 
 arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the daily newsletter wants ~3–5 papers every issue. The fix is to amortize supply across the week:
 
@@ -268,7 +268,7 @@ CREATE TABLE items (
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
-  times_competed INTEGER NOT NULL DEFAULT 0  -- papers multi-day pool counter (issue #16)
+  times_competed INTEGER NOT NULL DEFAULT 0  -- papers multi-day pool counter (issue #16, shipped)
 );
 
 CREATE TABLE runs (
