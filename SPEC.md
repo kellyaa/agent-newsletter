@@ -140,7 +140,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `.nous/newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (due ~2026-07-07, now overdue):** check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often.
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (due ~2026-07-07, now overdue):** check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often.
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
@@ -175,7 +175,7 @@ The writer produces:
 3. **Appendix** — single bulleted list `[Title](url) — source` for uncertain items, regardless of section. No summaries.
 4. **Footer** — run metadata (items considered, items featured per section, LLM cost if available).
 
-**Section assignment** is done deterministically in `prefilter.py` based on the source family — *before* the ranker runs. The ranker then receives three already-bucketed candidate lists and ranks each independently. No LLM judgment on which bucket an item belongs to; the source decides.
+**Section assignment** is done deterministically in `prefilter.py` based on the source family — *before* the ranker runs. The ranker then receives three already-sectioned candidate lists and ranks each independently. No LLM judgment on which section an item belongs to; the source decides.
 
 Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY_FAMILY`):
 
@@ -235,7 +235,7 @@ arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the
 
 - Papers that pass prefilter sit in `status = 'candidate'` for up to `PAPER_POOL_MAX_AGE_DAYS = 7` days from their `published_at`, *or* until they have lost `PAPER_POOL_MAX_COMPETES = 7` competitions, whichever comes first. Prefilter ages out anything past either ceiling at the start of each run.
 - The papers ranker scores each paper exactly once. After that first scoring, the score stays on the row and the LLM is not invoked for it again — the rubric in `prompts/rank.md` is absolute (0–10 against fixed thresholds), not relative to the batch, so re-scoring would be redundant cost.
-- Each daily run, prefilter emits two papers buckets in `candidates.json`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 50` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union.
+- Each daily run, prefilter emits two papers sections in `candidates.json`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 50` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union.
 - Papers with `score >= featured_min` that *lose the featured cap* on a heavy day stay at `status = 'candidate'` to re-compete the next day. Today (pre-issue-16) those papers get sealed to `appendix` and never reappear, even if they scored 9 or 10 — on a 30-paper day, the bottom 25 of the would-be-featured set are wasted. The pool flips this: a strong paper appears in the issue at most once, on whichever day it actually wins a featured slot, and is held back from the appendix until then.
 - Mid-band papers (`appendix_min <= score < featured_min`) still go to `appendix` (terminal). They're not strong enough to ever win featured, so leaving them in the pool would just bloat it without ever surfacing them. Papers with `score < appendix_min` go to `dropped` (same as today).
 - A per-row `times_competed` counter (incremented on each run where a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them.

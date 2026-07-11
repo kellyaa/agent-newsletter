@@ -51,7 +51,7 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 
 ## Setup (one-time)
 
-Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), [gh](https://cli.github.com/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.).
+Prereqs: macOS, Python ≥ 3.11, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/) (Node.js ≥ 18.17.1), [gh](https://cli.github.com/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.).
 
 ```bash
 # Python deps
@@ -97,7 +97,8 @@ To trigger a run on demand (without waiting for 07:00):
 
 ```bash
 ./run.sh                # idempotent
-./run.sh --force        # re-run today from scratch
+./run.sh --force        # re-run today from scratch (keeps fetched data)
+./run.sh --refetch      # also re-fetch from scratch (use sparingly; arXiv rate-limits)
 ```
 
 To uninstall the schedulers:
