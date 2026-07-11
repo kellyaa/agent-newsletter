@@ -242,6 +242,15 @@ class TestMainNormalPublish:
 
         monkeypatch.setattr(publish_mod, "connect", _make_conn)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
 
         with patch("publish.datetime") as mock_dt:
             mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
