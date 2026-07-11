@@ -782,7 +782,7 @@ rss:
             published_at=None,
             raw_text="body",
         )
-        monkeypatch.setattr(fetch_mod, "fetch_rss", lambda src: [mock_item])
+        monkeypatch.setattr(fetch_mod, "fetch_rss", lambda src, **kwargs: [mock_item])
         result = self._run_main(db_path, sources_path, monkeypatch)
         assert result == 0
 
@@ -803,7 +803,7 @@ rss:
 """)
         call_count = [0]
 
-        def mock_fetch_rss(src):
+        def mock_fetch_rss(src, **kwargs):
             call_count[0] += 1
             if src["id"] == "bad-feed":
                 # Use a generator that raises on iteration (not on call)
@@ -829,7 +829,7 @@ rss:
     url: https://example.com/bad.xml
 """)
 
-        def _raising_rss(src):
+        def _raising_rss(src, **kwargs):
             raise RuntimeError("all failed")
             yield  # pragma: no cover
 
@@ -847,7 +847,7 @@ arxiv:
     max_results: 5
 """)
         called = []
-        def mock_fetch_arxiv(src):
+        def mock_fetch_arxiv(src, **kwargs):
             called.append(src["id"])
             return []  # no items
         monkeypatch.setattr(fetch_mod, "fetch_arxiv", mock_fetch_arxiv)
@@ -864,7 +864,7 @@ hn:
     query: LLM agents
 """)
         called = []
-        def mock_fetch_hn(src):
+        def mock_fetch_hn(src, **kwargs):
             called.append(src["id"])
             return []
         monkeypatch.setattr(fetch_mod, "fetch_hn", mock_fetch_hn)
@@ -881,7 +881,7 @@ reddit:
     min_score: 100
 """)
         called = []
-        def mock_fetch_reddit(src):
+        def mock_fetch_reddit(src, **kwargs):
             called.append(src["id"])
             return []
         monkeypatch.setattr(fetch_mod, "fetch_reddit", mock_fetch_reddit)
@@ -915,7 +915,7 @@ arxiv:
   - id: cs-lg
     query: cat:cs.LG
 """)
-        monkeypatch.setattr(fetch_mod, "fetch_arxiv", lambda src: [])
+        monkeypatch.setattr(fetch_mod, "fetch_arxiv", lambda src, **kwargs: [])
         sleep_calls = []
         with patch("time.sleep", side_effect=sleep_calls.append):
             self._run_main(db_path, sources_path, monkeypatch)

@@ -31,6 +31,21 @@ USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
 HTTP_TIMEOUT = 20.0
 
 
+def _make_http_client() -> httpx.Client:
+    """Create a shared HTTP client with connection pooling.
+
+    A single Client instance reuses TCP connections across requests to the
+    same host, avoiding repeated TLS handshakes and TCP slow-starts. The
+    caller is responsible for closing the client when done (via context
+    manager or explicit .close()).
+    """
+    return httpx.Client(
+        timeout=HTTP_TIMEOUT,
+        headers={"User-Agent": USER_AGENT},
+        follow_redirects=True,
+    )
+
+
 @dataclass
 class Item:
     source: str
@@ -59,14 +74,18 @@ def _to_iso(value) -> str | None:
 
 # ---------- Source adapters ----------
 
-def fetch_rss(source: dict) -> Iterable[Item]:
+def fetch_rss(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     url = source["url"]
     log.info("rss: fetching %s (%s)", source["id"], url)
-    # Pre-fetch with httpx so we get reliable redirect handling and HTTPS upgrades.
-    with httpx.Client(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT},
-                      follow_redirects=True) as client:
-        resp = client.get(url)
+    # Use shared client for connection reuse; fall back to a one-shot client
+    # for backward compatibility when called without one.
+    _client = client or _make_http_client()
+    try:
+        resp = _client.get(url)
         resp.raise_for_status()
+    finally:
+        if client is None:
+            _client.close()
     parsed = feedparser.parse(resp.content)
     if parsed.bozo and not parsed.entries:
         raise RuntimeError(f"feedparser bozo, no entries: {parsed.bozo_exception}")
@@ -88,13 +107,13 @@ def fetch_rss(source: dict) -> Iterable[Item]:
         )
 
 
-def fetch_arxiv(source: dict) -> Iterable[Item]:
+def fetch_arxiv(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     query = source["query"]
     max_results = source.get("max_results", 30)
     log.info("arxiv: fetching %s", source["id"])
-    with httpx.Client(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT},
-                      follow_redirects=True) as client:
-        resp = client.get(
+    _client = client or _make_http_client()
+    try:
+        resp = _client.get(
             "https://export.arxiv.org/api/query",
             params={
                 "search_query": query,
@@ -105,6 +124,9 @@ def fetch_arxiv(source: dict) -> Iterable[Item]:
             },
         )
         resp.raise_for_status()
+    finally:
+        if client is None:
+            _client.close()
     parsed = feedparser.parse(resp.text)
     for entry in parsed.entries:
         link = entry.get("link")
@@ -124,15 +146,16 @@ def fetch_arxiv(source: dict) -> Iterable[Item]:
         )
 
 
-def fetch_hn(source: dict) -> Iterable[Item]:
+def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     import time
     query = source["query"]
     hours_back = source.get("hours_back", 48)
     min_points = source.get("min_points", 50)
     cutoff = int(time.time()) - hours_back * 3600
     log.info("hn: fetching %s (q=%r)", source["id"], query)
-    with httpx.Client(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
-        resp = client.get(
+    _client = client or _make_http_client()
+    try:
+        resp = _client.get(
             "https://hn.algolia.com/api/v1/search",
             params={
                 "query": query,
@@ -142,6 +165,9 @@ def fetch_hn(source: dict) -> Iterable[Item]:
             },
         )
         resp.raise_for_status()
+    finally:
+        if client is None:
+            _client.close()
     data = resp.json()
     for hit in data.get("hits", []):
         link = hit.get("url") or f"https://news.ycombinator.com/item?id={hit['objectID']}"
@@ -166,13 +192,17 @@ def fetch_hn(source: dict) -> Iterable[Item]:
         )
 
 
-def fetch_reddit(source: dict) -> Iterable[Item]:
+def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     url = source["url"]
     min_score = source.get("min_score", 100)
     log.info("reddit: fetching %s", source["id"])
-    with httpx.Client(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
-        resp = client.get(url)
+    _client = client or _make_http_client()
+    try:
+        resp = _client.get(url)
         resp.raise_for_status()
+    finally:
+        if client is None:
+            _client.close()
     data = resp.json()
     for child in data.get("data", {}).get("children", []):
         post = child.get("data", {})
@@ -381,26 +411,31 @@ def main() -> int:
         rdo = _validate_recency_days(src.get("recency_days"), sid)
         return _stamp_overrides(gen, section_override, kgb, rdo)
 
-    for src in sources.get("rss", []):
-        run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src)))
+    # Use a single shared HTTP client for all source adapters. This reuses
+    # TCP connections across requests to the same host (e.g. multiple RSS
+    # feeds on the same domain, or the arXiv API across multiple queries),
+    # eliminating redundant TLS handshakes and connection setup.
+    with _make_http_client() as http_client:
+        for src in sources.get("rss", []):
+            run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client)))
 
-    # arXiv asks for >=3 seconds between requests. We have multiple arxiv
-    # collectors; sleep between them to avoid 429s.
-    arxiv_sources = sources.get("arxiv", [])
-    for i, src in enumerate(arxiv_sources):
-        if i > 0:
-            time.sleep(3.0)
-        run_collector(f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src)))
-    for src in sources.get("hn", []):
-        run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src)))
-    for src in sources.get("reddit", []):
-        run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src)))
-    if sources.get("github_releases"):
-        # GitHub release entries can each carry their own `section:`. Run them
-        # one at a time so per-repo overrides take effect.
-        for entry in sources["github_releases"]:
-            label = f"gh/{entry['owner']}/{entry['repo']}"
-            run_collector(label, with_override(entry, fetch_github_releases([entry])))
+        # arXiv asks for >=3 seconds between requests. We have multiple arxiv
+        # collectors; sleep between them to avoid 429s.
+        arxiv_sources = sources.get("arxiv", [])
+        for i, src in enumerate(arxiv_sources):
+            if i > 0:
+                time.sleep(3.0)
+            run_collector(f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client)))
+        for src in sources.get("hn", []):
+            run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client)))
+        for src in sources.get("reddit", []):
+            run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client)))
+        if sources.get("github_releases"):
+            # GitHub release entries can each carry their own `section:`. Run them
+            # one at a time so per-repo overrides take effect.
+            for entry in sources["github_releases"]:
+                label = f"gh/{entry['owner']}/{entry['repo']}"
+                run_collector(label, with_override(entry, fetch_github_releases([entry])))
 
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
     conn.close()
