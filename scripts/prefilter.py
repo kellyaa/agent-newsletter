@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from db import REPO_ROOT, connect, init_db
+from db import REPO_ROOT, connect, init_db, managed_connect
 from models import CandidateItem, PrefilterItem
 
 logging.basicConfig(
@@ -238,7 +238,11 @@ def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> l
 
 def main() -> int:
     init_db()
-    conn = connect()
+    with managed_connect() as conn:
+        return _main_inner(conn)
+
+
+def _main_inner(conn) -> int:
     now = datetime.now(timezone.utc)
 
     # Wipe cached papers scores if the rubric changed since the last run.
@@ -396,7 +400,6 @@ def main() -> int:
         len(grouped["blogs"]),
     )
 
-    conn.close()
     return 0
 
 

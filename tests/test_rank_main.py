@@ -12,6 +12,7 @@ Covers:
   - decisions written to DB via persist()
 """
 from __future__ import annotations
+import contextlib
 
 import json
 from pathlib import Path
@@ -77,6 +78,15 @@ def _run_main(db_path, candidates_path, prompt_path, monkeypatch):
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", prompt_path)
     monkeypatch.setattr(rank_mod, "RANKED_PATH", candidates_path.parent / "ranked.json")
     monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
+    import contextlib
+    @contextlib.contextmanager
+    def _mc(p=None):
+        c = db_mod.connect(db_path)
+        try:
+            yield c
+        finally:
+            c.close()
+    monkeypatch.setattr(rank_mod, "managed_connect", _mc)
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
 
     return rank_mod.main()
@@ -101,6 +111,15 @@ class TestRankMainGuards:
         monkeypatch.setattr(rank_mod, "PROMPT_PATH", candidates_path.parent / "missing_rank.md")
         monkeypatch.setattr(rank_mod, "RANKED_PATH", candidates_path.parent / "ranked.json")
         monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(rank_mod, "managed_connect", _mc)
         monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
         result = rank_mod.main()
         assert result == 2

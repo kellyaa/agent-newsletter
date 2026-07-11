@@ -103,6 +103,15 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
     monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash_path)
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
+    import contextlib
+    @contextlib.contextmanager
+    def _mc(p=None):
+        c = db_mod.connect(db_path)
+        try:
+            yield c
+        finally:
+            c.close()
+    monkeypatch.setattr(pf_mod, "managed_connect", _mc)
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
 
     return pf_mod.main()

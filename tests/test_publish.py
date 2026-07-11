@@ -1,5 +1,6 @@
 """Tests for publish.py: record_run(), main() exit paths, and idempotency."""
 from __future__ import annotations
+import contextlib
 
 
 def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
@@ -124,6 +125,15 @@ class TestMainMissingFile:
         # Patch connect/init_db to use our test DB
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
         with patch("publish.datetime") as mock_dt:
@@ -150,6 +160,15 @@ class TestMainFileTooSmall:
 
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
         with patch("publish.datetime") as mock_dt:
@@ -177,6 +196,15 @@ class TestMainEmptyIssue:
 
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
         with patch("publish.datetime") as mock_dt:
@@ -246,6 +274,15 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
 
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
         with patch("publish.datetime") as mock_dt:
@@ -281,6 +318,15 @@ class TestMainIdempotentSkip:
         monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
 
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(publish_mod, "managed_connect", _mc)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
         with patch("publish.datetime") as mock_dt:

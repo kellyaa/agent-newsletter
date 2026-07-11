@@ -739,9 +739,20 @@ class TestFetchMain:
     def _run_main(self, db_path, sources_path, monkeypatch):
         import fetch as fetch_mod
         import db as db_mod
+        import contextlib
         monkeypatch.setattr(fetch_mod, "SOURCES_PATH", sources_path)
         monkeypatch.setattr(fetch_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(fetch_mod, "init_db", lambda: db_mod.init_db(db_path))
+
+        @contextlib.contextmanager
+        def _test_managed_connect(p=None):
+            conn = db_mod.connect(db_path)
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+        monkeypatch.setattr(fetch_mod, "managed_connect", _test_managed_connect)
         return fetch_mod.main()
 
     def test_returns_0_on_empty_sources(self, db_path, sources_path, monkeypatch):

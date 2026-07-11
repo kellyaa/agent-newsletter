@@ -18,7 +18,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, managed_connect
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,60 +82,57 @@ def main() -> int:
         log.error("issue file is unreasonably small (%d bytes); refusing to publish", size)
         return 4
 
-    conn = connect()
+    with managed_connect() as conn:
 
-    # Idempotent skip: if a runs row exists for today AND no featured/appendix
-    # items remain in candidate-of-publish state, this run already finished.
-    runs_row = conn.execute(
-        "SELECT items_featured FROM runs WHERE date = ?", (today,)
-    ).fetchone()
-    pending = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status IN ('featured', 'appendix')"
-    ).fetchone()[0]
-    if runs_row is not None and pending == 0:
+        # Idempotent skip: if a runs row exists for today AND no featured/appendix
+        # items remain in candidate-of-publish state, this run already finished.
+        runs_row = conn.execute(
+            "SELECT items_featured FROM runs WHERE date = ?", (today,)
+        ).fetchone()
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE status IN ('featured', 'appendix')"
+        ).fetchone()[0]
+        if runs_row is not None and pending == 0:
+            log.info(
+                "publish: skip — already published for %s (runs.items_featured=%d)",
+                today, runs_row[0] or 0,
+            )
+            return 0
+        rows = conn.execute(
+            "SELECT section FROM items WHERE status = 'featured'"
+        ).fetchall()
+        featured_counts: dict[str, int] = {}
+        for r in rows:
+            s = r["section"]
+            featured_counts[s] = featured_counts.get(s, 0) + 1
+        appendix_count = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE status = 'appendix'"
+        ).fetchone()[0]
+        items_considered = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
+        ).fetchone()[0]
+
+        total_featured = sum(featured_counts.values())
+        if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
+            log.error(
+                "no featured items and no appendix items — refusing to publish empty issue"
+            )
+            return 5
+
+        conn.execute(
+            "UPDATE items SET status = 'published' WHERE status IN ('featured', 'appendix')"
+        )
+        conn.commit()
         log.info(
-            "publish: skip — already published for %s (runs.items_featured=%d)",
-            today, runs_row[0] or 0,
+            "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
+            total_featured,
+            featured_counts.get("papers", 0),
+            featured_counts.get("news", 0),
+            featured_counts.get("blogs", 0),
+            appendix_count,
         )
-        conn.close()
-        return 0
-    rows = conn.execute(
-        "SELECT section FROM items WHERE status = 'featured'"
-    ).fetchall()
-    featured_counts: dict[str, int] = {}
-    for r in rows:
-        s = r["section"]
-        featured_counts[s] = featured_counts.get(s, 0) + 1
-    appendix_count = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status = 'appendix'"
-    ).fetchone()[0]
-    items_considered = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()[0]
 
-    total_featured = sum(featured_counts.values())
-    if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
-        log.error(
-            "no featured items and no appendix items — refusing to publish empty issue"
-        )
-        conn.close()
-        return 5
-
-    conn.execute(
-        "UPDATE items SET status = 'published' WHERE status IN ('featured', 'appendix')"
-    )
-    conn.commit()
-    log.info(
-        "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
-        total_featured,
-        featured_counts.get("papers", 0),
-        featured_counts.get("news", 0),
-        featured_counts.get("blogs", 0),
-        appendix_count,
-    )
-
-    record_run(conn, today, featured_counts, appendix_count, items_considered)
-    conn.close()
+        record_run(conn, today, featured_counts, appendix_count, items_considered)
 
     log.info("issue file: %s (%d bytes)", issue_path, size)
     log.info("the Astro build is the next gate; it validates frontmatter against the schema")

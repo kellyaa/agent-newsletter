@@ -4,10 +4,12 @@ The schema is idempotent — calling init_db() repeatedly is safe.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import sqlite3
 from pathlib import Path
+from typing import Generator
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -78,6 +80,23 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=10000")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@contextlib.contextmanager
+def managed_connect(db_path: Path = DB_PATH) -> Generator[sqlite3.Connection, None, None]:
+    """Context manager that ensures the connection is closed on exit.
+
+    Usage::
+
+        with managed_connect() as conn:
+            conn.execute("SELECT ...")
+            # conn.close() is guaranteed even if an exception occurs
+    """
+    conn = connect(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db(db_path: Path = DB_PATH) -> None:

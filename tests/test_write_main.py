@@ -1,5 +1,6 @@
 """Tests for write.py: main() pipeline and invoke_writer() error path."""
 from __future__ import annotations
+import contextlib
 
 import json
 from datetime import date
@@ -73,6 +74,15 @@ def _run_main(db_path, issues_dir, prompt_file, monkeypatch):
     monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
     monkeypatch.setattr(write_mod, "PROMPT_PATH", prompt_file)
     monkeypatch.setattr(write_mod, "connect", lambda: db_mod.connect(db_path))
+    import contextlib
+    @contextlib.contextmanager
+    def _mc(p=None):
+        c = db_mod.connect(db_path)
+        try:
+            yield c
+        finally:
+            c.close()
+    monkeypatch.setattr(write_mod, "managed_connect", _mc)
     monkeypatch.setattr(write_mod, "init_db", lambda: db_mod.init_db(db_path))
     return write_mod.main()
 
@@ -84,6 +94,15 @@ class TestWriteMainGuards:
         monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         monkeypatch.setattr(write_mod, "PROMPT_PATH", tmp_path / "nonexistent.md")
         monkeypatch.setattr(write_mod, "connect", lambda: db_mod.connect(db_path))
+        import contextlib
+        @contextlib.contextmanager
+        def _mc(p=None):
+            c = db_mod.connect(db_path)
+            try:
+                yield c
+            finally:
+                c.close()
+        monkeypatch.setattr(write_mod, "managed_connect", _mc)
         monkeypatch.setattr(write_mod, "init_db", lambda: db_mod.init_db(db_path))
         result = write_mod.main()
         assert result == 2

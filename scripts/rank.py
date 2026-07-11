@@ -15,7 +15,7 @@ import logging
 import os
 import sys
 
-from db import REPO_ROOT, connect, init_db
+from db import REPO_ROOT, connect, init_db, managed_connect
 from llm import call_llm
 from models import RankDecision, ScoredItem
 
@@ -319,28 +319,27 @@ def main() -> int:
                 "section": by_id_section[iid],
             }
 
-    conn = connect()
-    counts = persist(conn, decisions)
-    # Bump times_competed for every paper that competed and stayed in the
-    # candidate pool (i.e. didn't get sealed to featured or appendix). Gating
-    # on status='candidate' makes the increment a no-op for sealed items, so
-    # featured/appendix winners can't have their counter inflated.
-    papers_competitors = [
-        iid for iid, d in decisions.items() if d["section"] == "papers"
-    ]
-    if papers_competitors:
-        placeholders = ",".join("?" * len(papers_competitors))
-        bumped = conn.execute(
-            f"UPDATE items SET times_competed = times_competed + 1 "
-            f"WHERE status = 'candidate' AND id IN ({placeholders})",
-            papers_competitors,
-        )
-        conn.commit()
-        log.info(
-            "papers: bumped times_competed on %d pool items (of %d competitors)",
-            bumped.rowcount or 0, len(papers_competitors),
-        )
-    conn.close()
+    with managed_connect() as conn:
+        counts = persist(conn, decisions)
+        # Bump times_competed for every paper that competed and stayed in the
+        # candidate pool (i.e. didn't get sealed to featured or appendix). Gating
+        # on status='candidate' makes the increment a no-op for sealed items, so
+        # featured/appendix winners can't have their counter inflated.
+        papers_competitors = [
+            iid for iid, d in decisions.items() if d["section"] == "papers"
+        ]
+        if papers_competitors:
+            placeholders = ",".join("?" * len(papers_competitors))
+            bumped = conn.execute(
+                f"UPDATE items SET times_competed = times_competed + 1 "
+                f"WHERE status = 'candidate' AND id IN ({placeholders})",
+                papers_competitors,
+            )
+            conn.commit()
+            log.info(
+                "papers: bumped times_competed on %d pool items (of %d competitors)",
+                bumped.rowcount or 0, len(papers_competitors),
+            )
 
     log.info(
         "DONE: featured=%d appendix=%d dropped=%d candidate=%d",

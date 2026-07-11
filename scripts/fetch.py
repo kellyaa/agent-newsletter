@@ -18,7 +18,7 @@ import feedparser
 import httpx
 import yaml
 
-from db import REPO_ROOT, canonicalize_url, connect, init_db, url_id
+from db import REPO_ROOT, canonicalize_url, connect, init_db, managed_connect, url_id
 
 logging.basicConfig(
     level=logging.INFO,
@@ -346,8 +346,11 @@ def _already_fetched_today(conn) -> int:
 def main() -> int:
     init_db()
     sources = load_sources()
-    conn = connect()
+    with managed_connect() as conn:
+        return _run_fetch(conn, sources)
 
+
+def _run_fetch(conn, sources) -> int:
     existing = _already_fetched_today(conn)
     if existing > 0:
         log.info(
@@ -355,7 +358,6 @@ def main() -> int:
             "(re-running fetch is safe but wasteful; delete today's rows to force)",
             existing,
         )
-        conn.close()
         return 0
 
     total_seen = total_inserted = 0
@@ -403,7 +405,6 @@ def main() -> int:
             run_collector(label, with_override(entry, fetch_github_releases([entry])))
 
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
-    conn.close()
     # Per-source errors are logged but don't abort the run, as long as at
     # least one source produced data. This matches the docstring's contract
     # and avoids the common case where one rate-limited collector (arxiv 429)

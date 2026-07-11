@@ -17,7 +17,7 @@ import os
 import sys
 from datetime import datetime
 
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, managed_connect
 from llm import call_llm
 
 logging.basicConfig(
@@ -347,9 +347,8 @@ def main() -> int:
         )
         return 0
 
-    conn = connect()
-    featured, appendix_by_section, metadata = load_today_items(conn, today)
-    conn.close()
+    with managed_connect() as conn:
+        featured, appendix_by_section, metadata = load_today_items(conn, today)
 
     appendix_total = sum(len(v) for v in appendix_by_section.values())
     log.info(
