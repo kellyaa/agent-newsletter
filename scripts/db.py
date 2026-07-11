@@ -1,19 +1,70 @@
 """SQLite bootstrap and shared helpers.
 
 The schema is idempotent — calling init_db() repeatedly is safe.
+
+DB path resolution
+------------------
+The default database path is ``CONTENT_ROOT / "state.db"``. Callers that need
+to redirect all DB operations to a different path (e.g. backfill's sandbox)
+can use the ``override_db_path`` context manager instead of monkeypatching
+module globals. This ensures that any module importing ``connect`` or
+``init_db`` always picks up the override without import-order fragility.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import sqlite3
 from pathlib import Path
+from typing import Generator
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONTENT_ROOT_ENV = os.environ.get("CONTENT_ROOT")
 CONTENT_ROOT = Path(_CONTENT_ROOT_ENV) if _CONTENT_ROOT_ENV else REPO_ROOT
 DB_PATH = CONTENT_ROOT / "state.db"
+
+# Module-level override. When set (via override_db_path context manager),
+# connect() and init_db() use this path instead of DB_PATH. This avoids
+# the need for callers to monkeypatch module globals or worry about import
+# ordering (which captures function references at import time).
+_db_path_override: Path | None = None
+
+
+@contextlib.contextmanager
+def override_db_path(path: Path) -> Generator[None, None, None]:
+    """Context manager to temporarily redirect all DB operations to *path*.
+
+    Usage::
+
+        with db.override_db_path(sandbox / "state.db"):
+            db.init_db()
+            conn = db.connect()
+            # ... all operations use the sandbox DB
+
+    This is the intended replacement for monkeypatching ``db.connect``,
+    ``db.init_db``, and ``db.DB_PATH`` at runtime.
+    """
+    global _db_path_override
+    previous = _db_path_override
+    _db_path_override = path
+    try:
+        yield
+    finally:
+        _db_path_override = previous
+
+
+def _effective_db_path(explicit: Path | None = None) -> Path:
+    """Return the DB path to use, respecting overrides.
+
+    Priority: explicit argument > context-manager override > module default.
+    """
+    if explicit is not None:
+        return explicit
+    if _db_path_override is not None:
+        return _db_path_override
+    return DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -71,8 +122,15 @@ TRACKING_PARAM_PREFIXES = ("utm_", "ref_")
 TRACKING_PARAMS = {"ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source"}
 
 
-def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=30)
+def connect(db_path: Path | None = None) -> sqlite3.Connection:
+    """Open a connection to the state database.
+
+    The path is resolved via :func:`_effective_db_path`: an explicit
+    *db_path* argument wins, then any active ``override_db_path`` context,
+    then the module-level ``DB_PATH`` default.
+    """
+    resolved = _effective_db_path(db_path)
+    conn = sqlite3.connect(resolved, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=10000")
@@ -80,8 +138,13 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
-    conn = connect(db_path)
+def init_db(db_path: Path | None = None) -> None:
+    """Ensure the schema exists and run migrations.
+
+    Path resolution follows the same rules as :func:`connect`.
+    """
+    resolved = _effective_db_path(db_path)
+    conn = connect(resolved)
     try:
         conn.executescript(SCHEMA)
         _migrate(conn)

@@ -102,36 +102,32 @@ def setup_sandbox(target_date: str) -> Path:
     return sandbox
 
 
-# Keep references to the unpatched connect/init_db so --apply-published can
-# reach the real state.db after the sandbox-bound run is done.
-_LIVE_CONNECT = None
+# Keep a reference to the live DB path so --apply-published can reach the
+# real state.db after the sandbox-bound run is done.
 _LIVE_DB_PATH = None
 
 
 def bind_db_to_sandbox(sandbox_db: Path) -> None:
-    """Patch db.connect/init_db so all callers land on the sandbox.
+    """Redirect all db.connect/init_db calls to the sandbox path.
 
-    Must run BEFORE rank/write modules are imported, because their
-    `from db import connect, init_db` captures the function references at
-    import time. Patching db_mod.connect first means those imports pick up
-    the patched function.
+    Uses the ``db.override_db_path`` mechanism (a module-level path override)
+    so that any module importing ``connect`` or ``init_db`` — regardless of
+    import order — picks up the sandbox path through the shared
+    ``_effective_db_path()`` resolution.
+
+    This replaces the previous approach of monkeypatching ``db.connect``,
+    ``db.init_db``, and ``db.DB_PATH`` at runtime, which was fragile because
+    modules that had already executed ``from db import connect`` would hold
+    stale references to the original function.
     """
-    global _LIVE_CONNECT, _LIVE_DB_PATH
+    global _LIVE_DB_PATH
     import db as db_mod
 
-    _LIVE_CONNECT = db_mod.connect
     _LIVE_DB_PATH = db_mod.DB_PATH
-    orig_init_db = db_mod.init_db
 
-    def sandbox_connect(db_path=None):
-        return _LIVE_CONNECT(db_path or sandbox_db)
-
-    def sandbox_init_db(db_path=None):
-        return orig_init_db(db_path or sandbox_db)
-
-    db_mod.DB_PATH = sandbox_db
-    db_mod.connect = sandbox_connect
-    db_mod.init_db = sandbox_init_db
+    # Set the module-level override directly. This is equivalent to entering
+    # an override_db_path() context that lasts the lifetime of the process.
+    db_mod._db_path_override = sandbox_db
 
 
 def apply_published_to_live(featured_ids: list[str]) -> int:
@@ -142,9 +138,12 @@ def apply_published_to_live(featured_ids: list[str]) -> int:
     Idempotent and gated on status='candidate' so a re-run, or a row that's
     already been promoted by some other path, is left alone.
     """
-    if _LIVE_CONNECT is None or _LIVE_DB_PATH is None:
+    if _LIVE_DB_PATH is None:
         raise RuntimeError("bind_db_to_sandbox must be called before apply_published_to_live")
-    conn = _LIVE_CONNECT(_LIVE_DB_PATH)
+
+    # Connect directly to the live DB path, bypassing the sandbox override.
+    import db as db_mod
+    conn = db_mod.connect(_LIVE_DB_PATH)
     try:
         placeholders = ",".join("?" * len(featured_ids))
         cur = conn.execute(

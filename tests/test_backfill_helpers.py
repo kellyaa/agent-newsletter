@@ -329,16 +329,13 @@ class TestApplyPublishedToLive:
     def test_raises_if_bind_not_called_first(self):
         """apply_published_to_live requires bind_db_to_sandbox to be called first."""
         import backfill as backfill_mod
-        # Save and reset the module-level globals
-        orig_connect = backfill_mod._LIVE_CONNECT
+        # Save and reset the module-level global
         orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = None
         backfill_mod._LIVE_DB_PATH = None
         try:
             with pytest.raises(RuntimeError, match="bind_db_to_sandbox"):
                 backfill_mod.apply_published_to_live(["some-id"])
         finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
             backfill_mod._LIVE_DB_PATH = orig_path
 
     def test_promotes_candidate_ids_to_published(self, db_path):
@@ -360,15 +357,12 @@ class TestApplyPublishedToLive:
         conn.commit()
         conn.close()
 
-        # Manually wire up the backfill module's live pointers
-        orig_connect = backfill_mod._LIVE_CONNECT
+        # Manually wire up the backfill module's live pointer
         orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = db_mod.connect
         backfill_mod._LIVE_DB_PATH = db_path
         try:
             promoted = backfill_mod.apply_published_to_live(["item-0", "item-1"])
         finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
             backfill_mod._LIVE_DB_PATH = orig_path
 
         assert promoted == 2
@@ -400,14 +394,11 @@ class TestApplyPublishedToLive:
         conn.commit()
         conn.close()
 
-        orig_connect = backfill_mod._LIVE_CONNECT
         orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = db_mod.connect
         backfill_mod._LIVE_DB_PATH = db_path
         try:
             promoted = backfill_mod.apply_published_to_live(["pub-1"])
         finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
             backfill_mod._LIVE_DB_PATH = orig_path
 
         assert promoted == 0  # already published, not re-promoted
@@ -423,25 +414,19 @@ class TestBindDbToSandbox:
         db_mod.init_db(sandbox_db)
 
         # Save original state
-        orig_connect = db_mod.connect
-        orig_init_db = db_mod.init_db
-        orig_db_path = db_mod.DB_PATH
-        orig_live_connect = backfill_mod._LIVE_CONNECT
+        orig_override = db_mod._db_path_override
         orig_live_path = backfill_mod._LIVE_DB_PATH
 
         try:
             backfill_mod.bind_db_to_sandbox(sandbox_db)
-            # After binding, db_mod.DB_PATH should point to the sandbox
-            assert db_mod.DB_PATH == sandbox_db
-            # The patched connect should open the sandbox DB
+            # After binding, db._db_path_override should point to the sandbox
+            assert db_mod._db_path_override == sandbox_db
+            # The connect() should open the sandbox DB (via _effective_db_path)
             conn = db_mod.connect()
             # We can execute schema queries — this confirms it's a real SQLite conn
             conn.execute("SELECT 1").fetchone()
             conn.close()
         finally:
             # Restore original state to avoid polluting other tests
-            db_mod.connect = orig_connect
-            db_mod.init_db = orig_init_db
-            db_mod.DB_PATH = orig_db_path
-            backfill_mod._LIVE_CONNECT = orig_live_connect
+            db_mod._db_path_override = orig_override
             backfill_mod._LIVE_DB_PATH = orig_live_path
