@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from db import REPO_ROOT, connect, init_db
+from models import CandidateItem, PrefilterItem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,7 +120,7 @@ def _source_family(source: str) -> str:
     return source.split(":", 1)[0]
 
 
-def _passes_recency(item: dict, now: datetime) -> bool:
+def _passes_recency(item: PrefilterItem, now: datetime) -> bool:
     family = _source_family(item["source"])
     override = item.get("recency_days_override")
     if isinstance(override, int) and override > 0:
@@ -139,7 +140,7 @@ def _passes_recency(item: dict, now: datetime) -> bool:
     return (now - dt) <= timedelta(days=window)
 
 
-def _passes_keyword_gate(item: dict) -> bool:
+def _passes_keyword_gate(item: PrefilterItem) -> bool:
     if item.get("keyword_gate_bypass"):
         return True
     haystack = (item.get("title") or "") + "\n" + (item.get("raw_text") or "")
@@ -160,7 +161,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
-def _prerank_score(item: dict, now: datetime) -> float:
+def _prerank_score(item: PrefilterItem, now: datetime) -> float:
     """Cheap composite for capping the unscored-papers pool before the LLM.
 
     Source weight is omitted: all papers items today are arxiv:*, so a weight
@@ -216,7 +217,7 @@ def _maybe_invalidate_papers_scores(conn) -> int:
     return invalidated
 
 
-def collapse_near_dups(items: list[dict], threshold: float = 0.85) -> list[dict]:
+def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> list[PrefilterItem]:
     """Within this run, drop items whose title is ~the same as a higher-priority one."""
     sorted_items = sorted(
         items,

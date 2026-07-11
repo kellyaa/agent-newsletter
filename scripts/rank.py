@@ -17,6 +17,7 @@ import sys
 
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
+from models import RankDecision, ScoredItem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,7 +138,7 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     return rankings
 
 
-def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]:
+def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str, RankDecision]:
     """Apply thresholds + per-section caps. Returns id -> {status, ...}.
 
     Papers special case (issue #16): on heavy supply days the section can land
@@ -185,7 +186,7 @@ def assign_statuses(scored_by_section: dict[str, list[dict]]) -> dict[str, dict]
     return final
 
 
-def persist(conn, decisions: dict[str, dict]) -> dict[str, int]:
+def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
