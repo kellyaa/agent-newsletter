@@ -6,13 +6,35 @@ on:
   push:
     branches: [main]
 
+# Cancel superseded runs on the same PR/branch to avoid duplicate work.
+# Do NOT cancel main-branch runs — every merge should get a clean signal.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege token: pytest job only needs to read the checkout;
+# py-cov-action needs pull-requests: write to post the coverage comment.
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    # Cap runaway jobs (uv resolve loops, hung pytest fixtures) to protect
+    # the free-tier minutes budget. Typical run is ~90s; 10 min is generous.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          # Enable uv's built-in caching keyed on pyproject.toml + uv.lock.
+          # Speeds up cold runs from ~15s to ~3s. Refs bead 2191707c-1b0.
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
       - uses: actions/setup-python@v5
         with:
