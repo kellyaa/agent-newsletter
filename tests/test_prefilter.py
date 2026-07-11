@@ -14,7 +14,6 @@ from prefilter import (
     ("source", "override", "expected"),
     [
         ("arxiv:cs.AI", None, "papers"),
-        ("hf-daily:papers", None, "papers"),
         ("gh:releases", None, "news"),
         ("hn:frontpage", None, "news"),
         ("reddit:LocalLLaMA", None, "news"),

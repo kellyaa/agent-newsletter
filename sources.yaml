@@ -1,5 +1,5 @@
 # Source-family → section defaults (in scripts/prefilter.py SECTION_BY_FAMILY):
-#   rss → blogs, arxiv/hf-daily → papers, gh/hn/reddit → news
+#   rss → blogs, arxiv → papers, gh/hn/reddit → news
 #
 # Any source entry below may add an optional `section:` field to override the
 # family default. Allowed values: papers | news | blogs. Invalid values are
@@ -162,8 +162,3 @@ reddit:
 # 15-minute timeout. Re-add via the github_releases: key if needed.
 github_releases: []
 
-hf_daily:
-  # Hugging Face daily papers — scrape, no official API.
-  - id: hf-daily-papers
-    url: https://huggingface.co/papers
-    weight: 1.0

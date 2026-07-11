@@ -79,7 +79,6 @@ SOURCE_PRIORITY = {
 # Source family → output section. See SPEC.md "Section assignment".
 SECTION_BY_FAMILY = {
     "arxiv": "papers",
-    "hf-daily": "papers",
     "gh": "news",
     "hn": "news",
     "reddit": "news",
@@ -165,8 +164,8 @@ def _prerank_score(item: PrefilterItem, now: datetime) -> float:
     """Cheap composite for capping the unscored-papers pool before the LLM.
 
     Source weight is omitted: all papers items today are arxiv:*, so a weight
-    factor would be a constant. If hf-daily or another paper source is added
-    later with a non-1.0 weight, plumb it through here.
+    factor would be a constant. If another paper source is added later with
+    a non-1.0 weight, plumb it through here.
     """
     pub = item.get("published_at") or item.get("fetched_at")
     try:
