@@ -1,6 +1,6 @@
 # AI Agents Daily
 
-A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit, GitHub releases), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
+A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
 The site is at: **https://kellyaa.github.io/agent-newsletter**
 
@@ -196,7 +196,7 @@ pkill -f run.sh
 
 ```bash
 # Did publish.py record a run today?
-sqlite3 .worktrees/content/state.db "SELECT date, status, cost_usd, started_at, finished_at FROM runs ORDER BY started_at DESC LIMIT 5;"
+sqlite3 .worktrees/content/state.db "SELECT date, cost_usd, items_featured, items_papers, items_news, items_blogs, duration_seconds FROM runs ORDER BY date DESC LIMIT 5;"
 
 # Is there a newsletter file for today?
 ls .worktrees/content/site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing

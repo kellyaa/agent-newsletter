@@ -14,7 +14,8 @@ Thank you for contributing. This document covers development setup, the test sui
 6. [PR workflow and naming](#pr-workflow-and-naming)
 7. [The `hold` label](#the-hold-label)
 8. [Code style](#code-style)
-9. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
+9. [Operational scripts — backfill and replay](#operational-scripts--backfill-and-replay)
+10. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
 
 ---
 
@@ -22,7 +23,9 @@ Thank you for contributing. This document covers development setup, the test sui
 
 - **macOS** (primary platform — the scheduler uses launchd; Linux is supported for development and CI but the cron wiring is macOS-only)
 - [**uv**](https://docs.astral.sh/uv/) — Python package manager (`brew install uv` or the official installer)
+- [**Node.js**](https://nodejs.org/) **≥ 18.17.1** (CI uses Node 22; required by Astro 5 — `brew install node` or use `nvm`)
 - [**pnpm**](https://pnpm.io/) — Node package manager for the Astro site (`npm install -g pnpm`)
+- [**gh**](https://cli.github.com/) — GitHub CLI (`brew install gh`, then `gh auth login`) — required by `scripts/fetch.py` for the GitHub source adapter; also used for PR/issue workflows
 - Access to an **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, etc.) — needed only if you intend to run the full pipeline; not needed for code or test work
 
 ---
@@ -57,6 +60,14 @@ git worktree add .worktrees/content content
 ./run.sh --refetch    # also re-fetch (use sparingly; arXiv rate-limits)
 ```
 
+**Scheduling the pipeline (macOS only):**
+
+```bash
+./launchd/install.sh
+```
+
+> ⚠️ **Before running `install.sh`**, edit the two plist files in `launchd/` to replace the hard-coded paths (`/Users/kelly/git/incubation/`) with the actual path to your clone and log directory. `install.sh` copies the plists verbatim without substituting paths. See comments inside each plist for the fields that need updating.
+
 **Running the Astro dev server:**
 
 The Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. It requires the content worktree to be set up (step 5 above).
@@ -64,6 +75,14 @@ The Astro dev server reads issue files from `.worktrees/content/site/src/content
 ```bash
 pnpm --prefix site dev
 ```
+
+**Building the site (with search index):**
+
+```bash
+pnpm --prefix site build
+```
+
+The build script runs `astro build && pagefind --site dist`. [Pagefind](https://pagefind.app/) generates the static search index in `dist/pagefind/` after the Astro build. The `pagefind` package is a dev dependency installed by `pnpm install` — no separate install needed. The Astro dev server (`astro dev`) does **not** run pagefind, so search is only functional in the built/previewed output.
 
 ---
 
@@ -80,7 +99,7 @@ uv run --extra test pytest --cov-report=html
 uv run --extra test pytest tests/test_fetch_adapters.py -v
 ```
 
-The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current baseline is ~90% coverage.
+The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current gate is `--cov-fail-under=95`; as of PRs #43-#61 (402 tests), line coverage is 100% and branch coverage is ~99%.
 
 CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR with failing tests or coverage below the gate will not be merged.
 
@@ -108,6 +127,7 @@ Feed sources are declared in `sources.yaml`. Each source has an `id`, `url`, and
 - `section: papers | news | blogs` — override the family-default section assignment
 - `keyword_gate_bypass: true` — skip the prefilter keyword gate (use only for low-volume, hand-curated practitioner blogs)
 - `recency_days: N` — override the default recency window (useful for slow-publishing sources)
+- `weight: <float>` — **reserved stub; currently a no-op** (not read by pipeline code). Present on all existing entries. Do not change weight values expecting any behavioral effect.
 
 **To add a source:**
 1. Add an entry under the correct family key (`rss:`, `arxiv:`, `hn:`, etc.) in `sources.yaml`.
@@ -150,6 +170,38 @@ A PR labeled `hold` (or `on-hold` / `do-not-merge`) **must not be merged** until
 - Keep scripts self-contained — `scripts/` files should not import from each other except via `db.py` and `llm.py`.
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
+
+---
+
+## Operational scripts — backfill and replay
+
+Two scripts handle emergency and verification scenarios. Neither is part of the normal daily pipeline.
+
+### `scripts/backfill.py` — reconstruct a missed day's issue
+
+Use when a daily run was skipped entirely (e.g., the Mac was off) and you want to produce an issue from the historical candidate pool that was already in `state.db`.
+
+```bash
+# Reconstruct the issue for a past date from the DB candidate pool
+uv run scripts/backfill.py --date 2026-06-10
+```
+
+**Prerequisites:** The content worktree must exist at `.worktrees/content` (run `git worktree add .worktrees/content content` if not). The `CONTENT_ROOT` env var must point to it, or the script falls back to `cwd` (not what you want here).
+
+**Important limitations:**
+- Backfill uses candidates that were already scored in `state.db` for that date — it does not re-fetch or re-rank.
+- A `runs` row is **not** recorded for a backfilled issue; the run history will show a gap.
+
+### `scripts/replay_writer.py` — replay writer against a past issue
+
+Use when you've changed `prompts/write.md` and want to compare the new writer output against a previously published issue.
+
+```bash
+# Replay the writer for a past date (reads published items from state.db)
+uv run scripts/replay_writer.py --date 2026-06-10
+```
+
+The output goes to stdout (not written to the content branch). Compare the output against the existing issue file to evaluate prompt changes.
 
 ---
 

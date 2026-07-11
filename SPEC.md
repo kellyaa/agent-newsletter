@@ -93,7 +93,7 @@ raw_text (abstract/summary/first N chars), fetched_at, status
 Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 
 Rules (all configurable in `scripts/prefilter.py`):
-- **Recency** (per source family): RSS = 30d, GitHub releases = 14d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items.
+- **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases was a supported source family with a 14d window but was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need >50 points; Reddit >100 upvotes; arXiv papers need an abstract (not just title).
 - **Dedup across time:** skip any item whose `id` is already `status >= ranked` in the DB. (See Dedup section.)
@@ -110,7 +110,7 @@ Survivors get `status = 'candidate'`.
 2. Score each item 1-10 against the rubric below, applying the **section-specific** axis emphasis and threshold.
 3. Return a JSON array: `[{id, score, tags, one_line_why}]`. Section is not emitted — it was set deterministically upstream.
 
-The ranker is invoked with all three buckets in a single call so it has cross-section context (e.g., it can see that today is paper-heavy and hold the bar higher), but it scores each item against its own section's rubric.
+The ranker makes **three separate calls**, one per section (`papers`, `news`, `blogs`). Per-section calls work better than one large call — each section gets full context window focus, and timeouts/cost are proportional to that section's candidate count. See §LLM API lessons learned for the rationale.
 
 **Ranking rubric** (codified in the prompt):
 
@@ -140,7 +140,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `.nous/newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. Burn-in: review the score-10 miss rate ~4 weeks after this deploy (early July 2026) and tune `burst_trigger_count` if the trigger fires too rarely or too often.
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by the `.nous/newsletter1` investigation, which found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (due ~2026-07-07, now overdue):** check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often.
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
@@ -359,7 +359,7 @@ v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 
 - `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns.
 - `llm.py` captures token usage from the OpenAI API response (`usage.prompt_tokens`, `usage.completion_tokens`) and passes it back to `rank.py` / `write.py`, which write it to the `runs` row.
-- `BUDGET_USD` env var is read at the top of `run.sh` and logged. **Not enforced** in v1 — just observed.
+- `BUDGET_USD` env var is **scaffolded but not yet implemented** — it is not read by `run.sh` in v1. Future enforcement would gate `run.sh` on this value.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
 
 ## Iteration Plan
@@ -371,9 +371,9 @@ v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 - **v1.2 — Path B Stage 2 (shipped):** SSG migration to Astro 5. The writer now emits YAML-frontmatter MD into `site/src/content/issues/`; URLs are spliced from the DB rather than written by the LLM (URL hallucination is mechanically impossible). Site deploys to GitHub Pages on push to `main`.
 - **v1.3 — Unattended delivery (shipped):** `run.sh` orchestrator with `--force` and `--refetch` flags; per-stage idempotency for resume-after-failure; launchd plists for the daily pipeline + hourly watchdog; macOS notifications on failure (no email).
 
-### Live status (as of 2026-05-14)
+### Live status (as of 2026-07-10)
 
-The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. A typical run takes ~10 min wall time, costs ~$1-2 in Claude usage, produces 12-17 featured items + ~50-100 appendix items.
+The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. A typical run takes ~10 min wall time, produces 12-17 featured items + ~50-100 appendix items. Cost depends on the configured models; typical per-run cost is ~$0.30-1.20 per ranker section call × 3 sections, plus ~$0.30-0.50 for the writer call (see §LLM API lessons learned for details).
 
 ### Up next (unstarted)
 
@@ -384,7 +384,7 @@ Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. 
 - **Run time:** 07:00 local, daily.
 - **Voice:** opinionated and willing to be skeptical, but only on the basis of the actual content. No contrarianism for its own sake; if a piece is solid, say so plainly. Skepticism must cite specifics (sample size, missing ablation, cherry-picked benchmark).
 - **Failure notifications:** macOS notifications via `osascript` from `run.sh` and `watchdog.sh`. No email, no third-party service. Run logs in `logs/`.
-- **Cost cap:** not enforced in v1, but scaffolded — `runs.cost_usd` recorded every run, `BUDGET_USD` env var read but not gated on.
+- **Cost cap:** not enforced in v1; `runs.cost_usd` is recorded every run. `BUDGET_USD` env var is scaffolded as a future gate but is **not yet read by `run.sh`**.
 - **Repo:** public on GitHub. Enables free GitHub Pages hosting for the published newsletter.
 
 ## Initial Source List (`sources.yaml` seed)

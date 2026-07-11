@@ -20,6 +20,11 @@
 # recency window in scripts/prefilter.py RECENCY_DAYS. Use for slow-publishing
 # sources (e.g., Hamel posts every 4-7 weeks; bump to 90). Invalid values are
 # logged and ignored. Don't set this on high-volume sources.
+#
+# `weight` field: present on all source entries as a future per-source scoring
+# modifier (e.g., to up-weight highly credible sources). It is NOT currently
+# read by the pipeline code (prefilter.py explicitly notes this). Do not change
+# weight values expecting any effect — this is a reserved stub for future use.
 
 rss:
   - id: simonw
