@@ -27,7 +27,7 @@ logging.basicConfig(
 log = logging.getLogger("fetch")
 
 SOURCES_PATH = REPO_ROOT / "sources.yaml"
-USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
+USER_AGENT = "agent-newsletter/1.0 (+https://github.com/kellyaa/agent-newsletter; bot)"
 HTTP_TIMEOUT = 20.0
 
 
