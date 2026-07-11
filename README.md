@@ -126,6 +126,8 @@ Three tables:
 - **`runs`** — one row per daily pipeline run: item counts by section, wall-clock duration; `tokens_in` / `tokens_out` / `cost_usd` columns are scaffolded (see #13) and populated when the LLM endpoint exposes usage.
 - **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
 
+**Schema auto-migration.** `db.py` runs `_migrate()` on every `init_db()` call, applying any missing `ALTER TABLE` column additions automatically. Upgrading your checkout and re-running the pipeline is safe — the DB schema self-heals. No manual migration needed.
+
 See [SPEC.md § Data Model](./SPEC.md#data-model-sqlite) for the column-level schema.
 
 ## Design
