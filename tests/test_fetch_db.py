@@ -140,18 +140,14 @@ class TestUpsertItemsConflict:
         assert row["keyword_gate_bypass"] == 1
 
     def test_last_seen_date_updated_on_conflict(self, db):
-        from unittest.mock import patch
-        from datetime import date
+        from datetime import datetime, timezone
+        import clock
 
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            mock_dt.now.return_value.isoformat.return_value = "2026-06-01T00:00:00Z"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             upsert_items(db, [item])
 
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-02"
-            mock_dt.now.return_value.isoformat.return_value = "2026-06-02T00:00:00Z"
+        with clock.freeze(datetime(2026, 6, 2, tzinfo=timezone.utc)):
             upsert_items(db, [item])
 
         row = db.execute("SELECT last_seen_date FROM items").fetchone()
@@ -188,29 +184,31 @@ class TestAlreadyFetchedToday:
         assert result == 0
 
     def test_counts_items_seen_today(self, db):
-        from datetime import date
-        from unittest.mock import patch
+        from datetime import datetime, timezone
+        import clock
 
-        today = date.today().isoformat()
+        # Use a fixed "today" for determinism
+        fixed_now = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+        today = fixed_now.date().isoformat()
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = today
-            mock_dt.now.return_value.isoformat.return_value = f"{today}T00:00:00Z"
+        with clock.freeze(fixed_now):
             upsert_items(db, [item])
-
-        result = _already_fetched_today(db)
+            result = _already_fetched_today(db)
         assert result == 1
 
     def test_does_not_count_items_from_yesterday(self, db):
-        from unittest.mock import patch
+        from datetime import datetime, timezone
+        import clock
 
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-05-30"
-            mock_dt.now.return_value.isoformat.return_value = "2026-05-30T00:00:00Z"
+        # Insert item with yesterday's date
+        yesterday = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
+        with clock.freeze(yesterday):
             upsert_items(db, [item])
 
-        # _already_fetched_today uses datetime.now().date() internally
-        result = _already_fetched_today(db)
-        # Today is not 2026-05-30, so result should be 0
+        # _already_fetched_today uses clock.today() — check with a different day
+        today = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        with clock.freeze(today):
+            result = _already_fetched_today(db)
+        # Today is 2026-05-31, items were inserted on 2026-05-30 → 0
         assert result == 0

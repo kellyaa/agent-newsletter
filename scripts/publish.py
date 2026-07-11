@@ -18,6 +18,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from clock import today as clock_today
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 
 logging.basicConfig(
@@ -71,7 +72,7 @@ def record_run(
 
 def main() -> int:
     init_db()
-    today = datetime.now().date().isoformat()
+    today = clock_today()
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)

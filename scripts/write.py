@@ -17,6 +17,7 @@ import os
 import sys
 from datetime import datetime
 
+from clock import today as clock_today
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import call_llm
 
@@ -338,7 +339,7 @@ def main() -> int:
         log.error("missing %s", PROMPT_PATH)
         return 2
 
-    today = datetime.now().date().isoformat()
+    today = clock_today()
     out_path = ISSUES_DIR / f"{today}.md"
     if out_path.exists():
         log.info(

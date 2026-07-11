@@ -1,6 +1,9 @@
 """Tests for publish.py: record_run(), main() exit paths, and idempotency."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import clock
+
 
 def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
     """publish.ISSUES_DIR resolves under CONTENT_ROOT when the env var is set."""
@@ -126,8 +129,7 @@ class TestMainMissingFile:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             result = publish_main()
 
         assert result == 2
@@ -152,8 +154,7 @@ class TestMainFileTooSmall:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             result = publish_main()
 
         assert result == 4
@@ -179,8 +180,7 @@ class TestMainEmptyIssue:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             result = publish_main()
 
         assert result == 5
@@ -215,8 +215,7 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "connect", _make_conn)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             result = publish_main()
 
         assert result == 0
@@ -248,8 +247,7 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             publish_main()
 
         conn = db_mod.connect(db_path)
@@ -283,8 +281,7 @@ class TestMainIdempotentSkip:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+        with clock.freeze(datetime(2026, 6, 1, tzinfo=timezone.utc)):
             result = publish_main()
 
         assert result == 0

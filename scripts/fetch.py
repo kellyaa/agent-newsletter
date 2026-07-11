@@ -18,6 +18,7 @@ import feedparser
 import httpx
 import yaml
 
+from clock import now, today as clock_today
 from db import REPO_ROOT, canonicalize_url, connect, init_db, url_id
 
 logging.basicConfig(
@@ -236,8 +237,8 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
 
 def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
     seen, inserted = 0, 0
-    today = datetime.now().date().isoformat()
-    fetched_at = datetime.now(timezone.utc).isoformat()
+    today = clock_today()
+    fetched_at = now().isoformat()
     for it in items:
         seen += 1
         canonical = canonicalize_url(it.url)
@@ -336,7 +337,7 @@ def _stamp_overrides(
 
 
 def _already_fetched_today(conn) -> int:
-    today = datetime.now().date().isoformat()
+    today = clock_today()
     row = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
     ).fetchone()

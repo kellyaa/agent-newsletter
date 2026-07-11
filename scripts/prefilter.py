@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from clock import now as clock_now
 from db import REPO_ROOT, connect, init_db
 from models import CandidateItem, PrefilterItem
 
@@ -239,7 +240,7 @@ def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> l
 def main() -> int:
     init_db()
     conn = connect()
-    now = datetime.now(timezone.utc)
+    now = clock_now()
 
     # Wipe cached papers scores if the rubric changed since the last run.
     _maybe_invalidate_papers_scores(conn)
