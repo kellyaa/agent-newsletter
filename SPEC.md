@@ -359,7 +359,7 @@ v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 
 - `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns.
 - `llm.py` captures token usage from the OpenAI API response (`usage.prompt_tokens`, `usage.completion_tokens`) and passes it back to `rank.py` / `write.py`, which write it to the `runs` row.
-- `BUDGET_USD` env var is read at the top of `run.sh` and logged. **Not enforced** in v1 — just observed.
+- `BUDGET_USD` env var is defined as a future budget cap. **Not yet implemented in `run.sh` or enforced** in v1 — the column scaffolding is in place for when enforcement is added.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
 
 ## Iteration Plan
@@ -384,7 +384,7 @@ Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. 
 - **Run time:** 07:00 local, daily.
 - **Voice:** opinionated and willing to be skeptical, but only on the basis of the actual content. No contrarianism for its own sake; if a piece is solid, say so plainly. Skepticism must cite specifics (sample size, missing ablation, cherry-picked benchmark).
 - **Failure notifications:** macOS notifications via `osascript` from `run.sh` and `watchdog.sh`. No email, no third-party service. Run logs in `logs/`.
-- **Cost cap:** not enforced in v1, but scaffolded — `runs.cost_usd` recorded every run, `BUDGET_USD` env var read but not gated on.
+- **Cost cap:** not enforced in v1, but scaffolded — `runs.cost_usd` recorded every run, `BUDGET_USD` env var defined for future enforcement.
 - **Repo:** public on GitHub. Enables free GitHub Pages hosting for the published newsletter.
 
 ## Initial Source List (`sources.yaml` seed)

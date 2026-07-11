@@ -51,7 +51,7 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 
 ## Setup (one-time)
 
-Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), [gh](https://cli.github.com/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.).
+Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.).
 
 ```bash
 # Python deps
