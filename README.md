@@ -23,7 +23,7 @@ scripts/
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
-watchdog.sh             — fires macOS notification if no commit in >36h
+watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from content worktree; checks content-branch HEAD)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -174,7 +174,10 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever HEAD is a non-newsletter commit (spec edits, pipeline changes). That's expected; it's not a failure signal.
+- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the content worktree's HEAD is a code-edit commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. This is expected during active development; it's not a failure signal. To verify the pipeline ran independently of the watchdog, query `runs` directly:
+  ```bash
+  sqlite3 .worktrees/content/state.db "SELECT date, status FROM runs ORDER BY started_at DESC LIMIT 1;"
+  ```
 
 ### 4. Unsticking it
 
