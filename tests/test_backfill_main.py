@@ -451,12 +451,13 @@ class TestRunWriterForDate:
         """Returns None and logs error when issue file already exists without --force."""
         import backfill as bf
         import db as db_mod
+        import write as write_mod
 
         db_path = tmp_path / "state.db"
         self._make_db_with_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        # Create the issue file
+        # Create the issue file in the isolated tmp directory
         issues_dir = tmp_path / "site" / "src" / "content" / "issues"
         issues_dir.mkdir(parents=True)
         out_path = issues_dir / "2026-07-15.md"
@@ -464,6 +465,9 @@ class TestRunWriterForDate:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
+        # Redirect write_mod.ISSUES_DIR so the existence check uses tmp_path,
+        # not the real repo's issues directory.
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
 
         result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
         conn.close()
@@ -859,6 +863,9 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(backfill, "REPO", tmp_path)
         issues_dir = tmp_path / "site" / "src" / "content" / "issues"
         issues_dir.mkdir(parents=True)
+        # Redirect write_mod.ISSUES_DIR so run_writer_for_date writes to tmp_path,
+        # not the real repo's issues directory (which may already contain that file).
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
 
