@@ -1,4 +1,4 @@
-"""Shared type definitions for pipeline items at each stage boundary.
+"""Shared type definitions and domain constants for the newsletter pipeline.
 
 These TypedDicts define the canonical shape of an item as it flows through
 the pipeline. Using these instead of bare `dict` enables:
@@ -6,11 +6,43 @@ the pipeline. Using these instead of bare `dict` enables:
   - IDE autocompletion on item fields
   - Self-documenting stage contracts
 
+The Status and Section constants centralize the string literals used as
+item states and newsletter sections, preventing typo-induced silent failures.
+
 Import from here in prefilter, rank, write, backfill, replay_writer.
 """
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TypedDict
+
+
+# ---------------------------------------------------------------------------
+# Domain constants
+# ---------------------------------------------------------------------------
+
+class Status(StrEnum):
+    """Item lifecycle states. Values match the state.db `status` column."""
+
+    NEW = "new"
+    CANDIDATE = "candidate"
+    FEATURED = "featured"
+    APPENDIX = "appendix"
+    DROPPED = "dropped"
+    PUBLISHED = "published"
+
+
+class Section(StrEnum):
+    """Newsletter sections. Values match the state.db `section` column."""
+
+    PAPERS = "papers"
+    NEWS = "news"
+    BLOGS = "blogs"
+
+
+# ---------------------------------------------------------------------------
+# TypedDicts
+# ---------------------------------------------------------------------------
 
 
 class ItemRow(TypedDict, total=False):

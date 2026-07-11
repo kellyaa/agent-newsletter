@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from models import Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,7 +91,7 @@ def main() -> int:
         "SELECT items_featured FROM runs WHERE date = ?", (today,)
     ).fetchone()
     pending = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status IN ('featured', 'appendix')"
+        f"SELECT COUNT(*) FROM items WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
     ).fetchone()[0]
     if runs_row is not None and pending == 0:
         log.info(
@@ -100,14 +101,14 @@ def main() -> int:
         conn.close()
         return 0
     rows = conn.execute(
-        "SELECT section FROM items WHERE status = 'featured'"
+        f"SELECT section FROM items WHERE status = '{Status.FEATURED}'"
     ).fetchall()
     featured_counts: dict[str, int] = {}
     for r in rows:
         s = r["section"]
         featured_counts[s] = featured_counts.get(s, 0) + 1
     appendix_count = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status = 'appendix'"
+        f"SELECT COUNT(*) FROM items WHERE status = '{Status.APPENDIX}'"
     ).fetchone()[0]
     items_considered = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
@@ -122,7 +123,8 @@ def main() -> int:
         return 5
 
     conn.execute(
-        "UPDATE items SET status = 'published' WHERE status IN ('featured', 'appendix')"
+        f"UPDATE items SET status = '{Status.PUBLISHED}' "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
     )
     conn.commit()
     log.info(
