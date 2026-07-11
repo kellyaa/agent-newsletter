@@ -17,6 +17,8 @@ import os
 import sys
 from datetime import datetime
 
+import yaml
+
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import call_llm
 
@@ -189,67 +191,45 @@ def invoke_writer(prompt: str) -> dict:
     return out
 
 
-# ---------- Frontmatter assembly ----------
+# ---------- Frontmatter YAML ----------
 
-# Minimal YAML escaping for our shape. We only ever emit strings, ints, nulls,
-# and arrays of those. Strings always use double-quote with backslash escaping.
-def _yaml_str(s: str | None) -> str:
-    if s is None:
-        return "null"
-    # Preserve newlines in long strings using the folded-block scalar would be nice,
-    # but for safety we just escape and use double quotes. Most prose summaries are
-    # one paragraph with no embedded newlines.
-    s = s.replace("\\", "\\\\").replace('"', '\\"')
-    s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-    return f'"{s}"'
+# Custom representer to ensure None renders as "null" (not empty) and strings
+# with special chars use double-quote style. PyYAML's default block style
+# matches what Astro's YAML parser expects.
+
+class _FrontmatterDumper(yaml.SafeDumper):
+    """Custom dumper for Astro-compatible frontmatter YAML."""
+    pass
 
 
-def _yaml_value(v) -> str:
-    if v is None:
-        return "null"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, (int, float)):
-        return str(v)
-    if isinstance(v, str):
-        return _yaml_str(v)
-    raise TypeError(f"unsupported scalar type: {type(v)}")
+def _str_representer(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
+    """Use double-quoted style for strings containing special characters."""
+    if any(c in data for c in ('\n', '\r', '\t', '"', '\\', ':')):
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data)
 
 
-def _emit_dict(d: dict, indent: int) -> list[str]:
-    lines = []
-    pad = "  " * indent
-    for k, v in d.items():
-        if isinstance(v, dict):
-            lines.append(f"{pad}{k}:")
-            lines.extend(_emit_dict(v, indent + 1))
-        elif isinstance(v, list):
-            if not v:
-                lines.append(f"{pad}{k}: []")
-                continue
-            lines.append(f"{pad}{k}:")
-            for entry in v:
-                if isinstance(entry, dict):
-                    sub = _emit_dict(entry, indent + 1)
-                    if sub:
-                        # Replace the first line's leading "  " indent with "- "
-                        first = sub[0]
-                        first_pad = "  " * (indent + 1)
-                        assert first.startswith(first_pad)
-                        lines.append(f"{first_pad[:-2]}- {first[len(first_pad):]}")
-                        lines.extend(sub[1:])
-                else:
-                    lines.append(f"{pad}- {_yaml_value(entry)}")
-        else:
-            lines.append(f"{pad}{k}: {_yaml_value(v)}")
-    return lines
+_FrontmatterDumper.add_representer(str, _str_representer)
 
 
 def emit_yaml_frontmatter(data: dict) -> str:
-    lines = ["---"]
-    lines.extend(_emit_dict(data, 0))
-    lines.append("---")
-    return "\n".join(lines) + "\n"
+    """Serialize a dict as YAML frontmatter fenced with --- markers.
+
+    Uses PyYAML with a custom dumper for Astro-compatible output:
+    - Block style (readable, not flow/inline)
+    - None → null
+    - Strings with special chars → double-quoted
+    - Consistent 2-space indentation
+    """
+    body = yaml.dump(
+        data,
+        Dumper=_FrontmatterDumper,
+        default_flow_style=False,
+        allow_unicode=True,
+        sort_keys=False,
+        width=200,  # avoid unwanted line wrapping in long URLs/summaries
+    )
+    return f"---\n{body}---\n"
 
 
 # ---------- Issue assembly ----------

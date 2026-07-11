@@ -8,7 +8,7 @@ All 9 partial branches from --cov-branch analysis:
   fetch.py:186->188    — fetch_reddit() post with no created_utc field
   fetch.py:271->241    — upsert_items() conflict update (rowcount check false path)
   llm.py:107->110      — _one_shot() markdown code fence without closing triple-tick
-  write.py:234->231    — _emit_dict() returns empty list for a list value
+  write.py              — PyYAML-based emitter edge cases
   write.py:273->272    — assemble_issue() writer output entry without 'id' key
 """
 from __future__ import annotations
@@ -374,24 +374,21 @@ class TestOneShotFenceWithoutClosingTick:
 
 
 # ---------------------------------------------------------------------------
-# write.py:234->231 — _emit_dict() list value where sub-items render empty
+# write.py — PyYAML-based emit_yaml_frontmatter handles edge cases
 # ---------------------------------------------------------------------------
 
-class TestEmitDictEmptySubItems:
-    def test_list_entry_that_emits_empty_dict_is_skipped(self):
-        """_emit_dict() skips list entries whose sub-dict renders empty (234->231).
+class TestEmitYamlEdgeCases:
+    def test_empty_dict_in_list_produces_valid_yaml(self):
+        """PyYAML handles empty dicts in lists correctly."""
+        from write import emit_yaml_frontmatter
+        import yaml
 
-        An empty dict {} passed as a list entry returns [] from _emit_dict,
-        triggering the 'if sub:' FALSE branch.
-        """
-        from write import _emit_dict
-
-        # A dict value with a list containing an empty dict
-        # _emit_dict({}) returns [] so 'if sub:' is False
         data = {"items": [{}]}
-        lines = _emit_dict(data, indent=0)
-        # Should have 'items:' key but empty entry skipped
-        assert any("items:" in line for line in lines)
+        result = emit_yaml_frontmatter(data)
+        # Must be valid YAML
+        assert result.startswith("---\n")
+        parsed = yaml.safe_load(result.split("---\n")[1].split("---")[0])
+        assert parsed["items"] == [{}]
         # The empty dict entry should not produce any output
         assert not any("- " in line for line in lines)
 

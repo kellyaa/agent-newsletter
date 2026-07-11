@@ -5,79 +5,9 @@ import pytest
 import yaml  # PyYAML for round-trip validation
 
 from write import (
-    _yaml_str,
-    _yaml_value,
-    _emit_dict,
     emit_yaml_frontmatter,
     assemble_issue,
 )
-
-
-# ---------------------------------------------------------------------------
-# _yaml_str
-# ---------------------------------------------------------------------------
-
-class TestYamlStr:
-    """_yaml_str produces valid double-quoted YAML string scalars."""
-
-    def test_plain_string(self):
-        assert _yaml_str("hello world") == '"hello world"'
-
-    def test_none_returns_null(self):
-        assert _yaml_str(None) == "null"
-
-    def test_backslash_escaped(self):
-        result = _yaml_str("path\\to\\file")
-        assert result == '"path\\\\to\\\\file"'
-
-    def test_double_quote_escaped(self):
-        result = _yaml_str('say "hi"')
-        assert result == '"say \\"hi\\""'
-
-    def test_newline_escaped(self):
-        result = _yaml_str("line1\nline2")
-        assert result == '"line1\\nline2"'
-
-    def test_tab_escaped(self):
-        result = _yaml_str("col1\tcol2")
-        assert result == '"col1\\tcol2"'
-
-    def test_carriage_return_escaped(self):
-        result = _yaml_str("cr\rn")
-        assert result == '"cr\\rn"'
-
-    def test_empty_string(self):
-        assert _yaml_str("") == '""'
-
-
-# ---------------------------------------------------------------------------
-# _yaml_value
-# ---------------------------------------------------------------------------
-
-class TestYamlValue:
-    """_yaml_value dispatches to the correct representation by type."""
-
-    def test_none(self):
-        assert _yaml_value(None) == "null"
-
-    def test_true(self):
-        assert _yaml_value(True) == "true"
-
-    def test_false(self):
-        assert _yaml_value(False) == "false"
-
-    def test_int(self):
-        assert _yaml_value(42) == "42"
-
-    def test_float(self):
-        assert _yaml_value(3.14) == "3.14"
-
-    def test_string(self):
-        assert _yaml_value("hello") == '"hello"'
-
-    def test_unsupported_type_raises(self):
-        with pytest.raises(TypeError):
-            _yaml_value([1, 2, 3])
 
 
 # ---------------------------------------------------------------------------
