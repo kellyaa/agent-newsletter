@@ -118,6 +118,7 @@ Feed sources are declared in `sources.yaml`. Each source has an `id`, `url`, and
 - `section: papers | news | blogs` — override the family-default section assignment
 - `keyword_gate_bypass: true` — skip the prefilter keyword gate (use only for low-volume, hand-curated practitioner blogs)
 - `recency_days: N` — override the default recency window (useful for slow-publishing sources)
+- `weight: <float>` — **reserved stub; currently a no-op** (not read by pipeline code). Present on all existing entries. Do not change weight values expecting any behavioral effect.
 
 **To add a source:**
 1. Add an entry under the correct family key (`rss:`, `arxiv:`, `hn:`, etc.) in `sources.yaml`.
@@ -157,9 +158,47 @@ A PR labeled `hold` (or `on-hold` / `do-not-merge`) **must not be merged** until
 
 - Python 3.11+; no type annotations required but they are welcome.
 - No external formatter enforced (no black/ruff CI gate), but keep code readable.
-- Keep scripts self-contained — `scripts/` files should not import from each other except via `db.py` and `llm.py`.
+- Keep scripts self-contained — `scripts/` files should not import from each other except via `db.py`, `llm.py`, and `models.py`.
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
+
+---
+
+## Operational scripts — backfill and replay
+
+Two scripts handle emergency and verification scenarios. Neither is part of the normal daily pipeline.
+
+### `scripts/backfill.py` — reconstruct a missed day's issue
+
+Use when a daily run was skipped entirely (e.g., the Mac was off) and you want to produce an issue from the historical candidate pool in `state.db`.
+
+```bash
+# Reconstruct the issue for a past date from the DB candidate pool
+uv run scripts/backfill.py --date 2026-06-10
+```
+
+**Prerequisites:** The content worktree must exist at `.worktrees/content` (run `git worktree add .worktrees/content content` if not). Backfill uses candidates already scored in `state.db` — it does not re-fetch or re-rank. A `runs` row is **not** recorded for a backfilled issue; the run history will show a gap.
+
+### `scripts/replay_writer.py` — replay writer against a past issue
+
+Use when you've changed `prompts/write.md` and want to compare the new writer output against a previously published issue.
+
+```bash
+# Replay the writer for a past date (reads published items from state.db)
+uv run scripts/replay_writer.py 2026-06-10
+```
+
+Output goes to `logs/theme-replay-<YYYY-MM-DD>.json` in the repo root. Use it to review prompt changes before running the live pipeline.
+
+---
+
+## Building the Astro site
+
+```bash
+pnpm --prefix site build
+```
+
+The build script runs `astro build && pagefind --site dist`. [Pagefind](https://pagefind.app/) generates the static search index in `dist/pagefind/` after the Astro build. The `pagefind` package is a dev dependency installed by `pnpm install` — no separate install needed. The Astro dev server (`astro dev`) does **not** run pagefind, so search is only functional in the built/previewed output.
 
 ---
 
