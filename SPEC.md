@@ -144,7 +144,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (was due ~2026-07-07; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review overdue (was due ~2026-07-07 — see issue #121; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
@@ -268,7 +268,7 @@ CREATE TABLE items (
   keyword_gate_bypass INTEGER NOT NULL DEFAULT 0,  -- per-source: skip prefilter keyword gate
   recency_days_override INTEGER,  -- per-source: recency window override, in days
   why TEXT,                       -- ranker's one-line rationale
-  status TEXT NOT NULL,           -- new|candidate|ranked|featured|appendix|published|dropped
+  status TEXT NOT NULL,           -- new|candidate|featured|appendix|published|dropped (note: 'ranked' is never written; rank.py transitions directly to featured/appendix/dropped)
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
@@ -330,6 +330,9 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 ├── .github/workflows/
 │   ├── deploy.yml             ← Astro build + Pages deploy (triggers on main or content push)
 │   └── tests.yml              ← pytest CI
+├── .rubric_hash               ← sha256 of prompts/rank.md; prefilter.py uses this to detect rubric changes and bulk-reset cached paper scores (gitignored)
+├── candidates.json            ← debug artifact: candidate pool snapshot written by prefilter.py each run (gitignored)
+├── ranked.json                ← debug artifact: raw LLM ranker output written by rank.py each run (gitignored)
 ├── launchd/                   ← macOS plists + install.sh
 ├── logs/                      ← per-day run logs (gitignored)
 └── tests/                     ← pytest suite
