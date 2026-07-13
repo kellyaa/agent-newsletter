@@ -140,7 +140,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (due ~2026-07-07, now overdue):** check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often.
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review (was due ~2026-07-07; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
@@ -343,14 +343,14 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
 | Cost runaway                      | Per-run cost recorded in `runs.cost_usd`; `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
-| No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks content worktree HEAD for `newsletter:` commit pattern; if stale, fires a macOS notification |
+| No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks main-branch HEAD for `newsletter:` commit pattern; if stale, fires a macOS notification |
 
 ## Failure Notifications
 
 macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 - `run.sh` wraps the pipeline; on nonzero exit, the wrapper invokes `osascript -e 'display notification ...'` with the failed stage and the path to the day's log.
-- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent `newsletter:` commit in the content worktree at `.worktrees/content/`. If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/". If the content worktree's HEAD is a non-newsletter commit (e.g., an operator code edit on `main` followed before the next daily run), watchdog prints "skipping check" — this is expected behavior, not a failure.
+- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent `newsletter:` commit in the main-branch repo (at `REPO_ROOT`, resolved from `watchdog.sh`'s own location). If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/". If the HEAD commit is not a `newsletter:` commit (e.g., a code edit or merge commit), watchdog prints "skipping check" — this is expected behavior when the most recent commit to the repo was human-authored, not a daily pipeline run.
 - The full output of every run lands in `logs/run-YYYY-MM-DD.log` for postmortem (already wired up via `tee` in `run.sh`).
 - Once the site is deployed to GitHub Pages, the Pages-build-failure email GitHub sends on broken deploys is a free additional signal.
 
