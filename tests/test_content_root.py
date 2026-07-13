@@ -12,10 +12,10 @@ Design contract:
   - ranked.json      → REPO_ROOT  (intermediate pipeline artifact, NOT content)
   - prompts/         → REPO_ROOT  (code artifact, NOT content)
 
-Known regression (issue #64):
-  backfill.py currently writes issue files to REPO instead of CONTENT_ROOT.
-  The test below documents and asserts the EXPECTED behaviour post-fix, so it
-  will fail until issue #64 is resolved.  It is clearly marked xfail.
+Fix (issue #64):
+  backfill.py run_writer_for_date() now uses write_mod.ISSUES_DIR instead of
+  the hardcoded REPO path, so issue files land in CONTENT_ROOT when set.
+  The xfail marker has been removed — this test now asserts the fixed behaviour.
 """
 from __future__ import annotations
 
@@ -159,21 +159,16 @@ class TestIntermediateArtifactsStayInRepoRoot:
 
 
 # ---------------------------------------------------------------------------
-# backfill.py — regression test (XFAIL: issue #64 not yet fixed)
+# backfill.py — regression test for issue #64 (fixed: CONTENT_ROOT respected)
 # ---------------------------------------------------------------------------
 
 class TestBackfillContentRoot:
-    @pytest.mark.xfail(
-        reason="issue #64: backfill.run_writer_for_date() hardcodes REPO for ISSUES_DIR"
-                " instead of using write.ISSUES_DIR which resolves under CONTENT_ROOT",
-        strict=True,
-    )
     def test_run_writer_for_date_uses_content_root(self, tmp_path, monkeypatch):
-        """run_writer_for_date() SHOULD write the issue file to CONTENT_ROOT.
+        """run_writer_for_date() writes the issue file to CONTENT_ROOT, not REPO_ROOT.
 
-        Currently FAILS (xfail) because backfill.py uses REPO (hardcoded REPO_ROOT)
-        instead of importing write.ISSUES_DIR.  When issue #64 is fixed, this test
-        should be un-xfailed and will pass.
+        Regression test for issue #64: backfill.py previously hardcoded REPO
+        for ISSUES_DIR instead of using write_mod.ISSUES_DIR which resolves under
+        CONTENT_ROOT.  The fix replaces the hardcoded path with write_mod.ISSUES_DIR.
         """
         import db as db_mod
         import write as write_mod
@@ -223,12 +218,62 @@ class TestBackfillContentRoot:
 
         # EXPECTED (post-fix): file written to CONTENT_ROOT issues dir
         expected_path = content_issues / "2026-07-15.md"
-        # ACTUAL (current bug): file written to REPO issues dir
-        actual_path = tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md"
 
-        # This assertion captures the expected (fixed) behavior.
-        # It currently fails because result points to REPO, not CONTENT_ROOT.
         assert result == expected_path, (
             f"Expected issue at CONTENT_ROOT ({expected_path}), "
             f"but got {result} — backfill.py is writing to REPO_ROOT instead"
         )
+        assert expected_path.exists(), "Issue file was not created in CONTENT_ROOT"
+        assert not (tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md").exists(), \
+            "Issue file should NOT be written to REPO_ROOT when CONTENT_ROOT is set"
+
+    def test_run_writer_for_date_repo_root_when_content_root_unset(self, tmp_path, monkeypatch):
+        """run_writer_for_date() falls back to REPO_ROOT/site/... when CONTENT_ROOT is unset.
+
+        Ensures the fix doesn't break the default (no CONTENT_ROOT) code path.
+        """
+        import db as db_mod
+        import write as write_mod
+        import backfill as bf
+
+        monkeypatch.delenv("CONTENT_ROOT", raising=False)
+        importlib.reload(db_mod)
+        importlib.reload(write_mod)
+
+        db_path = tmp_path / "state.db"
+        db_mod.init_db(db_path)
+        conn_raw = sqlite3.connect(db_path)
+        conn_raw.execute("""
+            INSERT INTO items (id, source, url, canonical_url, title, author,
+                               published_at, fetched_at, raw_text, status, section,
+                               score, tags, why, first_seen_date, last_seen_date,
+                               appearances, keyword_gate_bypass, times_competed)
+            VALUES ('feat1', 'arxiv:cs', 'http://arxiv.org/1', 'http://arxiv.org/1',
+                    'Test Paper', 'Author', '2026-07-09', '2026-07-09',
+                    'Abstract.', 'featured', 'papers', 9, '["agents"]',
+                    'great', '2026-07-09', '2026-07-09', 0, 0, 0)
+        """)
+        conn_raw.commit()
+        conn_raw.close()
+
+        conn = db_mod.connect(db_path)
+
+        # Without CONTENT_ROOT, write_mod.ISSUES_DIR resolves under REPO_ROOT.
+        # Point both REPO and write_mod.ISSUES_DIR at tmp_path for this test.
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+        expected_issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        expected_issues_dir.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", expected_issues_dir)
+
+        fake_output = {"theme": "AI agents", "items": [{"id": "feat1", "summary": "Paper."}]}
+        monkeypatch.setattr(write_mod, "invoke_writer", lambda p: fake_output)
+
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "write.md").write_text("rubric")
+
+        result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
+        conn.close()
+
+        expected_path = expected_issues_dir / "2026-07-15.md"
+        assert result == expected_path
+        assert expected_path.exists()
