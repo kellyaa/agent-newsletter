@@ -343,14 +343,14 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
 | Cost runaway                      | Per-run cost recorded in `runs.cost_usd`; `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
-| No commit in >36h                 | Separate "watchdog" launchd job runs hourly; if `git log -1` is stale, fires a macOS notification |
+| No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks content worktree HEAD for `newsletter:` commit pattern; if stale, fires a macOS notification |
 
 ## Failure Notifications
 
 macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 - `run.sh` wraps the pipeline; on nonzero exit, the wrapper invokes `osascript -e 'display notification ...'` with the failed stage and the path to the day's log.
-- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent commit on `main`. If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/".
+- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent `newsletter:` commit in the content worktree at `.worktrees/content/`. If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/". If the content worktree's HEAD is a non-newsletter commit (e.g., an operator code edit on `main` followed before the next daily run), watchdog prints "skipping check" — this is expected behavior, not a failure.
 - The full output of every run lands in `logs/run-YYYY-MM-DD.log` for postmortem (already wired up via `tee` in `run.sh`).
 - Once the site is deployed to GitHub Pages, the Pages-build-failure email GitHub sends on broken deploys is a free additional signal.
 
