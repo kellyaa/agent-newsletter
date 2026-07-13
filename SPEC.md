@@ -73,11 +73,13 @@ Pure Python, no LLM calls. Pulls from:
 |---------------|------------------------------------|---------------------------------------------------------------------------------------------|
 | RSS/Atom      | `feedparser`                       | Simon Willison, Latent Space, Anthropic blog, LangChain, HuggingFace, Sebastian Raschka... |
 | arXiv         | arXiv API (Atom)                   | Queries on `cs.AI`, `cs.CL`, `cs.SE` with agent-related terms, last 48h                    |
-| Semantic Schl | REST API                           | Backfill citation counts on arxiv hits                                                     |
 | HN            | Algolia API                        | `query=agent OR LLM`, min points threshold, last 48h                                       |
 | Reddit        | `.json` endpoints                  | `r/LocalLLaMA`, `r/MachineLearning`, min upvotes                                           |
 | GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent` (releases watchlist removed 2026-05-14 — see §Source list realities) |
-| HF Daily      | Scrape HTML of daily-papers page   | Pre-curated academic signal                                                                |
+
+**Removed / not yet implemented sources:**
+- **Semantic Scholar** REST API (citation-count backfill for arXiv hits) — designed but never implemented; no adapter in `fetch.py`.
+- **HF Daily** HTML scrape (https://huggingface.co/papers) — configured in `sources.yaml` but no `fetch_hf_daily()` adapter exists in `fetch.py`. Tracked in #96 for removal. The `hf-daily` section prefix in `sources.yaml` and the `hf-daily → papers` mapping in `prefilter.py` are dead code pending that cleanup.
 
 Feed list lives in `sources.yaml` — easy to edit without touching code.
 
@@ -106,9 +108,11 @@ Survivors get `status = 'candidate'`.
 `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. The model and endpoint are configured via `RANKER_MODEL` and `LLM_BASE_URL` in `.env`.
 
 `prompts/rank.md` instructs the ranker to:
-1. Read `candidates.json`, which contains items already grouped by section (`papers`, `news`, `blogs`) by `prefilter.py`.
+1. Receive candidate items grouped by section (`papers`, `news`, `blogs`), loaded from `state.db` by `scripts/candidates.py` via `load_candidates_from_db()`.
 2. Score each item 1-10 against the rubric below, applying the **section-specific** axis emphasis and threshold.
 3. Return a JSON array: `[{id, score, tags, one_line_why}]`. Section is not emitted — it was set deterministically upstream.
+
+`prefilter.py` also writes a `candidates.json` debug artifact (same content, file format) for manual inspection, but `rank.py` reads from `state.db` directly via `candidates.py` — it does not depend on the file.
 
 The ranker makes three separate calls — one per section (`papers`, `news`, `blogs`) — so each section's candidates are scored in isolation against that section's rubric. (A single 150-item call risks timeouts and quality degradation; see §LLM API lessons.)
 
@@ -235,7 +239,7 @@ arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the
 
 - Papers that pass prefilter sit in `status = 'candidate'` for up to `PAPER_POOL_MAX_AGE_DAYS = 7` days from their `published_at`, *or* until they have lost `PAPER_POOL_MAX_COMPETES = 7` competitions, whichever comes first. Prefilter ages out anything past either ceiling at the start of each run.
 - The papers ranker scores each paper exactly once. After that first scoring, the score stays on the row and the LLM is not invoked for it again — the rubric in `prompts/rank.md` is absolute (0–10 against fixed thresholds), not relative to the batch, so re-scoring would be redundant cost.
-- Each daily run, prefilter emits two papers buckets in `candidates.json`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 50` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union.
+- Each daily run, `candidates.py` (`load_candidates_from_db()`) provides two papers buckets to `rank.py`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 50` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union. `prefilter.py` also writes a `candidates.json` debug artifact with the same content for manual inspection.
 - Papers with `score >= featured_min` that *lose the featured cap* on a heavy day stay at `status = 'candidate'` to re-compete the next day. Today (pre-issue-16) those papers get sealed to `appendix` and never reappear, even if they scored 9 or 10 — on a 30-paper day, the bottom 25 of the would-be-featured set are wasted. The pool flips this: a strong paper appears in the issue at most once, on whichever day it actually wins a featured slot, and is held back from the appendix until then.
 - Mid-band papers (`appendix_min <= score < featured_min`) still go to `appendix` (terminal). They're not strong enough to ever win featured, so leaving them in the pool would just bloat it without ever surfacing them. Papers with `score < appendix_min` go to `dropped` (same as today).
 - A per-row `times_competed` counter (incremented on each run where a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them.
@@ -308,6 +312,7 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 ├── scripts/
 │   ├── fetch.py               ← collectors (no LLM)
 │   ├── prefilter.py           ← recency + keyword + dedup gates
+│   ├── candidates.py          ← shared candidate pool query (DB → grouped dict)
 │   ├── rank.py                ← per-section LLM ranker (3× calls via llm.py)
 │   ├── write.py               ← LLM writer (1× call via llm.py)
 │   ├── publish.py             ← promote items; record runs row
