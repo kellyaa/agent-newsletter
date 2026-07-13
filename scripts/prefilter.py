@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
 from models import CandidateItem, PrefilterItem
 
@@ -322,73 +323,21 @@ def main() -> int:
         conn.commit()
         log.info("dropped %d items that failed prefilter", len(rejected_ids))
 
-    # Emit candidates.json grouped by section, sourced from the DB's *current*
-    # `status = candidate` rows. Re-running prefilter regenerates the same
-    # snapshot regardless of whether new items were added this invocation.
-    #
-    # Papers handling (issue #16): papers items live in the candidate pool
-    # for up to PAPER_POOL_MAX_COMPETES days, scored once and re-selected each
-    # day. Items with score IS NOT NULL go into `papers_prescored` so rank.py
-    # can skip the LLM call for them. Items with score IS NULL are unscored
-    # newcomers — these are the only ones subject to PAPER_PRERANK_CAP.
-    grouped: dict[str, list[dict]] = {
-        "papers": [],
-        "papers_prescored": [],
-        "news": [],
-        "blogs": [],
-    }
-    rows = conn.execute(
-        """
-        SELECT id, source, url, title, author, published_at, raw_text,
-               section, section_override, score, tags, why
-        FROM items
-        WHERE status = 'candidate'
-        """
-    ).fetchall()
-    for r in rows:
-        d = dict(r)
-        section = d.get("section") or assign_section(
-            d["source"], d.get("section_override")
-        )
-        emitted = {
-            "id": d["id"],
-            "source": d["source"],
-            "url": d["url"],
-            "title": d["title"],
-            "author": d["author"],
-            "published_at": d["published_at"],
-            "raw_text": d["raw_text"],
-        }
-        if section == "papers" and d.get("score") is not None:
-            # Carry the cached score + tags + why so rank.py can merge without
-            # re-invoking the LLM. tags is a JSON-encoded array on disk.
-            emitted["score"] = d["score"]
-            try:
-                emitted["tags"] = json.loads(d["tags"]) if d["tags"] else []
-            except (TypeError, ValueError):
-                emitted["tags"] = []
-            emitted["why"] = d["why"] or ""
-            grouped["papers_prescored"].append(emitted)
-        else:
-            grouped[section].append(emitted)
+    # Load the candidate pool from DB using the shared query function.
+    # This is the canonical way to get grouped candidates — rank.py uses
+    # the same function, eliminating the file-based coupling.
+    grouped = load_candidates_from_db(
+        conn,
+        prerank_cap=PAPER_PRERANK_CAP,
+        prerank_scorer=_prerank_score,
+        now=now,
+    )
 
-    # Pre-rank cap: only applies to unscored papers, since prescored ones are
-    # free to keep around (no LLM cost). Sort by composite heuristic and keep
-    # top-N; the rest are NOT dropped from the DB — they'll re-compete tomorrow
-    # with whatever fresh arrivals show up, and can win a slot via the heuristic
-    # then.
-    if len(grouped["papers"]) > PAPER_PRERANK_CAP:
-        before = len(grouped["papers"])
-        grouped["papers"].sort(key=lambda it: _prerank_score(it, now), reverse=True)
-        grouped["papers"] = grouped["papers"][:PAPER_PRERANK_CAP]
-        log.info(
-            "papers pre-rank cap: %d unscored → %d (top by recency × keyword density)",
-            before, len(grouped["papers"]),
-        )
-
+    # Write candidates.json as a debug/inspection artifact. rank.py does NOT
+    # depend on this file — it queries the DB directly via load_candidates_from_db().
     CANDIDATES_OUT.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
     log.info(
-        "wrote %s — papers=%d (prescored=%d) news=%d blogs=%d",
+        "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
         CANDIDATES_OUT,
         len(grouped["papers"]),
         len(grouped["papers_prescored"]),

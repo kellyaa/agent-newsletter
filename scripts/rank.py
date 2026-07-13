@@ -1,7 +1,7 @@
 """Invoke an OpenAI-compatible LLM to rank candidate items, then apply
 per-section thresholds and caps to assign each item a final status.
 
-Reads:  candidates.json (grouped by section, written by prefilter.py)
+Reads:  state.db (candidate pool, via candidates.load_candidates_from_db)
 Writes: ranked.json (raw ranker output, for debugging)
         DB:  items.score, items.tags, items.why, items.status
 
@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 
+from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
 from models import RankDecision, ScoredItem
@@ -26,8 +27,7 @@ logging.basicConfig(
 log = logging.getLogger("rank")
 
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
-CANDIDATES_PATH = REPO_ROOT / "candidates.json"
-RANKED_PATH = REPO_ROOT / "ranked.json"
+RANKED_PATH = REPO_ROOT / "ranked.json"  # debug artifact: raw LLM scores
 
 RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 # Per-section call timeout. Per-call output is bounded by section size, so this
@@ -201,44 +201,24 @@ def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
 
 def main() -> int:
     init_db()
-    if not CANDIDATES_PATH.exists():
-        log.error("missing %s — run prefilter first", CANDIDATES_PATH)
-        return 2
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
         return 2
 
-    candidates = json.loads(CANDIDATES_PATH.read_text())
     rubric = PROMPT_PATH.read_text()
+
+    # Load candidates directly from the DB. This is the same function
+    # prefilter.py uses to write its debug artifact, ensuring consistency.
+    # The query only returns items with status='candidate', so it inherently
+    # handles idempotent resume: if rank.py crashed after papers but before
+    # blogs, the already-ranked items will have moved to 'featured'/'appendix'/
+    # 'dropped' and won't appear in this result set.
+    candidates = load_candidates_from_db()
 
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
     # Items here have score+tags+why already; we skip the LLM and merge them
     # with whatever the LLM returns for the unscored `papers` bucket.
     BUCKETS = ("papers", "papers_prescored", "news", "blogs")
-
-    # Idempotent resume: filter out items already past 'candidate' status.
-    # If rank.py crashed after papers but before blogs, papers items are now
-    # 'featured/appendix/dropped' and we should not re-send them to the LLM.
-    conn_check = connect()
-    try:
-        candidate_rows = conn_check.execute(
-            "SELECT id FROM items WHERE status = 'candidate'"
-        ).fetchall()
-    finally:
-        conn_check.close()
-    still_candidate = {r["id"] for r in candidate_rows}
-    skipped_already_ranked = 0
-    for bucket in BUCKETS:
-        before = len(candidates.get(bucket, []))
-        candidates[bucket] = [
-            it for it in candidates.get(bucket, []) if it["id"] in still_candidate
-        ]
-        skipped_already_ranked += before - len(candidates[bucket])
-    if skipped_already_ranked > 0:
-        log.info(
-            "rank: resume — skipping %d items already ranked in a prior run",
-            skipped_already_ranked,
-        )
 
     # Total count for sanity logging.
     total = sum(len(candidates.get(b, [])) for b in BUCKETS)
@@ -298,7 +278,7 @@ def main() -> int:
     for bucket, items in candidates.items():
         section = "papers" if bucket in ("papers", "papers_prescored") else bucket
         if section not in SECTION_RULES:
-            continue  # pragma: no cover — candidates.json only has valid bucket keys
+            continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
         for it in items:
             by_id_section[it["id"]] = section
 

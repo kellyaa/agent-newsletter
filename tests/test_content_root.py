@@ -137,15 +137,15 @@ class TestIntermediateArtifactsStayInRepoRoot:
         # and NOT in CONTENT_ROOT (which is tmp_path here)
         assert not str(prefilter.CANDIDATES_OUT).startswith(str(tmp_path))
 
-    def test_rank_candidates_path_not_in_content_root(self, monkeypatch, tmp_path):
-        """rank.CANDIDATES_PATH is in REPO_ROOT, not CONTENT_ROOT (intermediate artifact)."""
+    def test_rank_ranked_path_not_in_content_root(self, monkeypatch, tmp_path):
+        """rank.RANKED_PATH (debug artifact) is in REPO_ROOT, not CONTENT_ROOT."""
         monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
         import db
         importlib.reload(db)
         import rank
         importlib.reload(rank)
-        assert rank.CANDIDATES_PATH.is_relative_to(rank.REPO_ROOT)
-        assert not str(rank.CANDIDATES_PATH).startswith(str(tmp_path))
+        assert rank.RANKED_PATH.is_relative_to(rank.REPO_ROOT)
+        assert not str(rank.RANKED_PATH).startswith(str(tmp_path))
 
     def test_rank_rubric_prompt_not_in_content_root(self, monkeypatch, tmp_path):
         """rank.PROMPT_PATH (prompts/rank.md) is in REPO_ROOT — code, not content."""
