@@ -114,66 +114,13 @@ export CONTENT_ROOT="$CONTENT_WORKTREE"
 # on rows that we're about to delete here.
 if [ "$REFETCH" = true ]; then
   log "REFETCH: deleting today's fetched items so fetch runs again"
-  uv run python - <<'PY'
-import sqlite3
-from datetime import datetime
-from pathlib import Path
-
-import os
-
-content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
-db = content_root / "state.db"
-today = datetime.now().date().isoformat()
-
-if not db.exists():
-    print(f"no state.db at {db}; nothing to delete")
-else:
-    conn = sqlite3.connect(db)
-    cur = conn.execute(
-        "DELETE FROM items WHERE first_seen_date = ?", (today,)
-    )
-    conn.commit()
-    print(f"deleted {cur.rowcount} items first seen on {today}")
-    conn.close()
-PY
+  uv run python scripts/reset.py refetch
 fi
 
 # ─── Force: reset today's post-fetch state ─────────────────────────────────
 if [ "$FORCE" = true ]; then
   log "FORCE: resetting today's post-fetch state"
-  uv run python - <<'PY'
-import sqlite3
-from datetime import datetime
-from pathlib import Path
-
-import os
-
-content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
-db = content_root / "state.db"
-today = datetime.now().date().isoformat()
-
-conn = sqlite3.connect(db)
-# Send today's processed items back to 'candidate' so rank/write can re-run.
-# Leave 'new' alone (prefilter handles those naturally) and leave 'dropped'
-# alone (those are deliberate negatives we don't want to re-evaluate).
-# Match by first_seen_date — last_seen_date matches any prior-day published
-# item that today's feeds re-surfaced (fetch bumps last_seen_date on conflict),
-# which would re-promote already-published items into today's issue.
-conn.execute(
-    "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL "
-    "WHERE status IN ('featured', 'appendix', 'published') AND first_seen_date = ?",
-    (today,),
-)
-conn.execute("DELETE FROM runs WHERE date = ?", (today,))
-conn.commit()
-conn.close()
-
-# Drop today's issue file so write.py runs.
-issue = content_root / "site" / "src" / "content" / "issues" / f"{today}.md"
-if issue.exists():
-    issue.unlink()
-    print(f"removed {issue}")
-PY
+  uv run python scripts/reset.py force
 fi
 
 # ─── Stages ────────────────────────────────────────────────────────────────
