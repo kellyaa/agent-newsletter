@@ -14,7 +14,8 @@ prompts/
   write.md              — writer voice/style + JSON output schema
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
-  prefilter.py          — recency + keyword + dedup gates
+  prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
+  candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
   rank.py               — three LLM calls (OpenAI-compatible), one per section
   write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
@@ -69,6 +70,15 @@ $EDITOR .env
 ./launchd/install.sh
 ```
 
+> ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
+> hard-coded author paths (`/Users/kelly/git/incubation/…`). Edit both
+> `launchd/com.kelly.agent-newsletter.plist` and
+> `launchd/com.kelly.agent-newsletter-watchdog.plist`, replacing every occurrence of
+> `/Users/kelly/git/incubation` with your actual repo root and `/Users/kelly/.local/bin`
+> with your actual local bin path before running `install.sh`. Installing without editing
+> these paths will silently install plists that point at the wrong location and the
+> scheduled job will never run.
+
 ### LLM configuration (`.env`)
 
 The ranker and writer scripts read their endpoint, key, and model ids from environment variables. `run.sh` sources `.env` (repo-local, gitignored) at startup; you can also put values in `~/.config/agent-newsletter/env` for machine-wide defaults that `.env` overrides.
@@ -98,7 +108,8 @@ To trigger a run on demand (without waiting for 07:00):
 
 ```bash
 ./run.sh                # idempotent
-./run.sh --force        # re-run today from scratch
+./run.sh --force        # re-run today from scratch (skips re-fetching; arXiv safe)
+./run.sh --refetch      # also re-fetch from all sources (use sparingly; arXiv rate-limits)
 ```
 
 To uninstall the schedulers:
