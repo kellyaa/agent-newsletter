@@ -25,57 +25,48 @@ rss:
   - id: simonw
     name: "Simon Willison's Weblog"
     url: https://simonwillison.net/atom/everything/
-    weight: 1.0
     keyword_gate_bypass: true
 
   - id: latent-space
     name: "Latent Space"
     url: https://www.latent.space/feed
-    weight: 1.0
     keyword_gate_bypass: true
 
   - id: interconnects
     name: "Interconnects (Nathan Lambert)"
     url: https://www.interconnects.ai/feed
-    weight: 1.0
     keyword_gate_bypass: true
 
   - id: raschka
     name: "Sebastian Raschka — Ahead of AI"
     url: https://magazine.sebastianraschka.com/feed
-    weight: 1.0
     keyword_gate_bypass: true
     recency_days: 90
 
   - id: eugene-yan
     name: "Eugene Yan"
     url: https://eugeneyan.com/rss/
-    weight: 1.0
     keyword_gate_bypass: true
 
   - id: hamel
     name: "Hamel Husain"
     url: https://hamel.dev/index.xml
-    weight: 1.0
     keyword_gate_bypass: true
     recency_days: 90
 
   - id: karuparti
     name: "Karuparti"
     url: https://newsletter.karuparti.com/feed
-    weight: 0.7
     keyword_gate_bypass: true
 
   - id: cameron-wolfe
     name: "Cameron R. Wolfe — Deep (Learning) Focus"
     url: https://cameronrwolfe.substack.com/feed
-    weight: 1.0
     keyword_gate_bypass: true
 
   - id: ethan-mollick
     name: "Ethan Mollick — One Useful Thing"
     url: https://www.oneusefulthing.org/feed
-    weight: 0.8
     # No keyword_gate_bypass: Mollick covers AI broadly; let the keyword gate
     # filter to agent-relevant posts. Senior-engineer audience is the same.
 
@@ -97,19 +88,16 @@ arxiv:
     name: "arXiv: agent-related"
     query: 'cat:cs.AI AND (abs:"agent" OR abs:"tool use" OR abs:"tool-calling" OR abs:"multi-agent")'
     max_results: 50
-    weight: 1.0
 
   - id: arxiv-llm-systems
     name: "arXiv: LLM systems / evals"
     query: 'cat:cs.CL AND (abs:"LLM agent" OR abs:"language agent" OR abs:"agent benchmark" OR abs:"tool-augmented")'
     max_results: 30
-    weight: 1.0
 
   - id: arxiv-software-eng
     name: "arXiv: code/SWE agents"
     query: 'cat:cs.SE AND (abs:"LLM" OR abs:"agent" OR abs:"code generation")'
     max_results: 30
-    weight: 1.0
 
 hn:
   # Hacker News via Algolia. The `query` parameter is free-text, NOT boolean;
@@ -119,28 +107,24 @@ hn:
     query: "agent"
     hours_back: 48
     min_points: 40
-    weight: 0.8
 
   - id: hn-llm
     name: "HN: llm"
     query: "llm"
     hours_back: 48
     min_points: 40
-    weight: 0.8
 
   - id: hn-mcp
     name: "HN: MCP"
     query: "mcp"
     hours_back: 48
     min_points: 30
-    weight: 0.9
 
   - id: hn-claude
     name: "HN: claude"
     query: "claude"
     hours_back: 48
     min_points: 40
-    weight: 0.9
 
 reddit:
   # Reddit JSON endpoints. Score-gated in prefilter.
@@ -148,13 +132,11 @@ reddit:
     name: "r/LocalLLaMA"
     url: https://www.reddit.com/r/LocalLLaMA/top.json?t=day
     min_score: 100
-    weight: 0.7
 
   - id: reddit-mlops
     name: "r/MachineLearning"
     url: https://www.reddit.com/r/MachineLearning/top.json?t=day
     min_score: 100
-    weight: 0.7
 
 # GitHub releases removed as a source (2026-05-14). Release-note dumps were
 # crowding the News bucket with low-signal version churn that the LLM ranker
@@ -166,4 +148,3 @@ hf_daily:
   # Hugging Face daily papers — scrape, no official API.
   - id: hf-daily-papers
     url: https://huggingface.co/papers
-    weight: 1.0
