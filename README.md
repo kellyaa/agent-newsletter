@@ -94,6 +94,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `RANKER_MAX_TOKENS` | no | Max completion tokens for ranker calls, default 32000 |
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
+| `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
 
@@ -121,6 +122,31 @@ To uninstall the schedulers:
 ## Development
 
 Tests: `uv run --extra test pytest`
+
+## Forking to run your own instance
+
+You can fork this repo and run your own personal newsletter with minimal changes:
+
+1. **Fork** the repo on GitHub.
+
+2. **Enable GitHub Pages** in your fork's Settings → Pages → Source: "GitHub Actions". The existing `.github/workflows/deploy.yml` workflow deploys the site automatically on push to `main` or `content`.
+
+3. **Create the `content` orphan branch** (the daily pipeline writes `state.db` and issue files here):
+   ```bash
+   git checkout --orphan content
+   git rm -rf .
+   git commit --allow-empty -m "init content branch"
+   git push origin content
+   git checkout main
+   ```
+
+4. **Set up `.env`** per the [LLM configuration](#llm-configuration-env) instructions above.
+
+5. **Install the scheduler** via `./launchd/install.sh` (edit the plists first — see the ⚠️ warning in the Setup section).
+
+6. **Optionally customize `sources.yaml`** to add, remove, or override feed sources for your interests.
+
+No additional secrets or environment variables are required in the GitHub Actions workflow — the deploy is a pure Astro build from the committed Markdown.
 
 ## Cost & runtime
 
