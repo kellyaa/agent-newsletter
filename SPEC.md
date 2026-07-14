@@ -171,7 +171,7 @@ The writer produces:
    Each item within a section:
    - Title as link.
    - Source and author.
-   - 2-4 sentence summary with a "why it matters" framing.
+   - 60–90 word prose summary (JSON field `summary`), assembled by `write.py` from the LLM's structured output. Not a "2-4 sentence" framing — length is word-capped, not sentence-counted. Lead with the contribution; include a "why it matters" framing when the content warrants it.
    - Optional "⚠ open question" or "💡 takeaway" line when warranted.
 
    If a section has zero featured items on a given day, omit the section header — don't print "## Papers" with nothing under it.
@@ -205,7 +205,7 @@ Style guide (embedded in the prompt):
 - No hedging fluff ("it's worth noting that..."). No "dive into."
 - Cite specific mechanisms/numbers from the source, not vague gestures.
 - **Opinionated, but earned.** Skepticism and judgment are welcome — but only when grounded in the actual content of the source. Don't manufacture a contrarian take for flavor; if the work is solid, say so plainly. If a claim is overreaching, name the specific weakness (small sample size, cherry-picked benchmark, no ablation, etc.).
-- Keep per-item summary under 80 words.
+- Keep per-item summary to 60–90 words (cap is ~90 words per `prompts/write.md`; tighter is better).
 
 ### 6. Publisher — `publish.py`
 
