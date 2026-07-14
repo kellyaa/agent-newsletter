@@ -51,6 +51,8 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
 
+**Self-update:** At the start of every run, `run.sh` does a `git pull --ff-only` on the current branch (and `git pull --ff-only` on the content worktree). This ensures pipeline code, prompts, and site scaffold are current before content is generated. On the launchd daily run this is a catchup on `main`; on a feature branch it updates that branch. If the pull fails (dirty working tree or non-fast-forward), `run.sh` aborts and fires a macOS notification.
+
 ## Setup (one-time)
 
 **Prereqs — macOS and Linux both supported:**
@@ -121,7 +123,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
-| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`) |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
