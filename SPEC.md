@@ -162,7 +162,7 @@ The prompt gives the writer:
 - A style guide (see below) and yesterday's newsletter for continuity/tone calibration.
 
 The writer produces:
-1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
+1. **Theme** — a two-part front-page card (~60 words). Part 1 is a lede (1-2 sentences) introducing 1-2 featured items using plain framing a cold reader can follow (system names optional). Part 2 is a territory sentence gesturing at the rest of the issue by kinds of work, not system names. `null` only when fewer than 3 featured items exist. See `prompts/write.md §Theme` for the full rubric.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
    2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from `gh:*` (trending repos), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
@@ -346,7 +346,7 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 |-----------------------------------|--------------------------------------------------------------|
 | A feed is down                    | Per-source try/except; log and continue; skip source for day |
 | LLM call times out / errors       | Stage exits nonzero; `run.sh` aborts; macOS notification fires; re-run is idempotent (completed stages are skipped) |
-| LLM produces malformed JSON       | `rank.py` validates output schema; on fail, retries with stricter prompt, then falls back to score-by-source-reputation |
+| LLM produces malformed JSON       | `llm.py` retries the same call up to 2× on parse/truncation failure. If both attempts fail, `run.sh` aborts and fires a macOS notification (same as "LLM call times out"). Separately: if the API call succeeds but the returned JSON omits some candidate IDs, `rank.py` assigns `status=appendix, score=0` to unscored items and logs a warning. (There is no "stricter prompt" retry variant and no score-by-source-reputation fallback.) |
 | LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
@@ -464,7 +464,7 @@ The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-c
 
 ### Voice/format calibration
 
-- The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
+- The theme (front-page card) uses a two-part lede+territory structure since 2026-07-07. Part 1 (lede) introduces 1-2 featured items using plain framing a cold reader can follow; Part 2 (territory) names kinds of work, not system names. The `null` escape hatch fires only when fewer than 3 featured items exist — not freely skippable on sparse days. See `prompts/write.md §Theme` for the full rubric.
 - TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
 - Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
 
