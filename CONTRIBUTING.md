@@ -180,7 +180,7 @@ A PR labeled `hold` (or `on-hold` / `do-not-merge`) **must not be merged** until
 
 - Python 3.11+; no type annotations required but they are welcome.
 - No external formatter enforced (no black/ruff CI gate), but keep code readable.
-- Keep scripts self-contained — `scripts/` files should not import from each other except via `db.py`, `llm.py`, `models.py`, and `candidates.py` (the shared candidate-pool query module).
+- Keep **core pipeline stage scripts** self-contained — `scripts/fetch.py`, `prefilter.py`, `rank.py`, `write.py`, `publish.py` should not import from each other. Cross-stage coupling goes via the shared modules: `db.py`, `llm.py`, `models.py`, and `candidates.py`. Exception: **orchestration/utility scripts** (`backfill.py`, `replay_writer.py`) intentionally import from pipeline stage modules to reuse their logic — this pattern is acceptable for similar future scripts that orchestrate multiple stages.
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
 
