@@ -25,9 +25,9 @@ jobs:
     # the free-tier minutes budget. Typical run is ~90s; 10 min is generous.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           # Enable uv's built-in caching keyed on pyproject.toml + uv.lock.
           # Speeds up cold runs from ~15s to ~3s. Refs bead 2191707c-1b0.
@@ -36,7 +36,7 @@ jobs:
             pyproject.toml
             uv.lock
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -47,7 +47,7 @@ jobs:
       # so both local runs and CI use the same threshold (refs #52, #55).
       - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-xml

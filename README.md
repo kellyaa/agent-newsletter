@@ -1,6 +1,6 @@
 # AI Agents Daily
 
-A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
+A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac (or Linux), fetches across ~20 sources (RSS, arXiv, HN, Reddit), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
 The site is at: **https://kellyaa.github.io/agent-newsletter**
 
@@ -16,16 +16,16 @@ scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
   candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
-  rank.py               — three LLM calls (OpenAI-compatible), one per section
+  rank.py               — three LLM calls (OpenAI-compatible), one per section; writes ranked.json as debug artifact
   write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   db.py                 — schema, URL canonicalization
-  models.py             — TypedDict definitions for pipeline stage boundaries
+  models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
-watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern)
+watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -51,9 +51,18 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
 
+**Self-update:** At the start of every run, `run.sh` does a `git pull --ff-only` on the current branch (and `git pull --ff-only` on the content worktree). This ensures pipeline code, prompts, and site scaffold are current before content is generated. On the launchd daily run this is a catchup on `main`; on a feature branch it updates that branch. If the pull fails (dirty working tree or non-fast-forward), `run.sh` aborts and fires a macOS notification.
+
 ## Setup (one-time)
 
-Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.). The [gh](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14).
+**Prereqs — macOS and Linux both supported:**
+
+- [**uv**](https://docs.astral.sh/uv/) — Python package manager
+- [**Node.js ≥ 18.17.1**](https://nodejs.org/) + [**pnpm**](https://pnpm.io/) — for the Astro site build
+- An **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, Together, Groq, etc.)
+- The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14)
+
+The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. The only macOS-only feature is `watchdog.sh`, which uses `osascript` for desktop notifications (gracefully no-ops on non-macOS).
 
 ```bash
 # Python deps
@@ -66,18 +75,36 @@ pnpm --prefix site install
 cp .env.template .env
 $EDITOR .env
 
-# Schedule the daily run + hourly watchdog
+# Schedule the daily run + hourly watchdog (macOS — see below for Linux)
 ./launchd/install.sh
 ```
 
+**Linux scheduler:** The `launchd/` plists are macOS-only. On Linux, use cron or a systemd user service:
+
+```bash
+# crontab -e — run pipeline at 07:00 daily, watchdog hourly
+0 7 * * *  /path/to/agent-newsletter/run.sh >> /path/to/agent-newsletter/logs/launchd.out 2>> /path/to/agent-newsletter/logs/launchd.err
+0 * * * *  /path/to/agent-newsletter/watchdog.sh >> /path/to/agent-newsletter/logs/watchdog.out 2>&1
+```
+
 > ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
-> hard-coded author paths (`/Users/kelly/git/incubation/…`). Edit both
-> `launchd/com.kelly.agent-newsletter.plist` and
-> `launchd/com.kelly.agent-newsletter-watchdog.plist`, replacing every occurrence of
-> `/Users/kelly/git/incubation` with your actual repo root and `/Users/kelly/.local/bin`
-> with your actual local bin path before running `install.sh`. Installing without editing
-> these paths will silently install plists that point at the wrong location and the
-> scheduled job will never run.
+> hard-coded author paths (`/Users/kelly/git/incubation/…`). Substitute your actual repo
+> root and local-bin path with these two `sed` commands (run from the repo root):
+>
+> ```bash
+> REPO_ROOT="$(pwd)"
+> LOCAL_BIN="$HOME/.local/bin"   # adjust if uv/pnpm live elsewhere (e.g. /opt/homebrew/bin)
+>
+> sed -i '' \
+>   -e "s|/Users/kelly/git/incubation|${REPO_ROOT}|g" \
+>   -e "s|/Users/kelly/.local/bin|${LOCAL_BIN}|g" \
+>   launchd/com.kelly.agent-newsletter.plist \
+>   launchd/com.kelly.agent-newsletter-watchdog.plist
+> ```
+>
+> Verify the result with `grep -r '/Users/kelly' launchd/` — it should print nothing.
+> Installing without making these substitutions will silently install plists that point at
+> the wrong location and the scheduled job will never run.
 
 ### LLM configuration (`.env`)
 
@@ -95,7 +122,8 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `RANKER_MAX_TOKENS` | no | Max completion tokens for ranker calls, default 32000 |
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
-| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`) |
+| `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
@@ -125,6 +153,31 @@ To uninstall the schedulers:
 
 Tests: `uv run --extra test pytest`
 
+## Forking to run your own instance
+
+You can fork this repo and run your own personal newsletter with minimal changes:
+
+1. **Fork** the repo on GitHub.
+
+2. **Enable GitHub Pages** in your fork's Settings → Pages → Source: "GitHub Actions". The existing `.github/workflows/deploy.yml` workflow deploys the site automatically on push to `main` or `content`.
+
+3. **Create the `content` orphan branch** (the daily pipeline writes `state.db` and issue files here):
+   ```bash
+   git checkout --orphan content
+   git rm -rf .
+   git commit --allow-empty -m "init content branch"
+   git push origin content
+   git checkout main
+   ```
+
+4. **Set up `.env`** per the [LLM configuration](#llm-configuration-env) instructions above.
+
+5. **Install the scheduler** via `./launchd/install.sh` (edit the plists first — see the ⚠️ warning in the Setup section).
+
+6. **Optionally customize `sources.yaml`** to add, remove, or override feed sources for your interests.
+
+No additional secrets or environment variables are required in the GitHub Actions workflow — the deploy is a pure Astro build from the committed Markdown.
+
 ## Cost & runtime
 
 A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run cost is logged in the `runs` table.
@@ -137,7 +190,7 @@ The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker
 
 Three tables:
 
-- **`items`** — every fetched item, with status (`candidate` / `ranked` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count).
+- **`items`** — every fetched item, with status (`new` / `candidate` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count). (Note: `ranked` is never written as a status; `rank.py` transitions directly from `candidate` to `featured`/`appendix`/`dropped`.)
 - **`runs`** — one row per daily pipeline run: item counts by section, wall-clock duration; `tokens_in` / `tokens_out` / `cost_usd` columns are scaffolded (see #13) and populated when the LLM endpoint exposes usage.
 - **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
 
@@ -191,10 +244,11 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. This is expected any time a human commit landed after the last pipeline run; it's not a failure signal. To verify the pipeline ran independently of the watchdog, query `runs` directly:
+- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. Because `newsletter:` commits go to the **content branch** (not `main`), the watchdog will nearly always see this message and skip the staleness check. The watchdog's commit-pattern check is therefore not a reliable staleness signal in normal operation. To verify whether the pipeline ran, query `runs` directly — this is the canonical source of truth:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
+  See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 
 ### 4. Unsticking it
 

@@ -105,6 +105,17 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
 
+    # Freeze "now" so short recency windows (hn=3d, reddit=3d) don't drop
+    # fixtures as wall-clock advances. Fixtures use published_at=2026-07-09.
+    frozen = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen if tz is None else frozen.astimezone(tz)
+
+    monkeypatch.setattr(pf_mod, "datetime", _FrozenDatetime)
+
     return pf_mod.main()
 
 
