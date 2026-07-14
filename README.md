@@ -25,7 +25,7 @@ scripts/
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
-watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern)
+watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -51,7 +51,7 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
 
-> **`run.sh` self-updates on every invocation.** The script does a `git pull --ff-only` before running any stage, so the pipeline always executes against the latest committed code and prompts. Side-effects to be aware of: (a) if your working tree has uncommitted changes, the pull will fail and the pipeline will not start; (b) prompt changes merged to `main` take effect on the very next scheduled or manual run without any separate update step.
+**Self-update:** At the start of every run, `run.sh` does a `git pull --ff-only` on the current branch (and `git pull --ff-only` on the content worktree). This ensures pipeline code, prompts, and site scaffold are current before content is generated. On the launchd daily run this is a catchup on `main`; on a feature branch it updates that branch. If the pull fails (dirty working tree or non-fast-forward), `run.sh` aborts and fires a macOS notification.
 
 ## Setup (one-time)
 
@@ -123,7 +123,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
-| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`) |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
@@ -244,10 +244,11 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. This is expected any time a human commit landed after the last pipeline run; it's not a failure signal. To verify the pipeline ran independently of the watchdog, query `runs` directly:
+- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. Because `newsletter:` commits go to the **content branch** (not `main`), the watchdog will nearly always see this message and skip the staleness check. The watchdog's commit-pattern check is therefore not a reliable staleness signal in normal operation. To verify whether the pipeline ran, query `runs` directly — this is the canonical source of truth:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
+  See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 - **watchdog notification throttle.** Once the stale-pipeline notification fires, `watchdog.sh` will not re-fire for 4 hours (throttle state in `logs/watchdog-last-fire`). If you want to force an immediate re-check after diagnosing the problem, run: `rm -f logs/watchdog-last-fire && ./watchdog.sh`
 
 ### 4. Unsticking it
