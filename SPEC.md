@@ -98,7 +98,7 @@ Rules (all configurable in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `sources.yaml`); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
-- **Dedup across time:** skip any item whose `id` is already `status >= ranked` in the DB. (See Dedup section.)
+- **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` or `status = 'appendix'` (with `appearances < limit`) are eligible to re-enter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
 Survivors get `status = 'candidate'`.
@@ -229,7 +229,7 @@ The single most important correctness property. Three layers:
 - Implemented in prefilter via title similarity + URL-target resolution.
 
 **Layer 3: Cross-day dedup (the one that bites everyone).**
-- The `items` table tracks `status`. Once `status >= 'ranked'`, an item is "known" — it will never be re-ranked or re-summarized even if it's still trending.
+- The `items` table tracks `status`. Once an item reaches a terminal status (`featured`, `published`, or `dropped`) it will never be re-ranked or re-summarized even if it's still trending. (`ranked` is never written as a status — `rank.py` transitions items directly from `candidate` to `featured`/`appendix`/`dropped`, never via an intermediate `ranked` step.)
 - **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
 - Topic-level dedup (**not yet implemented — see #4**): the design intent is a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news. The `topics_covered` table schema exists in `db.py` as a reserved stub, but no pipeline stage currently writes to or reads from it.
 
