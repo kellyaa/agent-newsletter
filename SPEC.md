@@ -5,7 +5,7 @@ A locally-run pipeline that produces a daily Markdown newsletter covering the pr
 ## Goals & Non-Goals
 
 **Goals**
-- One high-signal digest per day (~8-12 featured items + appendix of uncertain items).
+- One high-signal digest per day (~12-17 featured items, up to 22 on heavy arXiv days with the papers burst cap; plus appendix of uncertain items).
 - Zero babysitting once tuned: runs unattended, fails loudly when it does fail.
 - Editorial voice tuned to "how do I *build/run* agents," not generic AI hype.
 - Reproducible: given the same inputs, the same outputs (modulo LLM nondeterminism).
@@ -98,7 +98,7 @@ Rules (all configurable in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `sources.yaml`); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
-- **Dedup across time:** skip any item whose `id` is already `status >= ranked` in the DB. (See Dedup section.)
+- **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` or `status = 'appendix'` (with `appearances < limit`) are eligible to re-enter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
 Survivors get `status = 'candidate'`.
@@ -144,25 +144,25 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review overdue (was due ~2026-07-07 — see issue #121; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review pending (due ~2026-07-07, not yet completed as of 2026-07-14 — see issue #121 for tracking). To review: query `SELECT date, items_papers FROM runs ORDER BY date DESC LIMIT 30;` and check whether the burst cap of 10 fires appropriately on heavy arXiv days. If `burst_trigger_count` (currently `10`) fires too rarely or too often, tune it in `scripts/rank.py` and update this note with the review outcome.**
 
 Also emit:
-- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
+- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning and possible future facets) — they no longer drive section grouping. (The `topics_covered` table is a reserved stub for future cross-day topic dedup — see #4; it is not currently written to or read from.)
 - **Section assignment**: `papers` | `news` | `blogs`. See "Section assignment" under the Writer step for the default rules and override criteria.
 
-Writes scores, tags, and section back to `state.db`, sets `status = 'ranked'`.
+Writes scores, tags, and section back to `state.db`. Sets `status` to `featured`, `appendix`, `dropped`, or (for papers losing the cap) `candidate` — **`ranked` is never written as a status value**; `rank.py` transitions directly to the final disposition without an intermediate `ranked` state.
 
 ### 5. Summarizer / Writer — `write.py` (OpenAI-compatible LLM)
 
 `write.py` makes one OpenAI-compatible chat-completions call via `scripts/llm.py` and writes the output to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md` (the `content` branch worktree). The model is configured via `WRITER_MODEL` in `.env`.
 
 The prompt gives the writer:
-- The top ~8-12 featured items (id, url, title, abstract, source, tags, one_line_why).
+- The featured items for the day (id, url, title, abstract, source, tags, one_line_why). Typically 12-17 items across all three sections; up to 22 on heavy arXiv days when the papers burst cap fires (see §Ranking).
 - The appendix list (title + url only).
 - A style guide (see below) and yesterday's newsletter for continuity/tone calibration.
 
 The writer produces:
-1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
+1. **Header** — date, and an optional **theme**: two-part front-page card copy (~60 words) consisting of a lede (1-2 sentences introducing 1-2 featured items in plain framing for a cold reader) plus a territory sentence (gesturing at what else is in the issue by kinds-of-work, not system names). Returns `null` when fewer than 3 featured items exist. See `prompts/write.md` §Theme for the full rubric and examples.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
    2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from `gh:*` (trending repos), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
@@ -171,8 +171,8 @@ The writer produces:
    Each item within a section:
    - Title as link.
    - Source and author.
-   - 2-4 sentence summary with a "why it matters" framing.
-   - Optional "⚠ open question" or "💡 takeaway" line when warranted.
+   - 60-90 word prose summary in the editorial voice.
+   - Optional `takeaway` (one sentence, concrete action) or `open_question` (one sentence, real unresolved question) — **at most one per item**, both null is also fine.
 
    If a section has zero featured items on a given day, omit the section header — don't print "## Papers" with nothing under it.
 
@@ -205,7 +205,7 @@ Style guide (embedded in the prompt):
 - No hedging fluff ("it's worth noting that..."). No "dive into."
 - Cite specific mechanisms/numbers from the source, not vague gestures.
 - **Opinionated, but earned.** Skepticism and judgment are welcome — but only when grounded in the actual content of the source. Don't manufacture a contrarian take for flavor; if the work is solid, say so plainly. If a claim is overreaching, name the specific weakness (small sample size, cherry-picked benchmark, no ablation, etc.).
-- Keep per-item summary under 80 words.
+- Keep per-item summary to 60-90 words (cap ~90; tighter is better).
 
 ### 6. Publisher — `publish.py`
 
@@ -229,9 +229,9 @@ The single most important correctness property. Three layers:
 - Implemented in prefilter via title similarity + URL-target resolution.
 
 **Layer 3: Cross-day dedup (the one that bites everyone).**
-- The `items` table tracks `status`. Once `status >= 'ranked'`, an item is "known" — it will never be re-ranked or re-summarized even if it's still trending.
+- The `items` table tracks `status`. Once an item reaches a terminal status (`featured`, `published`, or `dropped`) it will never be re-ranked or re-summarized even if it's still trending. (`ranked` is never written as a status — `rank.py` transitions items directly from `candidate` to `featured`/`appendix`/`dropped`, never via an intermediate `ranked` step.)
 - **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
-- Topic-level dedup: a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") is passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news.
+- Topic-level dedup (**not yet implemented — see #4**): the design intent is a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news. The `topics_covered` table schema exists in `db.py` as a reserved stub, but no pipeline stage currently writes to or reads from it.
 
 **Papers multi-day candidate pool (issue #16, score-once semantics).**
 
@@ -290,8 +290,8 @@ CREATE TABLE runs (
   notes TEXT
 );
 
-CREATE TABLE topics_covered (  -- for cross-day topic dedup
-  topic TEXT NOT NULL,           -- short slug, emitted by ranker
+CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup; not yet written to (see #4)
+  topic TEXT NOT NULL,           -- short slug (design intent: emitted by ranker when implemented)
   date TEXT NOT NULL,
   item_id TEXT NOT NULL
 );
@@ -346,7 +346,7 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 |-----------------------------------|--------------------------------------------------------------|
 | A feed is down                    | Per-source try/except; log and continue; skip source for day |
 | LLM call times out / errors       | Stage exits nonzero; `run.sh` aborts; macOS notification fires; re-run is idempotent (completed stages are skipped) |
-| LLM produces malformed JSON       | `rank.py` validates output schema; on fail, retries with stricter prompt, then falls back to score-by-source-reputation |
+| LLM produces malformed JSON       | `llm.py` retries once on parse/truncation failure (default `max_attempts=2`). If both attempts fail, `run.sh` aborts with an error. `rank.py` additionally applies a defensive fallback: any candidate the ranker omits from its response is promoted to `appendix` with `score=0` rather than lost. |
 | LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
@@ -432,7 +432,7 @@ Non-obvious things discovered during real runs that future-you should know witho
 The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-compatible chat-completions calls as of v1.2. Current lessons:
 
 - Per-section ranking calls (one per `papers`/`news`/`blogs`) work much better than one big call. ~$0.30-1.20 per section, 3-7 minutes each. A single 150-item call risks timeouts and quality degradation.
-- Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only ~12 featured items, not 100+ candidates.
+- Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only 12-17 featured items (up to 22 with the burst cap), not 100+ candidates.
 - Set `RANKER_TIMEOUT_S=1800` (30 min). 15 min was too tight on chatty news days with verbose release-note `raw_text`. Truncating `raw_text` to ~1500 chars in `write.py` was a measurable cost reducer.
 - `llm.py` reads `LLM_EXTRA_HEADERS` from the environment — useful for endpoints that require additional auth headers (e.g., `RITS_API_KEY`, `X-Tenant-Id`).
 - The structured output schema must have a **top-level type of `object`**, not `array`. Wrap arrays in `{"items": [...]}` if needed.
@@ -467,3 +467,4 @@ The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-c
 - The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
 - TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
 - Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
+
