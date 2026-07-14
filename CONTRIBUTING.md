@@ -67,6 +67,18 @@ git worktree add .worktrees/content content
 > these paths will silently install plists that point at the wrong location and the
 > scheduled job will never run.
 
+**Linux / non-macOS scheduler (optional).**
+
+The launchd plists are macOS-only. On Linux, use a cron job or systemd user service to schedule `run.sh` and `watchdog.sh`. Minimal cron example (runs pipeline at 07:00 daily and watchdog hourly):
+
+```bash
+# Edit your crontab with: crontab -e
+0 7 * * *  /path/to/agent-newsletter/run.sh >> /path/to/agent-newsletter/logs/launchd.out 2>> /path/to/agent-newsletter/logs/launchd.err
+0 * * * *  /path/to/agent-newsletter/watchdog.sh >> /path/to/agent-newsletter/logs/watchdog.out 2>&1
+```
+
+Replace `/path/to/agent-newsletter` with your actual repo root. The `watchdog.sh` notification step uses `osascript` (macOS-only) — on Linux it will no-op silently; add a custom notification command (e.g., `notify-send`) by editing `watchdog.sh` if desired.
+
 **Running the Astro dev server:**
 
 The Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. It requires the content worktree to be set up (step 5 above).
