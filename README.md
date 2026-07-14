@@ -1,6 +1,6 @@
 # AI Agents Daily
 
-A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac, fetches across ~20 sources (RSS, arXiv, HN, Reddit), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
+A daily, opinionated digest on building and running AI agents — for senior software engineers and architects. The pipeline runs unattended on a Mac (or Linux), fetches across ~20 sources (RSS, arXiv, HN, Reddit), ranks every item via direct OpenAI-compatible chat-completions calls, writes editorial prose for the top 12-ish, and publishes a static site to GitHub Pages.
 
 The site is at: **https://kellyaa.github.io/agent-newsletter**
 
@@ -53,7 +53,14 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 
 ## Setup (one-time)
 
-Prereqs: macOS, [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), and access to an OpenAI-compatible chat-completions endpoint (OpenAI itself, vLLM, llama.cpp, LM Studio, Together, Fireworks, OpenRouter, Groq, an internal endpoint, etc.). The [gh](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14).
+**Prereqs — macOS and Linux both supported:**
+
+- [**uv**](https://docs.astral.sh/uv/) — Python package manager
+- [**Node.js ≥ 18.17.1**](https://nodejs.org/) + [**pnpm**](https://pnpm.io/) — for the Astro site build
+- An **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, Together, Groq, etc.)
+- The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14)
+
+The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. The only macOS-only feature is `watchdog.sh`, which uses `osascript` for desktop notifications (gracefully no-ops on non-macOS).
 
 ```bash
 # Python deps
@@ -66,8 +73,16 @@ pnpm --prefix site install
 cp .env.template .env
 $EDITOR .env
 
-# Schedule the daily run + hourly watchdog
+# Schedule the daily run + hourly watchdog (macOS — see below for Linux)
 ./launchd/install.sh
+```
+
+**Linux scheduler:** The `launchd/` plists are macOS-only. On Linux, use cron or a systemd user service:
+
+```bash
+# crontab -e — run pipeline at 07:00 daily, watchdog hourly
+0 7 * * *  /path/to/agent-newsletter/run.sh >> /path/to/agent-newsletter/logs/launchd.out 2>> /path/to/agent-newsletter/logs/launchd.err
+0 * * * *  /path/to/agent-newsletter/watchdog.sh >> /path/to/agent-newsletter/logs/watchdog.out 2>&1
 ```
 
 > ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
