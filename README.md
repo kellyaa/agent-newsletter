@@ -51,6 +51,8 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
 
+> **`run.sh` self-updates on every invocation.** The script does a `git pull --ff-only` before running any stage, so the pipeline always executes against the latest committed code and prompts. Side-effects to be aware of: (a) if your working tree has uncommitted changes, the pull will fail and the pipeline will not start; (b) prompt changes merged to `main` take effect on the very next scheduled or manual run without any separate update step.
+
 ## Setup (one-time)
 
 **Prereqs — macOS and Linux both supported:**
@@ -246,6 +248,7 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
+- **watchdog notification throttle.** Once the stale-pipeline notification fires, `watchdog.sh` will not re-fire for 4 hours (throttle state in `logs/watchdog-last-fire`). If you want to force an immediate re-check after diagnosing the problem, run: `rm -f logs/watchdog-last-fire && ./watchdog.sh`
 
 ### 4. Unsticking it
 
