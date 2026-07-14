@@ -16,12 +16,12 @@ scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
   candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
-  rank.py               — three LLM calls (OpenAI-compatible), one per section
+  rank.py               — three LLM calls (OpenAI-compatible), one per section; writes ranked.json as debug artifact
   write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   db.py                 — schema, URL canonicalization
-  models.py             — TypedDict definitions for pipeline stage boundaries
+  models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
