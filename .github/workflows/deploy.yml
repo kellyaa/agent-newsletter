@@ -17,6 +17,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Cap runaway jobs (pnpm install stalls, Astro build hangs) to protect
+    # the free-tier minutes budget. Typical build is ~35–55s; 10 min is
+    # generous for a cold pnpm cache. Refs bead 8274fcf3-c6f.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: site
@@ -66,6 +70,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # actions/deploy-pages@v4 usually completes in ~30–60s; a 5-minute
+    # cap catches Pages-infra hangs without risking legitimate deploys.
+    # Refs bead 8274fcf3-c6f and flaky-deploy bead 21af9c2d-34a.
+    timeout-minutes: 5
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
