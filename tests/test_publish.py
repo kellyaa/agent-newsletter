@@ -288,3 +288,152 @@ class TestMainIdempotentSkip:
             result = publish_main()
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# main() — date scoping (regression for stale-featured-leak bug)
+# ---------------------------------------------------------------------------
+
+class TestMainDateScoping:
+    """Regression: publish must only promote / count featured+appendix items
+    whose last_seen_date equals today. Prior-day residue from a crashed run
+    must be left untouched (still 'featured' / 'appendix' on their old date)
+    and must not contribute to today's runs stats."""
+
+    def test_stale_prior_day_featured_not_promoted_or_counted(
+        self, db_path, tmp_path, monkeypatch
+    ):
+        from publish import main as publish_main, MIN_FILE_SIZE_BYTES
+        import publish as publish_mod
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        # Stale row from a prior day that never got published (crash scenario).
+        conn.execute(
+            """
+            INSERT INTO items (
+                id, source, url, canonical_url, title, fetched_at, status,
+                section, first_seen_date, last_seen_date, appearances
+            ) VALUES ('stale-1', 'rss:test', 'https://example.com/stale',
+                      'https://example.com/stale', 'Stale Title',
+                      '2026-05-31T00:00:00Z', 'featured', 'papers',
+                      '2026-05-31', '2026-05-31', 1)
+            """
+        )
+        # Today's legitimate featured + appendix items.
+        conn.execute(
+            """
+            INSERT INTO items (
+                id, source, url, canonical_url, title, fetched_at, status,
+                section, first_seen_date, last_seen_date, appearances
+            ) VALUES ('today-feat', 'rss:test', 'https://example.com/f',
+                      'https://example.com/f', 'Today Featured',
+                      '2026-06-01T00:00:00Z', 'featured', 'news',
+                      '2026-06-01', '2026-06-01', 1)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO items (
+                id, source, url, canonical_url, title, fetched_at, status,
+                section, first_seen_date, last_seen_date, appearances
+            ) VALUES ('today-app', 'rss:test', 'https://example.com/a',
+                      'https://example.com/a', 'Today Appendix',
+                      '2026-06-01T00:00:00Z', 'appendix', 'blogs',
+                      '2026-06-01', '2026-06-01', 1)
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
+        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+
+        with patch("publish.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+            result = publish_main()
+
+        assert result == 0
+
+        conn = db_mod.connect(db_path)
+        # Stale row untouched.
+        stale = conn.execute(
+            "SELECT status FROM items WHERE id = 'stale-1'"
+        ).fetchone()
+        assert stale["status"] == "featured", (
+            "prior-day featured row must NOT be promoted by today's publish run"
+        )
+        # Today's rows promoted.
+        today_feat = conn.execute(
+            "SELECT status FROM items WHERE id = 'today-feat'"
+        ).fetchone()
+        today_app = conn.execute(
+            "SELECT status FROM items WHERE id = 'today-app'"
+        ).fetchone()
+        assert today_feat["status"] == "published"
+        assert today_app["status"] == "published"
+
+        # Stats reflect only today's items.
+        run_row = conn.execute(
+            "SELECT items_featured, items_news, items_papers, notes "
+            "FROM runs WHERE date = '2026-06-01'"
+        ).fetchone()
+        assert run_row["items_featured"] == 1, (
+            "items_featured must count only today's featured (news:1), "
+            "not the stale prior-day papers row"
+        )
+        assert run_row["items_news"] == 1
+        assert run_row["items_papers"] == 0
+        assert "appendix=1" in (run_row["notes"] or "")
+        conn.close()
+
+    def test_skip_guard_ignores_prior_day_pending_rows(
+        self, db_path, tmp_path, monkeypatch
+    ):
+        """If today's run already completed (runs row exists, no pending items
+        for today), a stale prior-day featured row must NOT defeat the skip."""
+        from publish import main as publish_main, MIN_FILE_SIZE_BYTES, record_run
+        import publish as publish_mod
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        record_run(conn, "2026-06-01", {"papers": 1}, 0, 10)
+        # Prior-day residue.
+        conn.execute(
+            """
+            INSERT INTO items (
+                id, source, url, canonical_url, title, fetched_at, status,
+                section, first_seen_date, last_seen_date, appearances
+            ) VALUES ('stale-2', 'rss:test', 'https://example.com/s2',
+                      'https://example.com/s2', 'Stale 2',
+                      '2026-05-31T00:00:00Z', 'appendix', 'blogs',
+                      '2026-05-31', '2026-05-31', 1)
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
+        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+
+        with patch("publish.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+            result = publish_main()
+
+        assert result == 0
+
+        conn = db_mod.connect(db_path)
+        stale = conn.execute(
+            "SELECT status FROM items WHERE id = 'stale-2'"
+        ).fetchone()
+        # Skip fires cleanly; stale row is not promoted.
+        assert stale["status"] == "appendix"
+        conn.close()

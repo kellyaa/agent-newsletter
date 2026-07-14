@@ -86,12 +86,19 @@ def main() -> int:
     conn = connect()
 
     # Idempotent skip: if a runs row exists for today AND no featured/appendix
-    # items remain in candidate-of-publish state, this run already finished.
+    # items remain in candidate-of-publish state *for today*, this run already
+    # finished. The `last_seen_date = today` filter is critical: without it,
+    # any stale featured/appendix row from a prior crashed run would (a) defeat
+    # the skip guard and (b) get promoted onto today's runs stats by the
+    # unconditional UPDATE below.
     runs_row = conn.execute(
         "SELECT items_featured FROM runs WHERE date = ?", (today,)
     ).fetchone()
     pending = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
+        f"SELECT COUNT(*) FROM items "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}') "
+        f"AND last_seen_date = ?",
+        (today,),
     ).fetchone()[0]
     if runs_row is not None and pending == 0:
         log.info(
@@ -101,14 +108,18 @@ def main() -> int:
         conn.close()
         return 0
     rows = conn.execute(
-        f"SELECT section FROM items WHERE status = '{Status.FEATURED}'"
+        f"SELECT section FROM items "
+        f"WHERE status = '{Status.FEATURED}' AND last_seen_date = ?",
+        (today,),
     ).fetchall()
     featured_counts: dict[str, int] = {}
     for r in rows:
         s = r["section"]
         featured_counts[s] = featured_counts.get(s, 0) + 1
     appendix_count = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.APPENDIX}'"
+        f"SELECT COUNT(*) FROM items "
+        f"WHERE status = '{Status.APPENDIX}' AND last_seen_date = ?",
+        (today,),
     ).fetchone()[0]
     items_considered = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
@@ -124,7 +135,9 @@ def main() -> int:
 
     conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}' "
-        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}') "
+        f"AND last_seen_date = ?",
+        (today,),
     )
     conn.commit()
     log.info(
