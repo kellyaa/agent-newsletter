@@ -39,6 +39,7 @@ def record_run(
     featured_counts: dict[str, int],
     appendix_count: int,
     items_considered: int,
+    items_candidate: int,
 ) -> None:
     conn.execute(
         """
@@ -47,6 +48,7 @@ def record_run(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
+            items_candidate = excluded.items_candidate,
             items_featured = excluded.items_featured,
             items_papers = excluded.items_papers,
             items_news = excluded.items_news,
@@ -56,10 +58,7 @@ def record_run(
         (
             today,
             items_considered,
-            featured_counts.get("papers", 0)
-                + featured_counts.get("news", 0)
-                + featured_counts.get("blogs", 0)
-                + appendix_count,
+            items_candidate,
             sum(featured_counts.values()),
             featured_counts.get("papers", 0),
             featured_counts.get("news", 0),
@@ -113,6 +112,18 @@ def main() -> int:
     items_considered = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
     ).fetchone()[0]
+    # Count everything the ranker looked at today: candidates that stayed
+    # candidate + candidates promoted to featured/appendix. We must capture
+    # this *before* the UPDATE ... SET status='published' below, otherwise
+    # featured/appendix rows will have been promoted out of view.
+    items_candidate = conn.execute(
+        f"""
+        SELECT COUNT(*) FROM items
+        WHERE last_seen_date = ?
+          AND status IN ('{Status.CANDIDATE}', '{Status.FEATURED}', '{Status.APPENDIX}')
+        """,
+        (today,),
+    ).fetchone()[0]
 
     total_featured = sum(featured_counts.values())
     if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
@@ -136,7 +147,7 @@ def main() -> int:
         appendix_count,
     )
 
-    record_run(conn, today, featured_counts, appendix_count, items_considered)
+    record_run(conn, today, featured_counts, appendix_count, items_considered, items_candidate)
     conn.close()
 
     log.info("issue file: %s (%d bytes)", issue_path, size)
