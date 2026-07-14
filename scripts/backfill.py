@@ -184,19 +184,52 @@ def age_out_for_synthetic_date(conn, target_date: str) -> int:
     return cur.rowcount or 0
 
 
-def rank_with_optional_llm(conn, candidates: dict) -> dict:
-    """Rank candidates using rank.py's public functions.
+def build_candidates_snapshot(conn) -> dict:
+    """Return the current candidate pool grouped by section.
 
-    Delegates to the canonical rank module instead of reimplementing the
-    scoring/status-assignment logic. This ensures threshold changes, burst-cap
-    policies, and valid-tag sets stay in sync automatically.
+    Thin re-export of ``candidates.load_candidates_from_db(conn)`` kept as a
+    module-local name so that (a) legacy tests importing
+    ``backfill.build_candidates_snapshot`` and monkeypatching
+    ``backfill.build_candidates_snapshot`` continue to work, and (b) any
+    future callers see the same public surface the backfill CLI uses.
+
+    NOTE: unlike the pre-refactor implementation, an item with a section
+    value not in {"papers","news","blogs"} is now routed to "blogs" rather
+    than silently skipped. This matches the behavior of the shared
+    ``candidates.load_candidates_from_db`` used by the daily pipeline.
+    """
+    from candidates import load_candidates_from_db
+    return load_candidates_from_db(conn)
+
+
+def persist_decisions(conn, decisions: dict) -> dict[str, int]:
+    """Persist rank decisions to the DB.
+
+    Thin re-export of ``rank.persist`` kept as a module-local name so that
+    legacy tests can monkeypatch ``backfill.persist_decisions`` and so the
+    valid-tag filtering / status-count logic stays canonical in one place.
+    """
+    import rank as rank_mod
+    return rank_mod.persist(conn, decisions)
+
+
+def rank_with_optional_llm(grouped: dict) -> dict:
+    """Rank a candidate snapshot using rank.py's public functions.
+
+    Takes a grouped candidates dict (as returned by
+    ``build_candidates_snapshot`` / ``candidates.load_candidates_from_db``)
+    and returns decisions ready to be persisted via ``persist_decisions``.
+
+    Delegates to the canonical rank module (``rank.build_prompt``,
+    ``rank.invoke_ranker``, ``rank.assign_statuses``) so threshold changes,
+    burst-cap policies, and valid-tag sets stay in sync automatically.
     """
     import rank as rank_mod
 
     scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
 
     # Prescored papers: pass through with cached scores (no LLM needed).
-    for it in candidates.get("papers_prescored", []):
+    for it in grouped.get("papers_prescored", []):
         scored_by_section["papers"].append({
             "id": it["id"],
             "score": it["score"],
@@ -207,7 +240,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     # Any section with unscored items needs the LLM.
     rubric = rank_mod.PROMPT_PATH.read_text()
     for section in ("papers", "news", "blogs"):
-        items = candidates.get(section, [])
+        items = grouped.get(section, [])
         if not items:
             continue
         log.info("invoking ranker LLM for %s (%d unscored)", section, len(items))
@@ -216,16 +249,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
         scored_by_section[section].extend(scored)
 
     # Use rank.py's assign_statuses for threshold/cap logic.
-    decisions = rank_mod.assign_statuses(scored_by_section)
-
-    # Persist using rank.py's persist function.
-    counts = rank_mod.persist(conn, decisions)
-    log.info(
-        "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
-        counts.get("featured", 0), counts.get("appendix", 0),
-        counts.get("dropped", 0), counts.get("candidate", 0),
-    )
-    return decisions
+    return rank_mod.assign_statuses(scored_by_section)
 
 
 def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
@@ -321,7 +345,6 @@ def main() -> int:
     # Imports must come AFTER bind_db_to_sandbox so their `from db import connect`
     # captures the patched function.
     import db as db_mod  # noqa: F401  (already patched, just ensure schema migrations run)
-    from candidates import load_candidates_from_db
 
     db_mod.init_db()
     conn = db_mod.connect()
@@ -330,10 +353,10 @@ def main() -> int:
     if aged:
         log.info("aged out %d papers candidates for synthetic %s", aged, args.date)
 
-    # Use the shared candidates module instead of reimplementing the grouping.
-    # This ensures field selection, section logic, and prescored detection
-    # stay in sync with the normal pipeline path.
-    candidates = load_candidates_from_db(conn)
+    # Use the module-local shim so tests can monkeypatch
+    # ``backfill.build_candidates_snapshot``. Internally this delegates to
+    # candidates.load_candidates_from_db — no reimplemented logic.
+    candidates = build_candidates_snapshot(conn)
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
         len(candidates.get("papers", [])),
@@ -347,8 +370,19 @@ def main() -> int:
             "are typically papers-only since news/blogs don't persist."
         )
 
-    # Rank using the canonical rank module's functions.
-    decisions = rank_with_optional_llm(conn, candidates)
+    # Rank via the module-local shim (delegates to rank.py); tests can
+    # monkeypatch backfill.rank_with_optional_llm to skip the LLM path.
+    decisions = rank_with_optional_llm(candidates)
+
+    # Persist via the module-local shim so tests can monkeypatch
+    # backfill.persist_decisions. Internally this calls rank.persist so
+    # tag filtering / status-count logic stays canonical.
+    counts = persist_decisions(conn, decisions)
+    log.info(
+        "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
+        counts.get("featured", 0), counts.get("appendix", 0),
+        counts.get("dropped", 0), counts.get("candidate", 0),
+    )
 
     out = run_writer_for_date(conn, args.date, args.force)
     conn.close()

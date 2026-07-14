@@ -104,12 +104,18 @@ class TestSetupSandboxFreshRun:
 
 
 # ---------------------------------------------------------------------------
-# backfill.py:232->211 — build_candidates_snapshot() unknown section in DB
+# build_candidates_snapshot() unknown section in DB — routed to 'blogs'
+#
+# Post-refactor (#142), backfill.build_candidates_snapshot delegates to
+# candidates.load_candidates_from_db, which routes items with a section
+# value not in {"papers","news","blogs"} to the "blogs" bucket (rather
+# than silently skipping them). This keeps the shared candidates loader
+# lossless for the daily pipeline. This test pins that new behavior.
 # ---------------------------------------------------------------------------
 
 class TestBuildCandidatesSnapshotUnknownSection:
-    def test_item_with_unknown_section_skipped(self, tmp_path):
-        """Items with section not in grouped dict keys are silently skipped (232->211)."""
+    def test_item_with_unknown_section_routed_to_blogs(self, tmp_path):
+        """Items with an unknown section value are routed to 'blogs' (not skipped)."""
         import db as db_mod
         import backfill as bf
 
@@ -137,12 +143,16 @@ class TestBuildCandidatesSnapshotUnknownSection:
         result = bf.build_candidates_snapshot(conn)
         conn.close()
 
-        # 'tools' is not in grouped — item should be silently skipped
-        all_items = (
-            result["papers"] + result["papers_prescored"] +
-            result["news"] + result["blogs"]
+        # 'tools' is not in grouped — item should be routed to 'blogs',
+        # preserving it for downstream ranking rather than silently dropping.
+        blog_ids = [it["id"] for it in result["blogs"]]
+        other_ids = (
+            [it["id"] for it in result["papers"]] +
+            [it["id"] for it in result["papers_prescored"]] +
+            [it["id"] for it in result["news"]]
         )
-        assert not any(it["id"] == "unknown1" for it in all_items)
+        assert "unknown1" in blog_ids
+        assert "unknown1" not in other_ids
 
 
 # ---------------------------------------------------------------------------
