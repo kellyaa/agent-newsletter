@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import pytest
 
-from rank import persist, VALID_TAGS
+from models import VALID_TAGS
+from rank import persist
 
 
 # ---------------------------------------------------------------------------

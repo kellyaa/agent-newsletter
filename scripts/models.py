@@ -40,6 +40,26 @@ class Section(StrEnum):
     BLOGS = "blogs"
 
 
+# Closed-vocabulary tags for item classification.
+# This is the single source of truth — rank.py, write.py, backfill.py, and
+# the prompts/rank.md prompt all reference this set. Keep in sync with SPEC.md.
+VALID_TAGS: frozenset[str] = frozenset({
+    "frameworks",
+    "tool-use",
+    "memory",
+    "planning",
+    "evals",
+    "code-agents",
+    "devops-agents",
+    "observability",
+    "safety",
+    "research",
+    "infra",
+    "multi-agent",
+    "cost-latency",
+})
+
+
 # ---------------------------------------------------------------------------
 # TypedDicts
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import sys
 from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
-from models import RankDecision, ScoredItem
+from models import RankDecision, ScoredItem, VALID_TAGS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,12 +76,6 @@ def effective_cap(section: str, items: list[dict]) -> int:
         )
         return rules["burst_cap"]
     return rules["cap"]
-
-VALID_TAGS = {
-    "frameworks", "tool-use", "memory", "planning", "evals",
-    "code-agents", "devops-agents", "observability", "safety",
-    "research", "infra", "multi-agent", "cost-latency",
-}
 
 RANKER_OUTPUT_SCHEMA = {
     "type": "object",
