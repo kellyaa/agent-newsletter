@@ -346,7 +346,7 @@ CREATE TABLE topics_covered (  -- for cross-day topic dedup
 |-----------------------------------|--------------------------------------------------------------|
 | A feed is down                    | Per-source try/except; log and continue; skip source for day |
 | LLM call times out / errors       | Stage exits nonzero; `run.sh` aborts; macOS notification fires; re-run is idempotent (completed stages are skipped) |
-| LLM produces malformed JSON       | `rank.py` validates output schema; on fail, retries with stricter prompt, then falls back to score-by-source-reputation |
+| LLM produces malformed JSON       | `llm.py` validates output schema and retries up to 2× on parse/truncation failure (same prompt). If all attempts fail, `rank.py` assigns `status=appendix, score=0` to any unscored candidates and logs a warning. There is no "stricter prompt" variant and no score-by-source-reputation path. |
 | LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
