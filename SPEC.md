@@ -5,7 +5,7 @@ A locally-run pipeline that produces a daily Markdown newsletter covering the pr
 ## Goals & Non-Goals
 
 **Goals**
-- One high-signal digest per day (~8-12 featured items + appendix of uncertain items).
+- One high-signal digest per day (~12-17 featured items, up to 22 on heavy arXiv days with the papers burst cap; plus appendix of uncertain items).
 - Zero babysitting once tuned: runs unattended, fails loudly when it does fail.
 - Editorial voice tuned to "how do I *build/run* agents," not generic AI hype.
 - Reproducible: given the same inputs, the same outputs (modulo LLM nondeterminism).
@@ -157,7 +157,7 @@ Writes scores, tags, and section back to `state.db`. Sets `status` to `featured`
 `write.py` makes one OpenAI-compatible chat-completions call via `scripts/llm.py` and writes the output to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md` (the `content` branch worktree). The model is configured via `WRITER_MODEL` in `.env`.
 
 The prompt gives the writer:
-- The top ~8-12 featured items (id, url, title, abstract, source, tags, one_line_why).
+- The featured items for the day (id, url, title, abstract, source, tags, one_line_why). Typically 12-17 items across all three sections; up to 22 on heavy arXiv days when the papers burst cap fires (see §Ranking).
 - The appendix list (title + url only).
 - A style guide (see below) and yesterday's newsletter for continuity/tone calibration.
 
@@ -432,7 +432,7 @@ Non-obvious things discovered during real runs that future-you should know witho
 The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-compatible chat-completions calls as of v1.2. Current lessons:
 
 - Per-section ranking calls (one per `papers`/`news`/`blogs`) work much better than one big call. ~$0.30-1.20 per section, 3-7 minutes each. A single 150-item call risks timeouts and quality degradation.
-- Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only ~12 featured items, not 100+ candidates.
+- Writer call ($0.30-0.50) is cheaper than ranker calls because it processes only 12-17 featured items (up to 22 with the burst cap), not 100+ candidates.
 - Set `RANKER_TIMEOUT_S=1800` (30 min). 15 min was too tight on chatty news days with verbose release-note `raw_text`. Truncating `raw_text` to ~1500 chars in `write.py` was a measurable cost reducer.
 - `llm.py` reads `LLM_EXTRA_HEADERS` from the environment — useful for endpoints that require additional auth headers (e.g., `RITS_API_KEY`, `X-Tenant-Id`).
 - The structured output schema must have a **top-level type of `object`**, not `array`. Wrap arrays in `{"items": [...]}` if needed.
