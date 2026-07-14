@@ -17,8 +17,9 @@ import sys
 
 from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
-from llm import call_llm
+from llm import call_llm, get_usage_log
 from models import RankDecision, ScoredItem
+from usage_sidecar import flush as flush_usage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -329,6 +330,16 @@ def main() -> int:
         counts.get("dropped", 0),
         counts.get("candidate", 0),
     )
+
+    # Persist token usage for this stage so publish.py can roll it into the
+    # `runs` row (issue #13). This is best-effort — a flush failure must not
+    # break the pipeline.
+    try:
+        from datetime import datetime
+        today = datetime.now().date().isoformat()
+        flush_usage("rank", today, get_usage_log())
+    except Exception as e:  # pragma: no cover — defensive
+        log.warning("failed to flush usage sidecar: %s", e)
     return 0
 
 

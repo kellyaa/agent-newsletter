@@ -20,6 +20,7 @@ from pathlib import Path
 
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from models import Status
+from usage_sidecar import aggregate as aggregate_usage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,17 +41,29 @@ def record_run(
     appendix_count: int,
     items_considered: int,
 ) -> None:
+    """Insert / upsert today's runs row, including token + cost totals.
+
+    Token/cost figures come from `usage_sidecar.aggregate(today)`, which
+    reads whatever sidecars rank.py and write.py flushed during the run.
+    All three fields can be None (no sidecars written yet, or unknown
+    model prices) — the schema allows NULL for exactly this case.
+    """
+    totals = aggregate_usage(today)
     conn.execute(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
-                          items_papers, items_news, items_blogs, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                          items_papers, items_news, items_blogs,
+                          tokens_in, tokens_out, cost_usd, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
             items_featured = excluded.items_featured,
             items_papers = excluded.items_papers,
             items_news = excluded.items_news,
             items_blogs = excluded.items_blogs,
+            tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
+            tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
+            cost_usd = COALESCE(excluded.cost_usd, runs.cost_usd),
             notes = excluded.notes
         """,
         (
@@ -64,10 +77,17 @@ def record_run(
             featured_counts.get("papers", 0),
             featured_counts.get("news", 0),
             featured_counts.get("blogs", 0),
+            totals.get("tokens_in"),
+            totals.get("tokens_out"),
+            totals.get("cost_usd"),
             f"appendix={appendix_count}",
         ),
     )
     conn.commit()
+    log.info(
+        "runs row: tokens_in=%s tokens_out=%s cost_usd=%s",
+        totals.get("tokens_in"), totals.get("tokens_out"), totals.get("cost_usd"),
+    )
 
 
 def main() -> int:
