@@ -321,6 +321,7 @@ class TestRankWithOptionalLlm:
 
         invoke_calls = []
         monkeypatch.setattr(rank_mod, "invoke_ranker", lambda *a, **kw: (invoke_calls.append(a), [])[1])
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
         # Patch rubric read
         rubric_path = tmp_path / "rank.md"
         rubric_path.write_text("rubric content")
@@ -329,7 +330,7 @@ class TestRankWithOptionalLlm:
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "rank.md").write_text("rubric")
 
-        decisions = bf.rank_with_optional_llm(self._prescored_grouped())
+        decisions = bf.rank_with_optional_llm(None, self._prescored_grouped())
 
         assert len(invoke_calls) == 0
         assert "p1" in decisions
@@ -347,6 +348,7 @@ class TestRankWithOptionalLlm:
             return [{"id": "u1", "score": 9, "tags": [], "why": "scored by llm"}]
 
         monkeypatch.setattr(rank_mod, "invoke_ranker", fake_invoke)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "rank.md").write_text("rubric")
         import backfill
@@ -361,7 +363,7 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        decisions = bf.rank_with_optional_llm(grouped)
+        decisions = bf.rank_with_optional_llm(None, grouped)
 
         assert "papers" in invoke_calls
         assert "u1" in decisions
@@ -375,6 +377,7 @@ class TestRankWithOptionalLlm:
             return [{"id": "u1", "score": 8, "tags": [], "why": "llm scored"}]
 
         monkeypatch.setattr(rank_mod, "invoke_ranker", fake_invoke)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "rank.md").write_text("rubric")
         import backfill
@@ -389,7 +392,7 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        decisions = bf.rank_with_optional_llm(grouped)
+        decisions = bf.rank_with_optional_llm(None, grouped)
 
         assert "p1" in decisions
         assert "u1" in decisions
@@ -405,6 +408,7 @@ class TestRankWithOptionalLlm:
             return []
 
         monkeypatch.setattr(rank_mod, "invoke_ranker", fake_invoke)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "rank.md").write_text("rubric")
         import backfill
@@ -419,7 +423,7 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        bf.rank_with_optional_llm(grouped)
+        bf.rank_with_optional_llm(None, grouped)
         assert "news" in invoked_labels
 
 
@@ -617,15 +621,14 @@ class TestBackfillMain:
 
         # Patch the expensive operations
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [
                 {"id": "feat1", "score": 9, "tags": [], "why": "great"}
             ], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda grouped: {
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: {
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"}
         })
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, decisions: {"featured": 1})
 
         out_path = tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md"
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
@@ -650,11 +653,10 @@ class TestBackfillMain:
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, decisions: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15"])
@@ -676,7 +678,7 @@ class TestBackfillMain:
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [
                 {"id": "feat1", "score": 9, "tags": [], "why": "great"}
             ], "news": [], "blogs": []
@@ -684,8 +686,7 @@ class TestBackfillMain:
         decisions = {
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"}
         }
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: decisions)
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {"featured": 1})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: decisions)
         out_path = tmp_path / "2026-07-15.md"
         out_path.write_text("# Issue")
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
@@ -752,11 +753,10 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         # Return 3 aged-out papers to exercise the `if aged:` branch (line 386)
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 3)
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15"])
@@ -779,13 +779,12 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
         # Return news items to trigger the unusual-snapshot warning
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [],
             "news": [{"id": "n1", "title": "News item"}],
             "blogs": [],
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15"])
@@ -809,15 +808,14 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
-        monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
             "papers": [], "papers_prescored": [], "news": [], "blogs": []
         })
         decisions = {
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"},
             "feat2": {"status": "featured", "score": 8, "tags": [], "why": "good", "section": "papers"},
         }
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: decisions)
-        monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {"featured": 2})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: decisions)
         out_path = tmp_path / "2026-07-15.md"
         out_path.write_text("# Issue")
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)

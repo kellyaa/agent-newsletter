@@ -1,0 +1,39 @@
+# Dependabot configuration — automatically opens PRs for dependency updates.
+# Covers Python (uv/pip), npm/pnpm, and GitHub Actions.
+#
+# Grouped updates reduce noise: all Python bumps arrive as one PR per week,
+# all npm bumps as one PR, and Actions as one PR.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      python-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
