@@ -25,7 +25,7 @@ scripts/
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
-watchdog.sh             — stale-pipeline monitor; fires macOS notification if the most-recent commit on the checked branch is older than STALE_HOURS (default 36h). **Current limitation:** watchdog runs from the main-branch worktree and checks main-branch HEAD, but all daily pipeline commits land on the `content` branch. As a result, watchdog will always print `"skipping check"` (main HEAD is never a `newsletter:` commit) and will not fire stale-pipeline alerts. Use the `runs` table to verify pipeline health (see Troubleshooting §3).
+watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -50,6 +50,8 @@ state.db                — SQLite pipeline state (on the 'content' branch; see 
 ```
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
+
+**Self-update:** At the start of every run, `run.sh` does a `git pull --ff-only` on the current branch (and `git pull --ff-only` on the content worktree). This ensures pipeline code, prompts, and site scaffold are current before content is generated. On the launchd daily run this is a catchup on `main`; on a feature branch it updates that branch. If the pull fails (dirty working tree or non-fast-forward), `run.sh` aborts and fires a macOS notification.
 
 ## Setup (one-time)
 
@@ -121,7 +123,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
-| `STALE_HOURS` | no | Age threshold (hours) for `watchdog.sh`'s stale-commit check; default `36` (set in `watchdog.sh`). **Note:** under the current implementation the watchdog checks main-branch HEAD, not the content branch where pipeline commits land — see the watchdog section in Troubleshooting for details. |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). Note: under the current implementation the watchdog checks main-branch HEAD, not the content branch where pipeline commits land — see the watchdog section in Troubleshooting for details. |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
@@ -246,7 +248,7 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
-  A code fix would update `watchdog.sh` to check the content worktree HEAD: `git -C .worktrees/content log -1 ...` — see the issue tracker for the tracking issue.
+  See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 
 ### 4. Unsticking it
 
