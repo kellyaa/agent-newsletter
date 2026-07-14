@@ -2,7 +2,7 @@
 
 All 9 partial branches from --cov-branch analysis:
   backfill.py:89->92   — setup_sandbox() fresh-run (sandbox does not pre-exist)
-  backfill.py:232->211 — build_candidates_snapshot() section not in grouped dict
+  candidates.py:113 — unknown section falls back to blogs bucket (replaces removed build_candidates_snapshot)
   db.py:129->132       — canonicalize_url() arxiv URL where regex does NOT match
   fetch.py:152->154    — fetch_hn() hit with no created_at field
   fetch.py:186->188    — fetch_reddit() post with no created_utc field
@@ -104,14 +104,22 @@ class TestSetupSandboxFreshRun:
 
 
 # ---------------------------------------------------------------------------
-# backfill.py:232->211 — build_candidates_snapshot() unknown section in DB
+# candidates.py — unknown section fallback to blogs (line 113)
 # ---------------------------------------------------------------------------
+# NOTE: PR #142 removed build_candidates_snapshot() from backfill.py and
+# replaced it with candidates.load_candidates_from_db(). The unknown-section
+# fallback now lives in candidates.py line 113 (else: grouped["blogs"].append).
 
 class TestBuildCandidatesSnapshotUnknownSection:
     def test_item_with_unknown_section_skipped(self, tmp_path):
-        """Items with section not in grouped dict keys are silently skipped (232->211)."""
+        """Items with section not in grouped dict keys fall back to the blogs bucket.
+
+        After PR #142, this behaviour lives in candidates.load_candidates_from_db()
+        (line 113), not backfill.build_candidates_snapshot() (which no longer exists).
+        The test is kept in this file to track the branch coverage origin.
+        """
         import db as db_mod
-        import backfill as bf
+        from candidates import load_candidates_from_db
 
         db_path = tmp_path / "state.db"
         _init_db(db_path)
@@ -119,7 +127,7 @@ class TestBuildCandidatesSnapshotUnknownSection:
 
         # Insert item with unusual section value not in grouped dict keys
         # grouped has: 'papers', 'papers_prescored', 'news', 'blogs'
-        # 'tools' or 'releases' are not in grouped
+        # 'tools' is not in grouped — should fall back to blogs bucket
         conn.execute(
             """
             INSERT INTO items (id, source, url, canonical_url, title, author,
@@ -134,15 +142,14 @@ class TestBuildCandidatesSnapshotUnknownSection:
         )
         conn.commit()
 
-        result = bf.build_candidates_snapshot(conn)
+        result = load_candidates_from_db(conn)
         conn.close()
 
-        # 'tools' is not in grouped — item should be silently skipped
-        all_items = (
-            result["papers"] + result["papers_prescored"] +
-            result["news"] + result["blogs"]
-        )
-        assert not any(it["id"] == "unknown1" for it in all_items)
+        # 'tools' is not in the known sections — item falls back to blogs bucket
+        assert any(it["id"] == "unknown1" for it in result["blogs"])
+        assert not any(it["id"] == "unknown1" for it in result["papers"])
+        assert not any(it["id"] == "unknown1" for it in result["papers_prescored"])
+        assert not any(it["id"] == "unknown1" for it in result["news"])
 
 
 # ---------------------------------------------------------------------------

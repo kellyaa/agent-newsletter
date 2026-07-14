@@ -7,10 +7,14 @@ run_writer_for_date() which require LLM mocks outside our scope here.
 
 Covers:
   - age_out_for_synthetic_date()
-  - build_candidates_snapshot()
-  - persist_decisions()
+  - candidates.load_candidates_from_db() (replaces removed build_candidates_snapshot)
+  - rank.persist() (replaces removed persist_decisions)
   - apply_published_to_live() (via bind_db_to_sandbox())
   - bind_db_to_sandbox() — the module-level patch mechanism
+
+NOTE: PR #142 refactored backfill.py to delegate to candidates.load_candidates_from_db()
+and rank.persist() instead of its own build_candidates_snapshot() and persist_decisions().
+Tests for those behaviours now live in candidates.py and rank.py respectively.
 """
 from __future__ import annotations
 
@@ -155,31 +159,38 @@ class TestAgeOutForSyntheticDate:
 
 
 # ---------------------------------------------------------------------------
-# build_candidates_snapshot()
+# candidates.load_candidates_from_db()
+#
+# PR #142 removed build_candidates_snapshot() from backfill.py and replaced
+# it with a call to candidates.load_candidates_from_db(). These tests verify
+# the shared grouping logic that backfill, prefilter, and rank all depend on.
 # ---------------------------------------------------------------------------
 
-class TestBuildCandidatesSnapshot:
+class TestLoadCandidatesFromDb:
+    """Tests for candidates.load_candidates_from_db() — the function that
+    replaced backfill.build_candidates_snapshot() after PR #142."""
+
     def test_empty_db_returns_empty_groups(self, db):
-        from backfill import build_candidates_snapshot
-        result = build_candidates_snapshot(db)
+        from candidates import load_candidates_from_db
+        result = load_candidates_from_db(db)
         assert result["papers"] == []
         assert result["papers_prescored"] == []
         assert result["news"] == []
         assert result["blogs"] == []
 
     def test_unscored_papers_go_to_papers_bucket(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "unscored", section="papers", score=None)
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert len(result["papers"]) == 1
         assert result["papers"][0]["id"] == "unscored"
         assert len(result["papers_prescored"]) == 0
 
     def test_scored_papers_go_to_prescored_bucket(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "scored", section="papers", score=8,
                           tags=["evals"], why="great")
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert len(result["papers_prescored"]) == 1
         item = result["papers_prescored"][0]
         assert item["id"] == "scored"
@@ -189,23 +200,23 @@ class TestBuildCandidatesSnapshot:
         assert len(result["papers"]) == 0
 
     def test_news_candidates_go_to_news_bucket(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "news1", section="news", score=7)
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert len(result["news"]) == 1
         assert result["news"][0]["id"] == "news1"
 
     def test_blogs_candidates_go_to_blogs_bucket(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "blog1", section="blogs", score=6)
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert len(result["blogs"]) == 1
 
     def test_non_candidate_rows_excluded(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "featured", section="papers", score=9, status="featured")
         _insert_candidate(db, "dropped", section="papers", score=2, status="dropped")
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         ids_in_result = (
             [it["id"] for it in result["papers"]] +
             [it["id"] for it in result["papers_prescored"]]
@@ -214,9 +225,9 @@ class TestBuildCandidatesSnapshot:
         assert "dropped" not in ids_in_result
 
     def test_emitted_fields_present(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "p1", section="papers", score=None)
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         item = result["papers"][0]
         assert "id" in item
         assert "source" in item
@@ -227,14 +238,14 @@ class TestBuildCandidatesSnapshot:
         assert "raw_text" in item
 
     def test_tags_parsed_from_json_for_prescored(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         _insert_candidate(db, "p1", section="papers", score=7,
                           tags=["research", "multi-agent"])
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert result["papers_prescored"][0]["tags"] == ["research", "multi-agent"]
 
     def test_malformed_tags_json_falls_back_to_empty(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         # Insert with broken tags JSON directly
         db.execute(
             """
@@ -246,12 +257,12 @@ class TestBuildCandidatesSnapshot:
             """
         )
         db.commit()
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         item = result["papers_prescored"][0]
         assert item["tags"] == []
 
     def test_null_section_defaults_to_blogs(self, db):
-        from backfill import build_candidates_snapshot
+        from candidates import load_candidates_from_db
         db.execute(
             """
             INSERT INTO items (id, source, url, canonical_url, title, fetched_at,
@@ -261,28 +272,102 @@ class TestBuildCandidatesSnapshot:
             """
         )
         db.commit()
-        result = build_candidates_snapshot(db)
+        result = load_candidates_from_db(db)
         assert any(it["id"] == "no-section" for it in result["blogs"])
 
+    def test_conn_none_opens_and_closes_connection(self, tmp_path, monkeypatch):
+        """When conn=None, load_candidates_from_db opens and closes its own connection."""
+        import db as db_mod
+        import candidates as cand_mod
+
+        db_path = tmp_path / "state.db"
+        db_mod.init_db(db_path)
+
+        connect_calls = []
+        original_connect = db_mod.connect
+
+        def tracking_connect(path=None):
+            conn = original_connect(path or db_path)
+            connect_calls.append(conn)
+            return conn
+
+        monkeypatch.setattr(cand_mod, "connect", tracking_connect)
+        result = cand_mod.load_candidates_from_db()  # conn=None
+        assert result["papers"] == []
+        assert len(connect_calls) == 1
+
+    def test_unknown_section_falls_back_to_blogs(self, db):
+        """Items with a section not in the known set fall back to the blogs bucket."""
+        from candidates import load_candidates_from_db
+        db.execute(
+            """
+            INSERT INTO items (id, source, url, canonical_url, title, fetched_at,
+                status, section, first_seen_date, last_seen_date, appearances)
+            VALUES ('weird','rss:x','https://a.com/w','https://a.com/w',
+                    'T','2026-06-25T00:00:00Z','candidate','unknown_section',
+                    '2026-06-25','2026-06-25',1)
+            """
+        )
+        db.commit()
+        result = load_candidates_from_db(db)
+        assert any(it["id"] == "weird" for it in result["blogs"])
+
+    def test_prerank_cap_defaults_now_when_none(self, db):
+        """When prerank_cap is applied and now=None, defaults to datetime.now(utc) (line 118)."""
+        from candidates import load_candidates_from_db
+
+        # Insert 5 unscored papers (above cap of 2)
+        for i in range(5):
+            db.execute(
+                """
+                INSERT INTO items (id, source, url, canonical_url, title, fetched_at,
+                    status, section, first_seen_date, last_seen_date, appearances,
+                    published_at)
+                VALUES (?, 'arxiv:x', ?, ?, 'T', '2026-06-25T00:00:00Z',
+                        'candidate', 'papers', '2026-06-25', '2026-06-25', 1,
+                        '2026-06-25T00:00:00Z')
+                """,
+                (f"p{i}", f"https://a.com/{i}", f"https://a.com/{i}"),
+            )
+        db.commit()
+
+        # Scorer: higher index → higher score so we can predict the top items
+        def scorer(item, now):
+            return int(item["id"][1:])  # p0→0, p4→4
+
+        # now=None exercises line 118: now = datetime.now(timezone.utc)
+        result = load_candidates_from_db(db, prerank_cap=2, prerank_scorer=scorer, now=None)
+        assert len(result["papers"]) == 2
+        # Top 2 by scorer: p4 (4) and p3 (3)
+        ids = {it["id"] for it in result["papers"]}
+        assert ids == {"p4", "p3"}
+
 
 # ---------------------------------------------------------------------------
-# persist_decisions()
+# rank.persist()
+#
+# PR #142 removed persist_decisions() from backfill.py and replaced it with
+# a call to rank.persist(). These tests verify the canonical persist logic
+# that backfill and rank both delegate to.
 # ---------------------------------------------------------------------------
 
-class TestPersistDecisions:
+class TestRankPersist:
+    """Tests for rank.persist() — the function that replaced
+    backfill.persist_decisions() after PR #142."""
+
     def test_writes_status_to_db(self, db):
-        from backfill import persist_decisions
+        from rank import persist
         _insert_candidate(db, "p1")
-        persist_decisions(db, {
+        persist(db, {
             "p1": {"status": "featured", "score": 9, "tags": [], "why": "top", "section": "papers"},
         })
         row = db.execute("SELECT status FROM items WHERE id='p1'").fetchone()
         assert row["status"] == "featured"
 
     def test_writes_score_and_why(self, db):
-        from backfill import persist_decisions
+        from rank import persist
         _insert_candidate(db, "p1")
-        persist_decisions(db, {
+        persist(db, {
             "p1": {"status": "appendix", "score": 5, "tags": [], "why": "decent", "section": "papers"},
         })
         row = db.execute("SELECT score, why FROM items WHERE id='p1'").fetchone()
@@ -290,9 +375,9 @@ class TestPersistDecisions:
         assert row["why"] == "decent"
 
     def test_invalid_tags_filtered_out(self, db):
-        from backfill import persist_decisions
+        from rank import persist
         _insert_candidate(db, "p1")
-        persist_decisions(db, {
+        persist(db, {
             "p1": {
                 "status": "featured", "score": 8,
                 "tags": ["evals", "INVALID", "research"],
@@ -305,10 +390,10 @@ class TestPersistDecisions:
         assert "evals" in parsed
 
     def test_returns_status_counts(self, db):
-        from backfill import persist_decisions
+        from rank import persist
         _insert_candidate(db, "p1")
         _insert_candidate(db, "p2")
-        counts = persist_decisions(db, {
+        counts = persist(db, {
             "p1": {"status": "featured", "score": 9, "tags": [], "why": "", "section": "papers"},
             "p2": {"status": "appendix", "score": 5, "tags": [], "why": "", "section": "papers"},
         })
@@ -316,8 +401,8 @@ class TestPersistDecisions:
         assert counts.get("appendix") == 1
 
     def test_empty_decisions_returns_empty_counts(self, db):
-        from backfill import persist_decisions
-        counts = persist_decisions(db, {})
+        from rank import persist
+        counts = persist(db, {})
         assert counts == {}
 
 
