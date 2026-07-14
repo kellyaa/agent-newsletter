@@ -188,6 +188,8 @@ Use when you've changed `prompts/write.md` and want to compare the new writer ou
 uv run scripts/replay_writer.py 2026-06-10
 ```
 
+**Prerequisites:** The content worktree must exist at `.worktrees/content` (run `git worktree add .worktrees/content content` if not) — `replay_writer.py` reads past issue files from there to reconstruct the featured set. `state.db` must contain the target date's published items. LLM credentials (`LLM_BASE_URL`, `LLM_API_KEY`, `WRITER_MODEL`) must be set in `.env` or the environment — the script invokes the writer LLM.
+
 Output goes to `logs/theme-replay-<YYYY-MM-DD>.json` in the repo root. Use it to review prompt changes before running the live pipeline.
 
 ---

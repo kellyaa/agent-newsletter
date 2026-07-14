@@ -87,6 +87,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 |---|---|---|
 | `LLM_BASE_URL` | yes | Endpoint base URL, e.g. `https://api.openai.com/v1` |
 | `LLM_API_KEY` | yes | Bearer token (some local servers accept any non-empty value) |
+| `OPENAI_API_KEY` | no | Fallback bearer token if `LLM_API_KEY` is unset; recognized by `scripts/llm.py` for compatibility with standard OpenAI tooling |
 | `RANKER_MODEL` | yes | Model id for the per-section ranker (small/cheap is fine) |
 | `WRITER_MODEL` | yes | Model id for the editorial writer (quality matters more) |
 | `RANKER_TIMEOUT_S` | no | Per-call timeout, default 1800 |
@@ -95,6 +96,8 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`) |
+| `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
 
