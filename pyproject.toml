@@ -9,6 +9,7 @@ dependencies = [
     "openai>=1.40.0",
     "pyyaml>=6.0",
     "python-dateutil>=2.9.0",
+    "selectolax>=0.3.21",
 ]
 
 [project.optional-dependencies]

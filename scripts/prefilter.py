@@ -65,6 +65,7 @@ RECENCY_DAYS = {
     "hn": 3,
     "reddit": 3,
     "gh": 14,
+    "html": 30,
     "default": 3,
 }
 
@@ -72,6 +73,7 @@ RECENCY_DAYS = {
 SOURCE_PRIORITY = {
     "arxiv": 5,
     "rss": 4,
+    "html": 4,
     "gh": 3,
     "hn": 2,
     "reddit": 1,
@@ -84,6 +86,7 @@ SECTION_BY_FAMILY = {
     "gh": "news",
     "hn": "news",
     "reddit": "news",
+    "html": "news",
     "rss": "blogs",
 }
 
