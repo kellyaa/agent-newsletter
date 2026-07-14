@@ -2,7 +2,7 @@
 
 All 9 partial branches from --cov-branch analysis:
   backfill.py:89->92   — setup_sandbox() fresh-run (sandbox does not pre-exist)
-  backfill.py:232->211 — build_candidates_snapshot() section not in grouped dict
+  candidates.py:113->  — load_candidates_from_db() section not in grouped dict
   db.py:129->132       — canonicalize_url() arxiv URL where regex does NOT match
   fetch.py:152->154    — fetch_hn() hit with no created_at field
   fetch.py:186->188    — fetch_reddit() post with no created_utc field
@@ -10,6 +10,11 @@ All 9 partial branches from --cov-branch analysis:
   llm.py:107->110      — _one_shot() markdown code fence without closing triple-tick
   write.py:234->231    — _emit_dict() returns empty list for a list value
   write.py:273->272    — assemble_issue() writer output entry without 'id' key
+
+Note: The branch previously listed as backfill.py:232->211 (build_candidates_snapshot
+unknown section) was removed by PR #142 when build_candidates_snapshot() was deleted
+from backfill.py. The equivalent branch now lives in candidates.py
+(load_candidates_from_db) and is tested by TestLoadCandidatesUnknownSection below.
 """
 from __future__ import annotations
 
@@ -104,22 +109,28 @@ class TestSetupSandboxFreshRun:
 
 
 # ---------------------------------------------------------------------------
-# backfill.py:232->211 — build_candidates_snapshot() unknown section in DB
+# candidates.py — load_candidates_from_db() unknown section in DB
+# (Previously tested as backfill.py:232->211 build_candidates_snapshot().
+#  That function was removed by PR #142; the equivalent branch now lives in
+#  candidates.py load_candidates_from_db() which backfill.main() calls.)
 # ---------------------------------------------------------------------------
 
-class TestBuildCandidatesSnapshotUnknownSection:
-    def test_item_with_unknown_section_skipped(self, tmp_path):
-        """Items with section not in grouped dict keys are silently skipped (232->211)."""
+class TestLoadCandidatesUnknownSection:
+    def test_item_with_unknown_section_goes_to_blogs(self, tmp_path):
+        """Items with section not in grouped dict keys fall back to blogs bucket.
+
+        candidates.load_candidates_from_db() maps unknown sections to 'blogs'
+        via the `else: grouped["blogs"].append(emitted)` branch.
+        """
         import db as db_mod
-        import backfill as bf
+        from candidates import load_candidates_from_db
 
         db_path = tmp_path / "state.db"
         _init_db(db_path)
         conn = db_mod.connect(db_path)
 
-        # Insert item with unusual section value not in grouped dict keys
-        # grouped has: 'papers', 'papers_prescored', 'news', 'blogs'
-        # 'tools' or 'releases' are not in grouped
+        # Insert item with unusual section value not in the first three buckets.
+        # 'tools' is not 'papers' (scored) or 'news' — it lands in the else/blogs branch.
         conn.execute(
             """
             INSERT INTO items (id, source, url, canonical_url, title, author,
@@ -134,15 +145,14 @@ class TestBuildCandidatesSnapshotUnknownSection:
         )
         conn.commit()
 
-        result = bf.build_candidates_snapshot(conn)
+        result = load_candidates_from_db(conn)
         conn.close()
 
-        # 'tools' is not in grouped — item should be silently skipped
-        all_items = (
-            result["papers"] + result["papers_prescored"] +
-            result["news"] + result["blogs"]
-        )
-        assert not any(it["id"] == "unknown1" for it in all_items)
+        # 'tools' is not 'papers' (with score) or 'news', so it falls through to blogs
+        assert any(it["id"] == "unknown1" for it in result["blogs"])
+        assert not any(it["id"] == "unknown1" for it in result["papers"])
+        assert not any(it["id"] == "unknown1" for it in result["papers_prescored"])
+        assert not any(it["id"] == "unknown1" for it in result["news"])
 
 
 # ---------------------------------------------------------------------------
