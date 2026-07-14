@@ -213,7 +213,7 @@ Style guide (embedded in the prompt):
 - Writes the issue file to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md`. `CONTENT_ROOT` defaults to the `content`-branch worktree at `.worktrees/content` (set by `run.sh`).
 - Does **not** generate `index.md` or `feed.xml` — Astro's build step handles navigation automatically.
 - `run.sh` then commits `state.db` and `site/src/content/issues/` to the `content` branch (via the worktree) and pushes. `main` is never touched by the daily run.
-- GitHub Actions `deploy.yml` triggers on push to either `main` or `content`, checks out both branches, copies `content`'s issue files into the Astro source tree, builds with Astro 5, and deploys to GitHub Pages. The Astro build is the deploy gate — a malformed issue file fails the build.
+- GitHub Actions `deploy.yml` triggers on push to either `main` or `content`, checks out both branches, copies `content`'s issue files into the Astro source tree, builds with Astro 5, and deploys to GitHub Pages. The Astro build is the deploy gate — a malformed issue file fails the build. The `build` job has a 10-minute `timeout-minutes` and the `deploy` job has a 5-minute cap (to guard against pnpm install stalls or GitHub Pages infrastructure hangs). A timeout failure surfaces as a GitHub Actions job failure, not a content error.
 
 ## Dedup Strategy
 
