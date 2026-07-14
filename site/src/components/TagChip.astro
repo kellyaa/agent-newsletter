@@ -1,7 +1,20 @@
 ---
+/**
+ * Tag chip. Renders as a link to /tags/<label>/ by default; pass
+ * `static` to render as a plain span (useful when the chip is already
+ * inside a larger clickable region).
+ */
 interface Props {
   label: string;
+  static?: boolean;
 }
-const { label } = Astro.props;
+const { label, static: isStatic = false } = Astro.props;
+const baseUrl = import.meta.env.BASE_URL || "/";
+const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+const href = `${trimmedBase}/tags/${label}/`;
 ---
-<span class="chip">{label}</span>
+{isStatic ? (
+  <span class="chip">{label}</span>
+) : (
+  <a class="chip chip--link" href={href}>{label}</a>
+)}
