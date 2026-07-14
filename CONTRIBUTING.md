@@ -59,13 +59,23 @@ git worktree add .worktrees/content content
 ```
 
 > ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
-> hard-coded author paths (`/Users/kelly/git/incubation/…`). Edit both
-> `launchd/com.kelly.agent-newsletter.plist` and
-> `launchd/com.kelly.agent-newsletter-watchdog.plist`, replacing every occurrence of
-> `/Users/kelly/git/incubation` with your actual repo root and `/Users/kelly/.local/bin`
-> with your actual local bin path before running `install.sh`. Installing without editing
-> these paths will silently install plists that point at the wrong location and the
-> scheduled job will never run.
+> hard-coded author paths (`/Users/kelly/git/incubation/…`). Substitute your actual repo
+> root and local-bin path with these two `sed` commands (run from the repo root):
+>
+> ```bash
+> REPO_ROOT="$(pwd)"
+> LOCAL_BIN="$HOME/.local/bin"   # adjust if uv/pnpm live elsewhere (e.g. /opt/homebrew/bin)
+>
+> sed -i '' \
+>   -e "s|/Users/kelly/git/incubation|${REPO_ROOT}|g" \
+>   -e "s|/Users/kelly/.local/bin|${LOCAL_BIN}|g" \
+>   launchd/com.kelly.agent-newsletter.plist \
+>   launchd/com.kelly.agent-newsletter-watchdog.plist
+> ```
+>
+> Verify with `grep -r '/Users/kelly' launchd/` — it should print nothing.
+> Installing without these substitutions will silently install plists that point at
+> the wrong location and the scheduled job will never run.
 
 **Running the Astro dev server:**
 
