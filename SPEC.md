@@ -322,7 +322,7 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 │   ├── publish.py             ← promote items; record runs row
 │   ├── llm.py                 ← thin wrapper around OpenAI-compatible chat-completions
 │   ├── db.py                  ← schema, URL canonicalization
-│   ├── models.py              ← TypedDict definitions for pipeline stage boundaries
+│   ├── models.py              ← TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
 │   ├── backfill.py            ← reconstruct missed daily runs from candidate pool
 │   └── replay_writer.py       ← replay writer against past issues (prompt verification)
 ├── site/                      ← Astro 5 static site scaffold
@@ -355,14 +355,14 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
 | Cost runaway                      | Per-run cost recorded in `runs.cost_usd`; `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
-| No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks main-branch HEAD for `newsletter:` commit pattern; if stale, fires a macOS notification |
+| No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks main-branch HEAD for `newsletter:` commit pattern. **Current limitation:** since all pipeline commits land on the `content` branch, the watchdog always skips and never fires. Use the `runs` table to verify pipeline health. |
 
 ## Failure Notifications
 
 macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 - `run.sh` wraps the pipeline; on nonzero exit, the wrapper invokes `osascript -e 'display notification ...'` with the failed stage and the path to the day's log.
-- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent `newsletter:` commit in the main-branch repo (at `REPO_ROOT`, resolved from `watchdog.sh`'s own location). If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/". If the HEAD commit is not a `newsletter:` commit (e.g., a code edit or merge commit), watchdog prints "skipping check" — this is expected behavior when the most recent commit to the repo was human-authored, not a daily pipeline run.
+- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent `newsletter:` commit in the main-branch repo (at `REPO_ROOT`, resolved from `watchdog.sh`'s own location). If >36h stale, it fires a notification with "newsletter pipeline appears stuck — see logs/". If the HEAD commit is not a `newsletter:` commit (e.g., a code edit or merge commit), watchdog prints "skipping check". **Known limitation:** all daily pipeline commits land on the `content` branch (via `run.sh`'s `-C "$CONTENT_WORKTREE"` git ops), so main-branch HEAD is never a `newsletter:` commit. As a result, `watchdog.sh` always prints "skipping check" and never fires stale-pipeline notifications. A code fix would check the content worktree HEAD (`git -C .worktrees/content log -1 ...`) — see the issue tracker. For now, verify pipeline runs via the `runs` table: `sqlite3 .worktrees/content/state.db "SELECT date FROM runs ORDER BY date DESC LIMIT 1;"`.
 - The full output of every run lands in `logs/run-YYYY-MM-DD.log` for postmortem (already wired up via `tee` in `run.sh`).
 - Once the site is deployed to GitHub Pages, the Pages-build-failure email GitHub sends on broken deploys is a free additional signal.
 

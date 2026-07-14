@@ -123,7 +123,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
-| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). |
+| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). Note: under the current implementation the watchdog checks main-branch HEAD, not the content branch where pipeline commits land — see the watchdog section in Troubleshooting for details. |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
@@ -244,7 +244,7 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. Because `newsletter:` commits go to the **content branch** (not `main`), the watchdog will nearly always see this message and skip the staleness check. The watchdog's commit-pattern check is therefore not a reliable staleness signal in normal operation. To verify whether the pipeline ran, query `runs` directly — this is the canonical source of truth:
+- **watchdog noise / always-skipping.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check`. This is expected — and *always* happens — because `watchdog.sh` runs from the main-branch worktree and checks main-branch HEAD (`git log -1`), while all daily pipeline commits land on the `content` branch via the content worktree. Main never receives `newsletter:` commits, so the pattern check never matches. **The watchdog currently does not detect stuck pipelines.** To verify the pipeline ran, query the `runs` table directly:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
