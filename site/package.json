@@ -11,9 +11,9 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/rss": "^4.0.18",
-    "astro": "^5.0.0",
-    "marked": "^14.1.0"
+    "@astrojs/rss": "^4.0.19",
+    "astro": "^7.0.9",
+    "marked": "^18.0.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
