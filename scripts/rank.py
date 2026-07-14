@@ -18,7 +18,7 @@ import sys
 from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
-from models import RankDecision, ScoredItem
+from models import RankDecision, ScoredItem, VALID_TAGS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,12 +77,6 @@ def effective_cap(section: str, items: list[dict]) -> int:
         return rules["burst_cap"]
     return rules["cap"]
 
-VALID_TAGS = {
-    "frameworks", "tool-use", "memory", "planning", "evals",
-    "code-agents", "devops-agents", "observability", "safety",
-    "research", "infra", "multi-agent", "cost-latency",
-}
-
 RANKER_OUTPUT_SCHEMA = {
     "type": "object",
     "required": ["rankings"],
@@ -97,7 +91,7 @@ RANKER_OUTPUT_SCHEMA = {
                 "properties": {
                     "id":    {"type": "string", "minLength": 1},
                     "score": {"type": "integer", "minimum": 0, "maximum": 10},
-                    "tags":  {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+                    "tags":  {"type": "array", "items": {"type": "string", "enum": sorted(VALID_TAGS)}, "maxItems": 5},
                     "why":   {"type": "string", "minLength": 1, "maxLength": 300},
                 },
             },
@@ -188,14 +182,24 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
 
 def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
+    dropped_tags: dict[str, int] = {}
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
+        invalid = [t for t in d["tags"] if t not in VALID_TAGS]
+        for t in invalid:
+            dropped_tags[t] = dropped_tags.get(t, 0) + 1
         conn.execute(
             "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
             (d["score"], json.dumps(clean_tags), d["why"], d["status"], item_id),
         )
         counts[d["status"]] = counts.get(d["status"], 0) + 1
     conn.commit()
+    if dropped_tags:
+        log.warning(
+            "persist: dropped %d invalid tag occurrence(s) not in VALID_TAGS: %s",
+            sum(dropped_tags.values()),
+            dict(sorted(dropped_tags.items(), key=lambda kv: -kv[1])),
+        )
     return counts
 
 

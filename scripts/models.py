@@ -40,6 +40,30 @@ class Section(StrEnum):
     BLOGS = "blogs"
 
 
+# Closed-vocabulary tag set for the ranker. This is the single source of truth
+# for valid tags throughout the pipeline. If you add/remove a tag here, also
+# update prompts/rank.md (the LLM instruction) and SPEC.md (documentation).
+#
+# The RANKER_OUTPUT_SCHEMA in rank.py uses this set as an enum constraint so
+# the LLM is structurally prevented from inventing tags. persist() also
+# validates against this set as a defense-in-depth measure.
+VALID_TAGS: frozenset[str] = frozenset({
+    "frameworks",
+    "tool-use",
+    "memory",
+    "planning",
+    "evals",
+    "code-agents",
+    "devops-agents",
+    "observability",
+    "safety",
+    "research",
+    "infra",
+    "multi-agent",
+    "cost-latency",
+})
+
+
 # ---------------------------------------------------------------------------
 # TypedDicts
 # ---------------------------------------------------------------------------
