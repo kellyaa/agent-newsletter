@@ -63,6 +63,10 @@ Explicitly down-weighted: consumer AI hype, funding announcements, VC takes, "pr
 
 A user-level `~/Library/LaunchAgents/com.kelly.agent-newsletter.plist` running `run.sh` daily at **07:00 local**. Logs stdout/stderr to `logs/YYYY-MM-DD.log`. If the Mac is asleep at the scheduled time, launchd runs it on wake (unlike cron).
 
+**`run.sh` self-update.** As the very first step, `run.sh` runs `git pull --ff-only` so the pipeline always executes on the latest committed code and prompts. Practical consequences: (a) uncommitted local changes to tracked files will cause the pull to fail → pipeline does not start; (b) prompt edits merged to `main` take effect on the very next run without a separate update step. The pull is intentional — a long-running daily cron should not silently run stale pipeline code.
+
+**Watchdog throttle.** `watchdog.sh` will not re-fire a stale-pipeline notification more than once every 4 hours. The throttle state is stored in `logs/watchdog-last-fire`. To force an immediate re-check: `rm -f logs/watchdog-last-fire && ./watchdog.sh`.
+
 Failure mode: `run.sh` exits nonzero → a macOS notification fires (via `osascript`) and the per-day log at `logs/run-YYYY-MM-DD.log` captures the full output. No silent failures.
 
 ### 2. Collectors — `fetch.py`

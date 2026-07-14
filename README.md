@@ -249,6 +249,7 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
   See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
+- **watchdog notification throttle.** Once the stale-pipeline notification fires, `watchdog.sh` will not re-fire for 4 hours (throttle state in `logs/watchdog-last-fire`). If you want to force an immediate re-check after diagnosing the problem, run: `rm -f logs/watchdog-last-fire && ./watchdog.sh`
 
 ### 4. Unsticking it
 
