@@ -10,6 +10,7 @@ that section's candidates inlined into the prompt — no tool calls needed.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -28,6 +29,13 @@ log = logging.getLogger("rank")
 
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
 RANKED_PATH = REPO_ROOT / "ranked.json"  # debug artifact: raw LLM scores
+
+# Rubric-hash invalidation: when prompts/rank.md changes, all cached papers
+# scores become stale (they were assigned under a different rubric), so we
+# wipe them and let the ranker re-score from scratch. This logic lives here
+# because rank.py owns the prompt — prefilter should not reach into ranker's
+# implementation details.
+RUBRIC_HASH_PATH = REPO_ROOT / ".rubric_hash"
 
 RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 # Per-section call timeout. Per-call output is bounded by section size, so this
@@ -104,6 +112,41 @@ RANKER_OUTPUT_SCHEMA = {
         },
     },
 }
+
+
+def _rubric_hash() -> str:
+    """SHA-256 of the current rank prompt, or empty string if the file is missing."""
+    if not PROMPT_PATH.exists():
+        return ""
+    return hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()
+
+
+def _maybe_invalidate_papers_scores(conn) -> int:
+    """If prompts/rank.md changed since the last run, wipe cached papers
+    scores so they get re-scored under the new rubric. Returns the count
+    invalidated (0 on first run or when the hash hasn't changed)."""
+    current = _rubric_hash()
+    if not current:
+        return 0
+    last = RUBRIC_HASH_PATH.read_text().strip() if RUBRIC_HASH_PATH.exists() else ""
+    if last == current:
+        return 0
+    cur = conn.execute(
+        "UPDATE items SET score = NULL "
+        "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
+    )
+    invalidated = cur.rowcount or 0
+    conn.commit()
+    RUBRIC_HASH_PATH.write_text(current)
+    if invalidated:
+        log.info(
+            "rubric changed (hash %s → %s) — invalidated %d cached papers scores",
+            last[:8] or "<none>", current[:8], invalidated,
+        )
+    else:
+        # First run, or rubric changed but no papers were prescored yet.
+        log.info("rubric hash recorded: %s", current[:8])
+    return invalidated
 
 
 def build_prompt(section: str, items: list[dict], rubric: str) -> str:
@@ -206,6 +249,13 @@ def main() -> int:
         return 2
 
     rubric = PROMPT_PATH.read_text()
+
+    # Wipe cached papers scores if the rubric changed since the last run.
+    # This must happen before load_candidates_from_db() so that invalidated
+    # items appear in the unscored bucket rather than papers_prescored.
+    conn = connect()
+    _maybe_invalidate_papers_scores(conn)
+    conn.close()
 
     # Load candidates directly from the DB. This is the same function
     # prefilter.py uses to write its debug artifact, ensuring consistency.

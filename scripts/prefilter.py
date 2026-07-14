@@ -5,7 +5,6 @@ as status='candidate' and emits candidates.json for the ranker.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -110,11 +109,6 @@ PAPER_POOL_MAX_COMPETES = 7
 PAPER_POOL_MAX_AGE_DAYS = 7
 PAPER_PRERANK_CAP = 50
 
-# Cached rubric hash. When prompts/rank.md changes, all cached papers scores
-# become stale (they were assigned under a different rubric), so we wipe them
-# and let rank.py re-score from scratch on the next run.
-RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
-RUBRIC_HASH_PATH = REPO_ROOT / ".rubric_hash"
 
 
 def _source_family(source: str) -> str:
@@ -184,38 +178,6 @@ def _prerank_score(item: PrefilterItem, now: datetime) -> float:
     return recency * (0.5 + kw)
 
 
-def _rubric_hash() -> str:
-    if not RUBRIC_PATH.exists():
-        return ""
-    return hashlib.sha256(RUBRIC_PATH.read_bytes()).hexdigest()
-
-
-def _maybe_invalidate_papers_scores(conn) -> int:
-    """If prompts/rank.md changed since the last run, wipe cached papers
-    scores so rank.py re-scores them under the new rubric. Returns the count
-    invalidated (0 on first run or when the hash hasn't changed)."""
-    current = _rubric_hash()
-    if not current:
-        return 0
-    last = RUBRIC_HASH_PATH.read_text().strip() if RUBRIC_HASH_PATH.exists() else ""
-    if last == current:
-        return 0
-    cur = conn.execute(
-        "UPDATE items SET score = NULL "
-        "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
-    )
-    invalidated = cur.rowcount or 0
-    conn.commit()
-    RUBRIC_HASH_PATH.write_text(current)
-    if invalidated:
-        log.info(
-            "rubric changed (hash %s → %s) — invalidated %d cached papers scores",
-            last[:8] or "<none>", current[:8], invalidated,
-        )
-    else:
-        # First run, or rubric changed but no papers were prescored yet.
-        log.info("rubric hash recorded: %s", current[:8])
-    return invalidated
 
 
 def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> list[PrefilterItem]:
@@ -241,9 +203,6 @@ def main() -> int:
     init_db()
     conn = connect()
     now = datetime.now(timezone.utc)
-
-    # Wipe cached papers scores if the rubric changed since the last run.
-    _maybe_invalidate_papers_scores(conn)
 
     # Age out papers candidates that have hit the per-paper competition cap or
     # exceeded the recency ceiling. Done up front so they don't appear in
