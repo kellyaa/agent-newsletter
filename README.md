@@ -16,12 +16,12 @@ scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
   candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
-  rank.py               — three LLM calls (OpenAI-compatible), one per section
+  rank.py               — three LLM calls (OpenAI-compatible), one per section; writes ranked.json as debug artifact
   write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   db.py                 — schema, URL canonicalization
-  models.py             — TypedDict definitions for pipeline stage boundaries
+  models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
@@ -96,6 +96,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
 | `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`) |
+| `BUDGET_USD` | no | Future per-run cost cap (not yet enforced). Scaffolded for future enforcement; `runs.cost_usd` is recorded every run so the cap can be wired in without a schema change. See `SPEC.md §Cost Budget`. |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:

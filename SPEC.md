@@ -147,7 +147,7 @@ If more items clear the threshold than the cap allows, take the top-N by score w
 **Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review overdue (was due ~2026-07-07 — see issue #121; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
 
 Also emit:
-- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
+- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning and possible future facets such as the `topics_covered` cross-day dedup table) — they no longer drive section grouping. The `topics_covered` table is currently a reserved scaffold; no pipeline stage writes to it yet.
 - **Section assignment**: `papers` | `news` | `blogs`. See "Section assignment" under the Writer step for the default rules and override criteria.
 
 Writes scores, tags, and section back to `state.db`, sets `status = 'ranked'`.
