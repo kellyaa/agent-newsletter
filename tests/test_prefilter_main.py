@@ -88,20 +88,10 @@ def _insert_item(
 
 def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     """Run prefilter.main() with patched filesystem paths."""
-    import hashlib
     import prefilter as pf_mod
     import db as db_mod
 
-    # Pre-populate the rubric hash file to prevent score invalidation during tests.
-    # Without this, _maybe_invalidate_papers_scores() sees a "new" hash and wipes
-    # any cached scores we set up for the test.
-    rubric_hash_path = candidates_out.parent / ".rubric_hash"
-    rubric_hash = hashlib.sha256(rubric_file.read_bytes()).hexdigest()
-    rubric_hash_path.write_text(rubric_hash)
-
     monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
-    monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
-    monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash_path)
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
 

@@ -10,9 +10,11 @@ from prefilter import (
     _normalize_title,
     _title_tokens,
     _jaccard,
-    _rubric_hash,
-    _maybe_invalidate_papers_scores,
     _passes_recency,
+)
+from rank import (
+    _rubric_hash,
+    maybe_invalidate_papers_scores,
 )
 
 
@@ -131,24 +133,24 @@ class TestPrerankScore:
 
 class TestRubricHash:
     def test_returns_empty_string_when_file_absent(self, tmp_path, monkeypatch):
-        import prefilter as pf_mod
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", tmp_path / "nonexistent.md")
+        import rank as rank_mod
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", tmp_path / "nonexistent.md")
         assert _rubric_hash() == ""
 
     def test_returns_sha256_hex_string(self, tmp_path, monkeypatch):
-        import prefilter as pf_mod
+        import rank as rank_mod
         rubric = tmp_path / "rank.md"
         rubric.write_text("score by novelty")
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
         h = _rubric_hash()
         assert len(h) == 64
         assert all(c in "0123456789abcdef" for c in h)
 
     def test_hash_changes_when_content_changes(self, tmp_path, monkeypatch):
-        import prefilter as pf_mod
+        import rank as rank_mod
         rubric = tmp_path / "rank.md"
         rubric.write_text("v1 content")
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
         h1 = _rubric_hash()
         rubric.write_text("v2 content")
         h2 = _rubric_hash()
@@ -183,7 +185,7 @@ class TestMaybeInvalidatePapersScores:
 
     def test_no_invalidation_when_hash_unchanged(self, db_with_scored_papers, monkeypatch):
         conn, tmp_path = db_with_scored_papers
-        import prefilter as pf_mod
+        import rank as rank_mod
 
         rubric = tmp_path / "rank.md"
         rubric.write_text("fixed rubric")
@@ -192,10 +194,10 @@ class TestMaybeInvalidatePapersScores:
         h = hashlib.sha256(b"fixed rubric").hexdigest()
         hash_file.write_text(h)
 
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "RUBRIC_HASH_PATH", hash_file)
 
-        count = _maybe_invalidate_papers_scores(conn)
+        count = maybe_invalidate_papers_scores(conn)
         assert count == 0
 
         # Score should NOT have been wiped
@@ -204,17 +206,17 @@ class TestMaybeInvalidatePapersScores:
 
     def test_invalidates_when_rubric_changed(self, db_with_scored_papers, monkeypatch):
         conn, tmp_path = db_with_scored_papers
-        import prefilter as pf_mod
+        import rank as rank_mod
 
         rubric = tmp_path / "rank.md"
         rubric.write_text("new rubric content")
         hash_file = tmp_path / ".rubric_hash"
         hash_file.write_text("old_hash_value")  # stale hash
 
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "RUBRIC_HASH_PATH", hash_file)
 
-        count = _maybe_invalidate_papers_scores(conn)
+        count = maybe_invalidate_papers_scores(conn)
         assert count == 1
 
         # Score should now be NULL
@@ -223,7 +225,7 @@ class TestMaybeInvalidatePapersScores:
 
     def test_hash_file_updated_after_invalidation(self, db_with_scored_papers, monkeypatch):
         conn, tmp_path = db_with_scored_papers
-        import prefilter as pf_mod
+        import rank as rank_mod
         import hashlib
 
         rubric = tmp_path / "rank.md"
@@ -231,26 +233,26 @@ class TestMaybeInvalidatePapersScores:
         hash_file = tmp_path / ".rubric_hash"
         hash_file.write_text("stale")
 
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "RUBRIC_HASH_PATH", hash_file)
 
-        _maybe_invalidate_papers_scores(conn)
+        maybe_invalidate_papers_scores(conn)
 
         expected = hashlib.sha256(b"rubric v2").hexdigest()
         assert hash_file.read_text().strip() == expected
 
     def test_returns_zero_when_rubric_file_absent(self, db_with_scored_papers, monkeypatch):
-        """Returns 0 without DB changes when rank.md is absent (line 197: if not current)."""
+        """Returns 0 without DB changes when rank.md is absent."""
         conn, tmp_path = db_with_scored_papers
-        import prefilter as pf_mod
+        import rank as rank_mod
 
         # Point to a non-existent rubric file
         rubric = tmp_path / "missing_rank.md"
         hash_file = tmp_path / ".rubric_hash"
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "RUBRIC_HASH_PATH", hash_file)
 
-        count = _maybe_invalidate_papers_scores(conn)
+        count = maybe_invalidate_papers_scores(conn)
         assert count == 0
 
         # Score should be untouched
@@ -258,13 +260,13 @@ class TestMaybeInvalidatePapersScores:
         assert row["score"] == 8
 
     def test_first_run_records_hash_without_invalidation(self, db_with_scored_papers, monkeypatch):
-        """Line 215: when hash changed but no scored papers exist, logs 'rubric hash recorded'."""
-        import prefilter as pf_mod
+        """When hash changed but no scored papers exist, logs 'rubric hash recorded'."""
+        import rank as rank_mod
         import hashlib
         import db as db_mod
         tmp_path = db_with_scored_papers[1]  # only use tmp_path, not the scored-papers conn
 
-        # Use a FRESH db with no scored papers (so invalidated == 0, triggering line 215)
+        # Use a FRESH db with no scored papers (so invalidated == 0, triggering log line)
         fresh_db = tmp_path / "fresh.db"
         db_mod.init_db(fresh_db)
         conn_fresh = db_mod.connect(fresh_db)
@@ -276,11 +278,11 @@ class TestMaybeInvalidatePapersScores:
         if hash_file.exists():
             hash_file.unlink()
 
-        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
+        monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
+        monkeypatch.setattr(rank_mod, "RUBRIC_HASH_PATH", hash_file)
 
         try:
-            count = _maybe_invalidate_papers_scores(conn_fresh)
+            count = maybe_invalidate_papers_scores(conn_fresh)
             # No papers to invalidate → returns 0
             assert count == 0
 

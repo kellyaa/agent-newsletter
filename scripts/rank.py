@@ -10,6 +10,7 @@ that section's candidates inlined into the prompt — no tool calls needed.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ logging.basicConfig(
 log = logging.getLogger("rank")
 
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
+RUBRIC_HASH_PATH = REPO_ROOT / ".rubric_hash"
 RANKED_PATH = REPO_ROOT / "ranked.json"  # debug artifact: raw LLM scores
 
 RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
@@ -104,6 +106,44 @@ RANKER_OUTPUT_SCHEMA = {
         },
     },
 }
+
+
+def _rubric_hash() -> str:
+    """SHA-256 of the ranker prompt file, or empty string if missing."""
+    if not PROMPT_PATH.exists():
+        return ""
+    return hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()
+
+
+def maybe_invalidate_papers_scores(conn) -> int:
+    """If prompts/rank.md changed since the last run, wipe cached papers
+    scores so they get re-scored under the new rubric.
+
+    Returns the count of invalidated items (0 on first run or no change).
+    This belongs in rank.py because the rubric is the ranker's concern —
+    prefilter should not need to know about prompt internals.
+    """
+    current = _rubric_hash()
+    if not current:
+        return 0
+    last = RUBRIC_HASH_PATH.read_text().strip() if RUBRIC_HASH_PATH.exists() else ""
+    if last == current:
+        return 0
+    cur = conn.execute(
+        "UPDATE items SET score = NULL "
+        "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
+    )
+    invalidated = cur.rowcount or 0
+    conn.commit()
+    RUBRIC_HASH_PATH.write_text(current)
+    if invalidated:
+        log.info(
+            "rubric changed (hash %s → %s) — invalidated %d cached papers scores",
+            last[:8] or "<none>", current[:8], invalidated,
+        )
+    else:
+        log.info("rubric hash recorded: %s", current[:8])
+    return invalidated
 
 
 def build_prompt(section: str, items: list[dict], rubric: str) -> str:
@@ -204,6 +244,13 @@ def main() -> int:
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
         return 2
+
+    # Invalidate cached papers scores if the rubric prompt changed.
+    # This must run before loading candidates so that stale prescored papers
+    # move back into the unscored bucket for re-evaluation.
+    conn = connect()
+    maybe_invalidate_papers_scores(conn)
+    conn.close()
 
     rubric = PROMPT_PATH.read_text()
 
