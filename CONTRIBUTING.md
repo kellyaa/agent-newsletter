@@ -180,7 +180,7 @@ A PR labeled `hold` (or `on-hold` / `do-not-merge`) **must not be merged** until
 
 - Python 3.11+; no type annotations required but they are welcome.
 - No external formatter enforced (no black/ruff CI gate), but keep code readable.
-- Keep scripts self-contained — `scripts/` files should not import from each other except via `db.py`, `llm.py`, `models.py`, and `candidates.py` (the shared candidate-pool query module).
+- Keep scripts self-contained — pipeline stage scripts (`fetch.py`, `prefilter.py`, `rank.py`, `write.py`, `publish.py`) should not import from each other; they share state only through `state.db` and use the shared modules `db.py`, `llm.py`, `models.py`, and `candidates.py`. **Orchestration scripts** (`backfill.py`, `replay_writer.py`) are intentionally exempt: they invoke pipeline-stage functions directly (e.g., `backfill.py` imports `rank.py` and `write.py`) to reuse threshold/cap logic without duplicating it.
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
 
@@ -195,11 +195,18 @@ Two scripts handle emergency and verification scenarios. Neither is part of the 
 Use when a daily run was skipped entirely (e.g., the Mac was off) and you want to produce an issue from the historical candidate pool in `state.db`.
 
 ```bash
-# Reconstruct the issue for a past date from the DB candidate pool
+# Reconstruct the issue for a past date (dry-run: featured items stay 'candidate' in live DB)
 uv run scripts/backfill.py --date 2026-06-10
+
+# Reconstruct and seal featured items as 'published' in the live state.db (recommended for real backfills)
+uv run scripts/backfill.py --date 2026-06-10 --apply-published
 ```
 
-**Prerequisites:** The content worktree must exist at `.worktrees/content` (run `git worktree add .worktrees/content content` if not). Backfill uses candidates already scored in `state.db` — it does not re-fetch or re-rank. A `runs` row is **not** recorded for a backfilled issue; the run history will show a gap.
+**Prerequisites:** The content worktree must exist at `.worktrees/content` (run `git worktree add .worktrees/content content` if not).
+
+**What it does:** Extracts a pre-run `state.db` snapshot from git history, runs the ranker and writer against the historical candidate pool, and writes the issue file. It does **not** re-fetch from external sources. The ranker LLM is usually skipped — papers in the candidate pool are typically already prescored from prior runs — but will be invoked for any unscored candidates if present. A `runs` row is **not** recorded in the live `state.db`; the run history will show a gap for the backfilled date.
+
+**`--apply-published` (important):** Without this flag, the backfill's featured ids remain at `status='candidate'` in the live `state.db` after the issue file is written. On the next normal run, those same papers would re-enter the candidate pool and could feature again. Pass `--apply-published` to promote them to `status='published'` and prevent re-featuring. The default (no flag) is a safe dry-run mode; use `--apply-published` for all real backfills.
 
 ### `scripts/replay_writer.py` — replay writer against a past issue
 

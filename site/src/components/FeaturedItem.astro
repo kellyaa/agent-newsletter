@@ -20,10 +20,26 @@ interface Props { item: Item; }
 const { item } = Astro.props;
 
 // Render summary as inline HTML — it may contain inline markdown like `code`,
-// **bold**, or [text](url). We trust the writer prompt's restrictions.
+// **bold**, or [text](url). We sanitize with DOMPurify before rendering to
+// prevent XSS from LLM-generated or prompt-injected content. See sec-check
+// issue #162 for context.
 import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 // marked is bundled by Astro's MD pipeline already; if it's not installed at
 // the site level, we'll add it in package.json.
+
+// Render a field through marked (markdown → HTML) then DOMPurify (strip XSS).
+// ALLOW_DATA_ATTR: false prevents data-* abuse; FORCE_BODY: false preserves
+// inline fragments without wrapping them in a <body> element.
+function safeInline(text: string | null | undefined): string {
+  if (!text) return "";
+  return DOMPurify.sanitize(marked.parseInline(text) as string, {
+    ALLOWED_TAGS: ["strong", "em", "code", "a", "br"],
+    ALLOWED_ATTR: ["href", "title"],
+    ALLOW_DATA_ATTR: false,
+    FORCE_BODY: false,
+  });
+}
 ---
 <article class="item" id={item.id}>
   <h3 class="item__title">
@@ -39,15 +55,15 @@ import { marked } from "marked";
       </span>
     )}
   </div>
-  <div class="item__summary" set:html={marked.parseInline(item.summary)}></div>
+  <div class="item__summary" set:html={safeInline(item.summary)}></div>
   {item.takeaway && (
     <Callout type="takeaway">
-      <span set:html={marked.parseInline(item.takeaway)}></span>
+      <span set:html={safeInline(item.takeaway)}></span>
     </Callout>
   )}
   {item.open_question && (
     <Callout type="question">
-      <span set:html={marked.parseInline(item.open_question)}></span>
+      <span set:html={safeInline(item.open_question)}></span>
     </Callout>
   )}
 </article>

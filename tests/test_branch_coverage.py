@@ -2,7 +2,7 @@
 
 All 9 partial branches from --cov-branch analysis:
   backfill.py:89->92   — setup_sandbox() fresh-run (sandbox does not pre-exist)
-  backfill.py:232->211 — build_candidates_snapshot() section not in grouped dict
+  candidates.py        — load_candidates_from_db() unknown section in DB (falls through to blogs)
   db.py:129->132       — canonicalize_url() arxiv URL where regex does NOT match
   fetch.py:152->154    — fetch_hn() hit with no created_at field
   fetch.py:186->188    — fetch_reddit() post with no created_utc field
@@ -104,14 +104,14 @@ class TestSetupSandboxFreshRun:
 
 
 # ---------------------------------------------------------------------------
-# backfill.py:232->211 — build_candidates_snapshot() unknown section in DB
+# candidates.py — load_candidates_from_db() unknown section defaults to blogs
 # ---------------------------------------------------------------------------
 
-class TestBuildCandidatesSnapshotUnknownSection:
-    def test_item_with_unknown_section_skipped(self, tmp_path):
-        """Items with section not in grouped dict keys are silently skipped (232->211)."""
+class TestLoadCandidatesUnknownSection:
+    def test_item_with_unknown_section_falls_through_to_blogs(self, tmp_path):
+        """Items with section not in grouped dict keys fall through to blogs bucket."""
         import db as db_mod
-        import backfill as bf
+        from candidates import load_candidates_from_db
 
         db_path = tmp_path / "state.db"
         _init_db(db_path)
@@ -119,7 +119,7 @@ class TestBuildCandidatesSnapshotUnknownSection:
 
         # Insert item with unusual section value not in grouped dict keys
         # grouped has: 'papers', 'papers_prescored', 'news', 'blogs'
-        # 'tools' or 'releases' are not in grouped
+        # 'tools' is not a known section — should land in 'blogs' bucket
         conn.execute(
             """
             INSERT INTO items (id, source, url, canonical_url, title, author,
@@ -134,15 +134,11 @@ class TestBuildCandidatesSnapshotUnknownSection:
         )
         conn.commit()
 
-        result = bf.build_candidates_snapshot(conn)
+        result = load_candidates_from_db(conn)
         conn.close()
 
-        # 'tools' is not in grouped — item should be silently skipped
-        all_items = (
-            result["papers"] + result["papers_prescored"] +
-            result["news"] + result["blogs"]
-        )
-        assert not any(it["id"] == "unknown1" for it in all_items)
+        # 'tools' is not a known section — item falls through to 'blogs'
+        assert any(it["id"] == "unknown1" for it in result["blogs"])
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,12 @@ const rssUrl = baseUrl.endsWith("/") ? `${baseUrl}rss.xml` : `${baseUrl}/rss.xml
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
+    <!-- Content-Security-Policy: limits XSS blast radius.
+         script-src 'self' 'unsafe-inline': pagefind requires inline scripts for its search UI.
+         style-src allows Google Fonts and rsms.me for Inter + JetBrains Mono.
+         img-src allows data: URIs used by pagefind and https: for external images.
+         See sec-check issue #167 for rationale. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://rsms.me https://fonts.googleapis.com; font-src 'self' https://rsms.me https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'" />
     <link rel="preconnect" href="https://rsms.me/" />
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
