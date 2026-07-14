@@ -150,7 +150,7 @@ Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning, the topics_covered table, and possible future facets) — they no longer drive section grouping.
 - **Section assignment**: `papers` | `news` | `blogs`. See "Section assignment" under the Writer step for the default rules and override criteria.
 
-Writes scores, tags, and section back to `state.db`, sets `status = 'ranked'`.
+Writes scores, tags, and section back to `state.db`. Sets `status` to `featured`, `appendix`, `dropped`, or (for papers losing the cap) `candidate` — **`ranked` is never written as a status value**; `rank.py` transitions directly to the final disposition without an intermediate `ranked` state.
 
 ### 5. Summarizer / Writer — `write.py` (OpenAI-compatible LLM)
 

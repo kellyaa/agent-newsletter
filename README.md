@@ -137,7 +137,7 @@ The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker
 
 Three tables:
 
-- **`items`** — every fetched item, with status (`candidate` / `ranked` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count).
+- **`items`** — every fetched item, with status (`new` / `candidate` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count). (Note: `ranked` is never written as a status; `rank.py` transitions directly from `candidate` to `featured`/`appendix`/`dropped`.)
 - **`runs`** — one row per daily pipeline run: item counts by section, wall-clock duration; `tokens_in` / `tokens_out` / `cost_usd` columns are scaffolded (see #13) and populated when the LLM endpoint exposes usage.
 - **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
 
