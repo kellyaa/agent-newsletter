@@ -162,7 +162,7 @@ The prompt gives the writer:
 - A style guide (see below) and yesterday's newsletter for continuity/tone calibration.
 
 The writer produces:
-1. **Header** — date, 1-2 sentence "today's theme" if one emerges, else skip.
+1. **Header** — date, followed by a **theme** block (a two-part front-page card, ~60 words). Part 1 is a lede (1-2 sentences) introducing 1-2 featured items framed by what they *are* — written for a cold reader who hasn't clicked through, with system names optional. Part 2 is a territory sentence gesturing at the rest of the issue by kinds of work, not system names. `null` only when fewer than 3 featured items exist. See `prompts/write.md §Theme` for the full rubric. (Implemented 2026-07-07; replaces the earlier "1-2 sentence theme if one emerges" heuristic.)
 2. **Featured items, grouped into three top-level sections** in this fixed order:
    1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
    2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from `gh:*` (trending repos), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
@@ -464,6 +464,6 @@ The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-c
 
 ### Voice/format calibration
 
-- The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
+- The theme (front-page card) is a two-part lede+territory structure since 2026-07-07. Part 1 (lede) introduces 1-2 featured items using plain framing that a cold reader can follow; Part 2 (territory) names kinds of work, not system names. Keep the `null` escape hatch for issues with fewer than 3 featured items. The previous "generic category" problem (pre-2026-06-23) and "dense catalog" problem (post-2026-06-23) were both fixed by this structured rubric — see `docs/superpowers/specs/2026-07-07-front-page-theme-rewrite-design.md` for the design rationale.
 - TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
 - Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
