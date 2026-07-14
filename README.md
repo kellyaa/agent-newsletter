@@ -25,7 +25,7 @@ scripts/
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
-watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern)
+watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -242,10 +242,11 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. This is expected any time a human commit landed after the last pipeline run; it's not a failure signal. To verify the pipeline ran independently of the watchdog, query `runs` directly:
+- **watchdog noise.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check` whenever the main-branch HEAD is a code-edit or merge commit rather than a `newsletter: YYYY-MM-DD` daily-run commit. Because `newsletter:` commits go to the **content branch** (not `main`), the watchdog will nearly always see this message and skip the staleness check. The watchdog's commit-pattern check is therefore not a reliable staleness signal in normal operation. To verify whether the pipeline ran, query `runs` directly — this is the canonical source of truth:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
   ```
+  See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 
 ### 4. Unsticking it
 
