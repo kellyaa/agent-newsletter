@@ -25,7 +25,7 @@ Limitations, all forced by the missing fetch:
     news/blogs are recoverable. The reader sees a papers-only issue with
     empty appendix.
   - No `runs` row is recorded in the live state.db. The site renders fine
-    from the issue file alone; per-day stats queries (`SELECT … FROM runs`)
+    from the issue file alone; per-day stats queries (`SELECT ... FROM runs`)
     won't show the backfilled date.
   - times_competed counters in the live DB are not bumped for the synthetic
     day, so the multi-day pool's aging is off by one against what would
@@ -184,68 +184,19 @@ def age_out_for_synthetic_date(conn, target_date: str) -> int:
     return cur.rowcount or 0
 
 
-def build_candidates_snapshot(conn) -> dict:
-    """Reproduce prefilter.py's candidates.json grouping from the DB.
+def rank_with_optional_llm(conn, candidates: dict) -> dict:
+    """Rank candidates using rank.py's public functions.
 
-    Only candidates already in `status = 'candidate'` are emitted — this
-    matches a normal idempotent re-run of prefilter when there are no new
-    items to gate. Papers with cached scores go into `papers_prescored`;
-    unscored papers (rare on a backfill, but possible) go into `papers`.
-    News and blogs sections come out empty by construction since those
-    rows don't survive across days.
-    """
-    grouped: dict[str, list[dict]] = {
-        "papers": [],
-        "papers_prescored": [],
-        "news": [],
-        "blogs": [],
-    }
-    rows = conn.execute(
-        """
-        SELECT id, source, url, title, author, published_at, raw_text,
-               section, score, tags, why
-        FROM items
-        WHERE status = 'candidate'
-        """
-    ).fetchall()
-    for r in rows:
-        d = dict(r)
-        emitted = {
-            "id": d["id"],
-            "source": d["source"],
-            "url": d["url"],
-            "title": d["title"],
-            "author": d["author"],
-            "published_at": d["published_at"],
-            "raw_text": d["raw_text"],
-        }
-        section = d["section"] or "blogs"
-        if section == "papers" and d["score"] is not None:
-            try:
-                tags = json.loads(d["tags"]) if d["tags"] else []
-            except (TypeError, ValueError):
-                tags = []
-            emitted["score"] = d["score"]
-            emitted["tags"] = tags
-            emitted["why"] = d["why"] or ""
-            grouped["papers_prescored"].append(emitted)
-        elif section in grouped:
-            grouped[section].append(emitted)
-    return grouped
-
-
-def rank_with_optional_llm(grouped: dict) -> dict:
-    """Rank candidates and return the id → decision map.
-
-    If there are unscored items (rare on a backfill), invoke the ranker LLM
-    for each non-empty section. Prescored papers always pass through directly.
+    Delegates to the canonical rank module instead of reimplementing the
+    scoring/status-assignment logic. This ensures threshold changes, burst-cap
+    policies, and valid-tag sets stay in sync automatically.
     """
     import rank as rank_mod
 
     scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
 
-    # Prescored papers: pass through with cached scores.
-    for it in grouped["papers_prescored"]:
+    # Prescored papers: pass through with cached scores (no LLM needed).
+    for it in candidates.get("papers_prescored", []):
         scored_by_section["papers"].append({
             "id": it["id"],
             "score": it["score"],
@@ -253,11 +204,10 @@ def rank_with_optional_llm(grouped: dict) -> dict:
             "why": it.get("why", ""),
         })
 
-    # Any section with unscored items needs the LLM. We expect this branch
-    # not to fire on a clean missed-day backfill, but handle it defensively.
-    rubric = (REPO / "prompts" / "rank.md").read_text()
+    # Any section with unscored items needs the LLM.
+    rubric = rank_mod.PROMPT_PATH.read_text()
     for section in ("papers", "news", "blogs"):
-        items = grouped.get(section, [])
+        items = candidates.get(section, [])
         if not items:
             continue
         log.info("invoking ranker LLM for %s (%d unscored)", section, len(items))
@@ -265,24 +215,17 @@ def rank_with_optional_llm(grouped: dict) -> dict:
         scored = rank_mod.invoke_ranker(prompt, label=section)
         scored_by_section[section].extend(scored)
 
-    return rank_mod.assign_statuses(scored_by_section)
+    # Use rank.py's assign_statuses for threshold/cap logic.
+    decisions = rank_mod.assign_statuses(scored_by_section)
 
-
-def persist_decisions(conn, decisions: dict) -> dict[str, int]:
-    """Write rank decisions to the sandbox DB so write.py can read them
-    via the normal `WHERE status = 'featured'` path.
-    """
-    import rank as rank_mod
-    counts: dict[str, int] = {}
-    for item_id, d in decisions.items():
-        clean_tags = [t for t in d["tags"] if t in rank_mod.VALID_TAGS]
-        conn.execute(
-            "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
-            (d["score"], json.dumps(clean_tags), d["why"], d["status"], item_id),
-        )
-        counts[d["status"]] = counts.get(d["status"], 0) + 1
-    conn.commit()
-    return counts
+    # Persist using rank.py's persist function.
+    counts = rank_mod.persist(conn, decisions)
+    log.info(
+        "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
+        counts.get("featured", 0), counts.get("appendix", 0),
+        counts.get("dropped", 0), counts.get("candidate", 0),
+    )
+    return decisions
 
 
 def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
@@ -378,6 +321,8 @@ def main() -> int:
     # Imports must come AFTER bind_db_to_sandbox so their `from db import connect`
     # captures the patched function.
     import db as db_mod  # noqa: F401  (already patched, just ensure schema migrations run)
+    from candidates import load_candidates_from_db
+
     db_mod.init_db()
     conn = db_mod.connect()
 
@@ -385,25 +330,25 @@ def main() -> int:
     if aged:
         log.info("aged out %d papers candidates for synthetic %s", aged, args.date)
 
-    grouped = build_candidates_snapshot(conn)
+    # Use the shared candidates module instead of reimplementing the grouping.
+    # This ensures field selection, section logic, and prescored detection
+    # stay in sync with the normal pipeline path.
+    candidates = load_candidates_from_db(conn)
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
-        len(grouped["papers"]), len(grouped["papers_prescored"]),
-        len(grouped["news"]), len(grouped["blogs"]),
+        len(candidates.get("papers", [])),
+        len(candidates.get("papers_prescored", [])),
+        len(candidates.get("news", [])),
+        len(candidates.get("blogs", [])),
     )
-    if grouped["news"] or grouped["blogs"]:
+    if candidates.get("news") or candidates.get("blogs"):
         log.warning(
             "found news/blogs candidates in the snapshot — unusual; backfills "
             "are typically papers-only since news/blogs don't persist."
         )
 
-    decisions = rank_with_optional_llm(grouped)
-    counts = persist_decisions(conn, decisions)
-    log.info(
-        "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
-        counts.get("featured", 0), counts.get("appendix", 0),
-        counts.get("dropped", 0), counts.get("candidate", 0),
-    )
+    # Rank using the canonical rank module's functions.
+    decisions = rank_with_optional_llm(conn, candidates)
 
     out = run_writer_for_date(conn, args.date, args.force)
     conn.close()
