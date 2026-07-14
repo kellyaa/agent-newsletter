@@ -144,7 +144,7 @@ Total 0-10. **The score is then interpreted within the item's section, with sect
 
 If more items clear the threshold than the cap allows, take the top-N by score within that section; the remainder spill into the appendix.
 
-**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review overdue (was due ~2026-07-07 — see issue #121; check the score-10 miss rate in `runs` and tune `burst_trigger_count` in `scripts/rank.py` if the trigger fires too rarely or too often; update this note once reviewed).**
+**Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review pending (due ~2026-07-07, not yet completed as of 2026-07-14 — see issue #121 for tracking). To review: query `SELECT date, items_papers FROM runs ORDER BY date DESC LIMIT 30;` and check whether the burst cap of 10 fires appropriately on heavy arXiv days. If `burst_trigger_count` (currently `10`) fires too rarely or too often, tune it in `scripts/rank.py` and update this note with the review outcome.**
 
 Also emit:
 - **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning and possible future facets) — they no longer drive section grouping. (The `topics_covered` table is a reserved stub for future cross-day topic dedup — see #4; it is not currently written to or read from.)
@@ -467,3 +467,4 @@ The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-c
 - The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
 - TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
 - Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
+
