@@ -52,6 +52,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
+# Backward-compat aliases: PR #142 moved the reimplementations of these two
+# helpers out of backfill.py into their canonical modules. Existing tests and
+# any external callers still reference them under the old names on the
+# `backfill` module. These aliases keep those call sites working while the
+# actual logic lives in one place (candidates.py / rank.py). Do not
+# reintroduce local reimplementations — see #132.
+from candidates import load_candidates_from_db as build_candidates_snapshot  # noqa: E402
+from rank import persist as persist_decisions  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",

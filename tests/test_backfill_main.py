@@ -329,7 +329,8 @@ class TestRankWithOptionalLlm:
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "rank.md").write_text("rubric")
 
-        decisions = bf.rank_with_optional_llm(self._prescored_grouped())
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
+        decisions = bf.rank_with_optional_llm(None, self._prescored_grouped())
 
         assert len(invoke_calls) == 0
         assert "p1" in decisions
@@ -361,7 +362,8 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        decisions = bf.rank_with_optional_llm(grouped)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
+        decisions = bf.rank_with_optional_llm(None, grouped)
 
         assert "papers" in invoke_calls
         assert "u1" in decisions
@@ -389,7 +391,8 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        decisions = bf.rank_with_optional_llm(grouped)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
+        decisions = bf.rank_with_optional_llm(None, grouped)
 
         assert "p1" in decisions
         assert "u1" in decisions
@@ -419,7 +422,8 @@ class TestRankWithOptionalLlm:
             "blogs": [],
         }
 
-        bf.rank_with_optional_llm(grouped)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
+        bf.rank_with_optional_llm(None, grouped)
         assert "news" in invoked_labels
 
 
@@ -622,7 +626,7 @@ class TestBackfillMain:
                 {"id": "feat1", "score": 9, "tags": [], "why": "great"}
             ], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda grouped: {
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, grouped: {
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"}
         })
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, decisions: {"featured": 1})
@@ -653,7 +657,7 @@ class TestBackfillMain:
         monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
             "papers": [], "papers_prescored": [], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, g: {})
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, decisions: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
@@ -684,7 +688,7 @@ class TestBackfillMain:
         decisions = {
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"}
         }
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: decisions)
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, g: decisions)
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {"featured": 1})
         out_path = tmp_path / "2026-07-15.md"
         out_path.write_text("# Issue")
@@ -755,7 +759,7 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr("backfill.build_candidates_snapshot", lambda conn: {
             "papers": [], "papers_prescored": [], "news": [], "blogs": []
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, g: {})
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
@@ -784,7 +788,7 @@ class TestBackfillMainEdgeCases:
             "news": [{"id": "n1", "title": "News item"}],
             "blogs": [],
         })
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: {})
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, g: {})
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {})
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: None)
 
@@ -816,7 +820,7 @@ class TestBackfillMainEdgeCases:
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"},
             "feat2": {"status": "featured", "score": 8, "tags": [], "why": "good", "section": "papers"},
         }
-        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda g: decisions)
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, g: decisions)
         monkeypatch.setattr("backfill.persist_decisions", lambda conn, d: {"featured": 2})
         out_path = tmp_path / "2026-07-15.md"
         out_path.write_text("# Issue")

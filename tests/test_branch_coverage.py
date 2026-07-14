@@ -137,12 +137,14 @@ class TestBuildCandidatesSnapshotUnknownSection:
         result = bf.build_candidates_snapshot(conn)
         conn.close()
 
-        # 'tools' is not in grouped — item should be silently skipped
-        all_items = (
-            result["papers"] + result["papers_prescored"] +
-            result["news"] + result["blogs"]
-        )
-        assert not any(it["id"] == "unknown1" for it in all_items)
+        # After PR #142, backfill delegates to candidates.load_candidates_from_db
+        # which routes unknown sections to 'blogs' rather than skipping them.
+        # This test now asserts that behavior (was previously "silently skipped"
+        # under backfill's local reimplementation).
+        assert any(it["id"] == "unknown1" for it in result["blogs"])
+        assert not any(it["id"] == "unknown1" for it in result["papers"])
+        assert not any(it["id"] == "unknown1" for it in result["news"])
+        assert not any(it["id"] == "unknown1" for it in result["papers_prescored"])
 
 
 # ---------------------------------------------------------------------------
