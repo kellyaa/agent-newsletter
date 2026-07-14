@@ -122,6 +122,16 @@ def main() -> int:
         conn.close()
         return 5
 
+    # Snapshot topics of everything about to promote (issue #4). We
+    # collect the list BEFORE the UPDATE flips their status, because the
+    # trailing INSERT needs the item ids and their topic slugs. Only rows
+    # with a non-empty topic get a topics_covered entry.
+    topic_rows = conn.execute(
+        f"SELECT id, topic FROM items "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}') "
+        f"  AND topic IS NOT NULL AND topic != ''"
+    ).fetchall()
+
     conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}' "
         f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
@@ -135,6 +145,19 @@ def main() -> int:
         featured_counts.get("blogs", 0),
         appendix_count,
     )
+
+    # Populate topics_covered so the next day's ranker can dedup cross-day
+    # (issue #4). INSERT OR IGNORE handles idempotent re-runs (a re-publish
+    # of the same day is a no-op on PK (topic, date, item_id)).
+    if topic_rows:
+        conn.executemany(
+            "INSERT OR IGNORE INTO topics_covered (topic, date, item_id) "
+            "VALUES (?, ?, ?)",
+            [(r["topic"], today, r["id"]) for r in topic_rows],
+        )
+        conn.commit()
+        log.info("topics_covered: inserted %d rows for %s",
+                 len(topic_rows), today)
 
     record_run(conn, today, featured_counts, appendix_count, items_considered)
     conn.close()

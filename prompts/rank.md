@@ -48,6 +48,25 @@ Pick the 1–3 that fit best. If nothing fits, return `[]` (empty array).
 
 One sentence (under 30 words) explaining the score. State the actual reason — "concrete benchmark on tool-use with ablation" / "vague vendor announcement, no API details" / "yet another RAG survey." This is for the human operator's debugging, not the reader. Be blunt, not editorial.
 
+## The `topic` field
+
+Emit a **short, stable, kebab-case slug** identifying the underlying topic the item is about. Aim for 2–5 words. Examples:
+
+- `anthropic-sdk-managed-agents`
+- `claude-code-v2-release`
+- `dspy-optimizer-benchmark`
+- `swe-bench-verified-failures`
+- `langgraph-checkpointing`
+
+Guidelines:
+
+- The slug names the **story**, not the item. An HN thread about the Anthropic SDK release and a Simon Willison commentary post on it share the same topic slug.
+- Do **not** include the source (`hn-`, `arxiv-`) in the slug.
+- Do **not** include the date.
+- If nothing sensible fits (a generic listicle, a paper whose contribution defies a short label), emit `""` (empty string). Downstream code treats empty topics as "no dedup signal."
+
+The topic slug is used by the next day's ranker for cross-day dedup context. If the input includes a "Topics covered in the last 7 days" block, penalize items that substantively rehash a listed topic (typical HN follow-up thread on yesterday's release, commentary post on a paper covered yesterday, etc.) — score them lower and cite the prior coverage in `why`. This does **not** apply to papers: paper-level dedup is done by URL, not by slug.
+
 ## Output
 
 Return a single JSON object with a `rankings` array — no prose, no markdown, no code fences. Shape:
@@ -59,7 +78,8 @@ Return a single JSON object with a `rankings` array — no prose, no markdown, n
       "id": "<exact id from input>",
       "score": <integer 0-10>,
       "tags": ["tag1", "tag2"],
-      "why": "one sentence explaining the score"
+      "why": "one sentence explaining the score",
+      "topic": "short-kebab-case-topic-slug"
     },
     ...
   ]

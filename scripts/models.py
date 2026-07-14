@@ -72,6 +72,7 @@ class ItemRow(TypedDict, total=False):
     last_seen_date: str
     appearances: int
     times_competed: int
+    topic: str | None
 
 
 class PrefilterItem(TypedDict):
@@ -111,21 +112,25 @@ class CandidateItem(TypedDict, total=False):
     why: str
 
 
-class ScoredItem(TypedDict):
+class ScoredItem(TypedDict, total=False):
     """A single item as returned by the ranker LLM."""
     id: str
     score: int
     tags: list[str]
     why: str
+    # Short kebab-case topic slug (issue #4). Used for cross-day dedup;
+    # empty string is acceptable if nothing sensible fits.
+    topic: str
 
 
-class RankDecision(TypedDict):
+class RankDecision(TypedDict, total=False):
     """Per-item decision from assign_statuses()."""
     status: str
     score: int
     tags: list[str]
     why: str
     section: str
+    topic: str
 
 
 class FeaturedItem(TypedDict, total=False):
