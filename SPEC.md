@@ -468,7 +468,7 @@ The pipeline migrated from Claude Code headless (`claude -p`) to direct OpenAI-c
 
 ### Voice/format calibration
 
-- The "today's read" theme line is genuinely useful when the LLM finds a real cross-item thread. Keep the prompt's "or null" escape hatch; don't force a theme on scattered days.
+- The theme (front-page card) uses a two-part lede+territory structure since 2026-07-07. Part 1 (lede) introduces 1-2 featured items using plain framing a cold reader can follow; Part 2 (territory) names kinds of work, not system names. The `null` escape hatch fires only when fewer than 3 featured items exist — not freely skippable on sparse days. See `prompts/write.md §Theme` for the full rubric.
 - TAKEAWAY/OPEN_QUESTION blockquotes work well *when used sparingly*. The prompt rule "at most one per item, both null is fine" is load-bearing; without it the LLM tries to put one on every item.
 - Score caps (papers=5, news=6, blogs=6) feel about right for daily reading. Tags in the closed vocabulary (13 entries) are unchanged from initial design and feel sufficient.
 
