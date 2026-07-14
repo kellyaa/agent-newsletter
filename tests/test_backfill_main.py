@@ -451,6 +451,7 @@ class TestRunWriterForDate:
         """Returns None and logs error when issue file already exists without --force."""
         import backfill as bf
         import db as db_mod
+        import write as write_mod
 
         db_path = tmp_path / "state.db"
         self._make_db_with_featured(db_path)
@@ -464,6 +465,7 @@ class TestRunWriterForDate:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
 
         result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
         conn.close()
@@ -474,6 +476,7 @@ class TestRunWriterForDate:
         """Returns None when DB has no featured or appendix items."""
         import backfill as bf
         import db as db_mod
+        import write as write_mod
 
         db_path = tmp_path / "state.db"
         db_mod.init_db(db_path)  # empty DB
@@ -481,7 +484,9 @@ class TestRunWriterForDate:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
-        (tmp_path / "site" / "src" / "content" / "issues").mkdir(parents=True)
+        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
 
@@ -502,6 +507,7 @@ class TestRunWriterForDate:
 
         issues_dir = tmp_path / "site" / "src" / "content" / "issues"
         issues_dir.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
 
         # Mock invoke_writer to avoid LLM call
         fake_output = {"theme": "AI agents reshape enterprise workflows",
@@ -535,6 +541,7 @@ class TestRunWriterForDate:
 
         issues_dir = tmp_path / "site" / "src" / "content" / "issues"
         issues_dir.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         out_path = issues_dir / "2026-07-15.md"
         out_path.write_text("old content")
 
@@ -859,6 +866,7 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(backfill, "REPO", tmp_path)
         issues_dir = tmp_path / "site" / "src" / "content" / "issues"
         issues_dir.mkdir(parents=True)
+        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
 
