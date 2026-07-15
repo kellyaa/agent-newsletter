@@ -40,10 +40,18 @@ function safeInline(text: string | null | undefined): string {
     FORCE_BODY: false,
   });
 }
+
+// Belt-and-suspenders scheme guard for the outbound link. `db.py::canonicalize_url`
+// already rejects non-http(s) at ingestion, so this should be unreachable — but
+// z.string().url() in content.config.ts permits javascript:/data: URIs, so
+// treat the href as untrusted at render time too. Fall back to "#" if unsafe.
+function safeHref(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : "#";
+}
 ---
 <article class="item" id={item.id}>
   <h3 class="item__title">
-    <a href={item.url} rel="noopener noreferrer external">{item.title}</a>
+    <a href={safeHref(item.url)} rel="noopener noreferrer external">{item.title}</a>
   </h3>
   <div class="item__meta">
     <span class="item__source">{item.source}</span>

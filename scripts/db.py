@@ -112,16 +112,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
 
 
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+
+
 def canonicalize_url(url: str) -> str:
     """Return a normalized URL safe to use as a dedup key.
 
     - Lowercase scheme + host
+    - Reject non-http(s) schemes (javascript:, data:, file: — XSS surface
+      when a Reddit `url_overridden_by_dest`, an RSS <link>, or a scraped
+      anchor href lands in a site or RSS feed <a href> unchanged).
     - Strip tracking query params
     - Strip trailing slash on path
     - Resolve arxiv pdf/abs/v<N> variants to the abs form
     """
     parsed = urlparse(url.strip())
     scheme = (parsed.scheme or "https").lower()
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        raise ValueError(f"unsupported URL scheme: {scheme!r} (only http/https allowed)")
     netloc = parsed.netloc.lower()
     path = parsed.path or "/"
 

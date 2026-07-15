@@ -10,6 +10,14 @@ function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
+// Scheme-guard for hrefs: HTML-encoding does not neutralize a javascript:
+// URL in an <a href>. `db.py::canonicalize_url` already rejects non-http(s)
+// at ingestion, but z.string().url() in content.config.ts admits them, so
+// belt-and-suspenders guard here too.
+function safeHref(url) {
+  return /^https?:\/\//i.test(url) ? url : "#";
+}
+
 function renderItemContent(issue) {
   const parts = [];
   if (issue.data.theme) {
@@ -20,7 +28,7 @@ function renderItemContent(issue) {
     parts.push("<h2>Featured</h2>");
     for (const f of featured) {
       parts.push(
-        `<h3><a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a></h3>`,
+        `<h3><a href="${escapeHtml(safeHref(f.url))}">${escapeHtml(f.title)}</a></h3>`,
       );
       const meta = [f.section, f.author].filter(Boolean).map(escapeHtml).join(" · ");
       if (meta) parts.push(`<p><small>${meta}</small></p>`);

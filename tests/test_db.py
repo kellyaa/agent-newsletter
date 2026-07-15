@@ -41,6 +41,27 @@ def test_canonicalize_url_strips_tracking_params_and_preserves_query_order() -> 
     assert canonicalize_url(url) == "https://example.com/path?b=2&a=1"
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "javascript:alert(1)",
+        "JAVASCRIPT:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "ftp://example.com/foo",
+    ],
+)
+def test_canonicalize_url_rejects_non_http_schemes(bad_url: str) -> None:
+    """Non-http(s) URLs from Reddit/RSS/HTML sources must not reach persistence.
+
+    They would land in <a href> on the site and in the RSS feed unchanged
+    (see FeaturedItem.astro:46, rss.xml.js renderItemContent) — an XSS
+    surface via `url_overridden_by_dest` and untrusted RSS <link>.
+    """
+    with pytest.raises(ValueError, match="unsupported URL scheme"):
+        canonicalize_url(bad_url)
+
+
 def test_url_id_is_stable_for_same_canonical_url() -> None:
     first = "https://example.com/items/42?utm_source=feed&b=2"
     second = "HTTPS://EXAMPLE.COM/items/42/?b=2&fbclid=abc"

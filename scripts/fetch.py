@@ -418,8 +418,15 @@ def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
     fetched_at = datetime.now(timezone.utc).isoformat()
     for it in items:
         seen += 1
-        canonical = canonicalize_url(it.url)
-        item_id = url_id(it.url)
+        try:
+            canonical = canonicalize_url(it.url)
+            item_id = url_id(it.url)
+        except ValueError as e:
+            # Non-http(s) URL (javascript:, data:, file: — XSS surface if
+            # rendered as an <a href>). Drop the item, don't abort the fetch.
+            log.warning("dropping item with unsafe URL %r from %s: %s",
+                        it.url, it.source, e)
+            continue
         cur = conn.execute(
             """
             INSERT INTO items (id, source, url, canonical_url, title, author,
