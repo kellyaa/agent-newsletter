@@ -559,33 +559,44 @@ def main() -> int:
         rdo = _validate_recency_days(src.get("recency_days"), sid)
         return _stamp_overrides(gen, section_override, kgb, rdo)
 
+    # `sources.yaml` can legitimately carry a family key with no entries
+    # (e.g. `html:` with every candidate commented out — see sources.yaml
+    # comment at "Generic HTML index-page scraper"). PyYAML parses that as
+    # `None`, and `dict.get(key, [])` returns the value that is present
+    # (`None`), not the default. Iterating `None` raises TypeError and
+    # aborts the whole fetch stage (and every downstream stage in run.sh).
+    # Coerce None → [] at every family loop so a commented-out family is a
+    # no-op instead of a crash.
+    def _entries(key: str) -> list:
+        return sources.get(key) or []
+
     # Use a single shared HTTP client for all source adapters. This reuses
     # TCP connections across requests to the same host (e.g. multiple RSS
     # feeds on the same domain, or the arXiv API across multiple queries),
     # eliminating redundant TLS handshakes and connection setup.
     with _make_http_client() as http_client:
-        for src in sources.get("rss", []):
+        for src in _entries("rss"):
             run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client)))
 
         # arXiv asks for >=3 seconds between requests. We have multiple arxiv
         # collectors; sleep between them to avoid 429s.
-        arxiv_sources = sources.get("arxiv", [])
+        arxiv_sources = _entries("arxiv")
         for i, src in enumerate(arxiv_sources):
             if i > 0:
                 time.sleep(3.0)
             run_collector(f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client)))
-        for src in sources.get("hn", []):
+        for src in _entries("hn"):
             run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client)))
-        for src in sources.get("reddit", []):
+        for src in _entries("reddit"):
             run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client)))
         # HTML scraper family (issue #10). Vendor pages that don't offer
         # RSS (Anthropic /news, etc.) go here.
-        for src in sources.get("html", []):
+        for src in _entries("html"):
             run_collector(f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client)))
-        if sources.get("github_releases"):
+        if _entries("github_releases"):
             # GitHub release entries can each carry their own `section:`. Run them
             # one at a time so per-repo overrides take effect.
-            for entry in sources["github_releases"]:
+            for entry in _entries("github_releases"):
                 label = f"gh/{entry['owner']}/{entry['repo']}"
                 run_collector(label, with_override(entry, fetch_github_releases([entry])))
 

@@ -748,6 +748,21 @@ class TestFetchMain:
         result = self._run_main(db_path, sources_path, monkeypatch)
         assert result == 0
 
+    def test_none_valued_family_key_does_not_crash(self, db_path, sources_path, monkeypatch):
+        """A family key present in sources.yaml with no entries parses as None.
+
+        Regression: `sources.get("html", [])` returns None (not []) when the
+        key is present with a None value — e.g. `html:` followed by only
+        commented-out example entries (see sources.yaml). Iterating None
+        raises TypeError and aborts the fetch stage. `main()` must treat
+        `key: None` the same as `key: []`.
+        """
+        sources_path.write_text(
+            "rss:\narxiv:\nhn:\nreddit:\nhtml:\ngithub_releases:\n"
+        )
+        result = self._run_main(db_path, sources_path, monkeypatch)
+        assert result == 0
+
     def test_skips_when_already_fetched_today(self, db_path, sources_path, monkeypatch):
         """When items exist with last_seen_date=today, skip and return 0."""
         import db as db_mod
