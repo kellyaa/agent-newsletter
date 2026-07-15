@@ -192,6 +192,154 @@ def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[It
         )
 
 
+def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
+    """Generic HTML index-page scraper for sources without RSS (issue #10).
+
+    Config (per source in sources.yaml):
+      id, name, url            — required
+      link_selector            — CSS selector matching each post's <a> element.
+                                 Must return anchor elements or elements
+                                 containing an anchor (we fall back to the
+                                 first descendant <a>).
+      title_selector           — optional; CSS selector applied *relative to
+                                 the link element* to extract the title text.
+                                 Default: the link's own text content.
+      date_selector            — optional; CSS selector for a published date.
+                                 The first `datetime` attribute is preferred;
+                                 otherwise the text content is parsed as ISO.
+      excerpt_selector         — optional; CSS selector for a summary blurb.
+      max_items                — optional int; cap emitted items per fetch.
+
+    Failure modes are defensive per the issue:
+      - No matches for link_selector → log a warning, yield nothing.
+      - httpx / TLS errors bubble up to the run_collector wrapper (same
+        pattern as RSS), so one broken source can't break the whole run.
+      - Missing / unparseable date_selector → published_at=None (prefilter
+        falls back to fetched_at).
+    """
+    from urllib.parse import urljoin
+
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+    except ImportError as e:  # pragma: no cover — dependency gate
+        log.error("html: selectolax not installed; source %s skipped: %s",
+                  source.get("id"), e)
+        return
+
+    sid = source["id"]
+    url = source["url"]
+    link_sel = source.get("link_selector")
+    if not link_sel:
+        log.warning("html: %s missing link_selector; skipping", sid)
+        return
+
+    title_sel = source.get("title_selector")
+    date_sel = source.get("date_selector")
+    excerpt_sel = source.get("excerpt_selector")
+    max_items = source.get("max_items")
+
+    log.info("html: fetching %s (%s)", sid, url)
+    _client = client or _make_http_client()
+    try:
+        resp = _client.get(url)
+        resp.raise_for_status()
+        body = resp.text
+    finally:
+        if client is None:
+            _client.close()
+
+    tree = HTMLParser(body)
+    matches = tree.css(link_sel)
+    if not matches:
+        log.warning("html: %s — link_selector %r matched 0 elements "
+                    "(page structure may have changed)", sid, link_sel)
+        return
+
+    seen_urls: set[str] = set()
+    emitted = 0
+    for element in matches:
+        if max_items is not None and emitted >= int(max_items):
+            break
+
+        # link_selector may match the anchor directly or a wrapping element.
+        anchor = element if element.tag == "a" else element.css_first("a")
+        if anchor is None:
+            continue
+        href = anchor.attributes.get("href")
+        if not href:
+            continue
+        abs_url = urljoin(url, href)
+        if abs_url in seen_urls:
+            continue
+        seen_urls.add(abs_url)
+
+        if title_sel:
+            t_node = element.css_first(title_sel)
+            title = (t_node.text(strip=True) if t_node else "").strip()
+        else:
+            title = anchor.text(strip=True) or ""
+        if not title:
+            continue
+
+        published_at: str | None = None
+        if date_sel:
+            d_node = element.css_first(date_sel)
+            if d_node is not None:
+                # Prefer the machine-readable <time datetime="..."> attribute.
+                raw = (d_node.attributes.get("datetime")
+                       or d_node.text(strip=True) or "").strip()
+                published_at = _normalize_date(raw)
+
+        excerpt = None
+        if excerpt_sel:
+            e_node = element.css_first(excerpt_sel)
+            if e_node is not None:
+                excerpt = e_node.text(strip=True) or None
+
+        yield Item(
+            source=f"html:{sid}",
+            url=abs_url,
+            title=title,
+            author=None,
+            published_at=published_at,
+            raw_text=(excerpt or "")[:4000] or None,
+        )
+        emitted += 1
+
+    if emitted == 0:
+        log.warning("html: %s produced 0 items (had %d selector matches)",
+                    sid, len(matches))
+
+
+def _normalize_date(raw: str) -> str | None:
+    """Best-effort ISO-8601 parse of a date-like string.
+
+    HTML dates come in every shape (`2026-07-13`, `2026-07-13T09:00:00Z`,
+    `July 13, 2026`, ...). We handle the common ISO variants directly
+    and defer everything else to python-dateutil if available; failing
+    that we return None (prefilter falls back to fetched_at).
+    """
+    if not raw:
+        return None
+    # Fast path: already looks like ISO.
+    try:
+        # Accept trailing 'Z' by swapping to +00:00 which fromisoformat handles.
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    except ValueError:
+        pass
+    try:
+        from dateutil import parser as dateparser  # type: ignore
+        dt = dateparser.parse(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    except Exception:
+        return None
+
+
 def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     url = source["url"]
     min_score = source.get("min_score", 100)
@@ -430,6 +578,10 @@ def main() -> int:
             run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client)))
         for src in sources.get("reddit", []):
             run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client)))
+        # HTML scraper family (issue #10). Vendor pages that don't offer
+        # RSS (Anthropic /news, etc.) go here.
+        for src in sources.get("html", []):
+            run_collector(f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client)))
         if sources.get("github_releases"):
             # GitHub release entries can each carry their own `section:`. Run them
             # one at a time so per-repo overrides take effect.

@@ -148,3 +148,31 @@ hf_daily:
   # Hugging Face daily papers — scrape, no official API.
   - id: hf-daily-papers
     url: https://huggingface.co/papers
+
+# Generic HTML index-page scraper (issue #10). Use for vendor pages that
+# don't expose RSS. Selectors are CSS; matching is via selectolax.
+#
+# Required keys:  id, name, url, link_selector
+# Optional keys:  title_selector, date_selector, excerpt_selector, max_items,
+#                 section (overrides the html→news default), keyword_gate_bypass,
+#                 recency_days
+#
+# The link_selector may match either an <a> element directly or a wrapping
+# element that contains an <a> — the collector falls back to the first
+# descendant anchor. title_selector, date_selector, excerpt_selector are
+# applied *relative to the link element* (element.css_first(sel)).
+#
+# Failure behavior: if link_selector matches nothing, the collector logs a
+# warning and yields no items (mirrors the RSS adapter's per-source error
+# isolation). HTML structure changes without warning; expect to update
+# selectors periodically.
+html:
+  # Canonical example — Anthropic /news. Selectors will drift; update as
+  # needed. Enabled starting when someone verifies the current structure.
+  # - id: anthropic-news
+  #   name: "Anthropic News"
+  #   url: https://www.anthropic.com/news
+  #   link_selector: 'a[href^="/news/"]'
+  #   title_selector: 'h3'
+  #   date_selector: 'time'
+  #   max_items: 20
