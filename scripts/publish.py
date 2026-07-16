@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -39,31 +40,34 @@ def record_run(
     featured_counts: dict[str, int],
     appendix_count: int,
     items_considered: int,
+    items_candidate: int,
+    duration_seconds: int | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
-                          items_papers, items_news, items_blogs, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                          items_papers, items_news, items_blogs,
+                          duration_seconds, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
+            items_candidate = excluded.items_candidate,
             items_featured = excluded.items_featured,
             items_papers = excluded.items_papers,
             items_news = excluded.items_news,
             items_blogs = excluded.items_blogs,
+            duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
             notes = excluded.notes
         """,
         (
             today,
             items_considered,
-            featured_counts.get("papers", 0)
-                + featured_counts.get("news", 0)
-                + featured_counts.get("blogs", 0)
-                + appendix_count,
+            items_candidate,
             sum(featured_counts.values()),
             featured_counts.get("papers", 0),
             featured_counts.get("news", 0),
             featured_counts.get("blogs", 0),
+            duration_seconds,
             f"appendix={appendix_count}",
         ),
     )
@@ -72,6 +76,7 @@ def record_run(
 
 def main() -> int:
     init_db()
+    start_monotonic = time.monotonic()
     today = datetime.now().date().isoformat()
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
@@ -113,6 +118,17 @@ def main() -> int:
     items_considered = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
     ).fetchone()[0]
+    # items_candidate: everything the ranker considered for today — captured
+    # BEFORE the UPDATE ... status='published' below, or featured/appendix
+    # rows would already have been promoted out of view.
+    items_candidate = conn.execute(
+        f"""
+        SELECT COUNT(*) FROM items
+        WHERE last_seen_date = ?
+          AND status IN ('{Status.CANDIDATE}', '{Status.FEATURED}', '{Status.APPENDIX}')
+        """,
+        (today,),
+    ).fetchone()[0]
 
     total_featured = sum(featured_counts.values())
     if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
@@ -136,7 +152,15 @@ def main() -> int:
         appendix_count,
     )
 
-    record_run(conn, today, featured_counts, appendix_count, items_considered)
+    record_run(
+        conn,
+        today,
+        featured_counts,
+        appendix_count,
+        items_considered,
+        items_candidate,
+        duration_seconds=int(time.monotonic() - start_monotonic),
+    )
     conn.close()
 
     log.info("issue file: %s (%d bytes)", issue_path, size)

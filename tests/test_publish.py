@@ -66,13 +66,14 @@ class TestRecordRun:
     def test_inserts_row_correctly(self, db):
         from publish import record_run
 
-        record_run(db, "2026-06-01", {"papers": 3, "news": 2, "blogs": 1}, 4, 100)
+        record_run(db, "2026-06-01", {"papers": 3, "news": 2, "blogs": 1}, 4, 100, 42)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
         assert row is not None
         # items_featured = sum(featured_counts.values()) = 3+2+1 = 6
         assert row["items_featured"] == 6
-        # items_candidate = papers+news+blogs+appendix_count = 6+4 = 10
-        assert row["items_candidate"] == 10
+        # items_candidate is now an explicit parameter (the true candidate pool
+        # size). The caller in publish.main() queries for it separately.
+        assert row["items_candidate"] == 42
         assert row["items_papers"] == 3
         assert row["items_news"] == 2
         assert row["items_blogs"] == 1
@@ -82,29 +83,49 @@ class TestRecordRun:
     def test_upsert_updates_existing_row(self, db):
         from publish import record_run
 
-        record_run(db, "2026-06-01", {"papers": 1}, 0, 50)
-        record_run(db, "2026-06-01", {"papers": 3}, 2, 80)
+        record_run(db, "2026-06-01", {"papers": 1}, 0, 50, 10)
+        record_run(db, "2026-06-01", {"papers": 3}, 2, 80, 20)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
         assert row["items_papers"] == 3
         assert row["items_fetched"] == 80
+        # items_candidate is now on the ON CONFLICT update list too
+        assert row["items_candidate"] == 20
 
     def test_zero_featured_counts(self, db):
         from publish import record_run
 
-        record_run(db, "2026-06-15", {}, 0, 0)
+        record_run(db, "2026-06-15", {}, 0, 0, 0)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-06-15'").fetchone()
         assert row is not None
         assert row["items_featured"] == 0
 
-    def test_appendix_count_included_in_total(self, db):
+    def test_items_candidate_is_independent_parameter(self, db):
         from publish import record_run
 
-        record_run(db, "2026-06-20", {"blogs": 2}, 5, 30)
+        # items_candidate is now a separate parameter — no longer derived from
+        # featured_counts + appendix_count.
+        record_run(db, "2026-06-20", {"blogs": 2}, 5, 30, 25)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-06-20'").fetchone()
-        # items_candidate = sum(featured_counts) + appendix_count = 2 + 5 = 7
-        assert row["items_candidate"] == 7
+        assert row["items_candidate"] == 25
         # items_featured = sum(featured_counts.values()) only = 2
         assert row["items_featured"] == 2
+
+    def test_duration_seconds_persisted(self, db):
+        from publish import record_run
+
+        record_run(db, "2026-07-01", {"papers": 1}, 0, 10, 3, duration_seconds=17)
+        row = db.execute("SELECT * FROM runs WHERE date = '2026-07-01'").fetchone()
+        assert row["duration_seconds"] == 17
+
+    def test_duration_seconds_preserved_when_upsert_omits_it(self, db):
+        from publish import record_run
+
+        record_run(db, "2026-07-02", {"papers": 1}, 0, 10, 3, duration_seconds=42)
+        # Second call with duration_seconds=None must not overwrite the good value.
+        record_run(db, "2026-07-02", {"papers": 2}, 0, 20, 5, duration_seconds=None)
+        row = db.execute("SELECT * FROM runs WHERE date = '2026-07-02'").fetchone()
+        assert row["duration_seconds"] == 42
+        assert row["items_papers"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +293,7 @@ class TestMainIdempotentSkip:
 
         # Pre-populate the runs row (simulating a prior completed publish)
         conn = db_mod.connect(db_path)
-        record_run(conn, "2026-06-01", {"papers": 1}, 0, 10)
+        record_run(conn, "2026-06-01", {"papers": 1}, 0, 10, 3)
         conn.close()
 
         issues_dir = tmp_path / "issues"
