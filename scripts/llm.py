@@ -37,6 +37,66 @@ log = logging.getLogger("llm")
 
 DEFAULT_TIMEOUT_S = 1200
 
+# ---------------------------------------------------------------------------
+# Usage accumulator
+#
+# Every successful `_one_shot` call adds its `prompt_tokens` / `completion_tokens`
+# into the process-local totals below. Callers (rank.py, write.py) — or the
+# orchestrator (run.sh via publish.py) — can read `get_usage_totals()` at
+# any point to snapshot cumulative token usage for this Python process,
+# and clear it via `reset_usage_totals()`.
+#
+# This is deliberately module-level and additive: it avoids changing the
+# return signature of `call_llm`, so existing callers keep working while
+# the runs-table wiring in publish.py can start persisting real numbers.
+# The counter is not process-safe across concurrent invocations of the
+# pipeline; the pipeline runs serially by design (see SPEC.md).
+# ---------------------------------------------------------------------------
+
+_USAGE_TOTALS: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+
+
+def _coerce_int(value: Any) -> int:
+    """Best-effort int coercion for values coming off SDK usage objects."""
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _record_usage(usage: Any) -> None:
+    """Add one call's usage into the module-level totals.
+
+    `usage` is whatever the OpenAI SDK returns on `resp.usage`; we duck-type
+    for `prompt_tokens` / `completion_tokens`. Missing or non-numeric values
+    are treated as 0 rather than raising — token-count accounting must never
+    fail an otherwise-successful LLM call.
+    """
+    if usage is None:
+        return
+    _USAGE_TOTALS["prompt_tokens"] += _coerce_int(getattr(usage, "prompt_tokens", 0))
+    _USAGE_TOTALS["completion_tokens"] += _coerce_int(getattr(usage, "completion_tokens", 0))
+    _USAGE_TOTALS["calls"] += 1
+
+
+def get_usage_totals() -> dict[str, int]:
+    """Return a snapshot of cumulative token usage for this process.
+
+    Keys: `prompt_tokens`, `completion_tokens`, `calls`. Always present,
+    default 0. The returned dict is a copy — mutating it does not affect
+    the internal counter.
+    """
+    return dict(_USAGE_TOTALS)
+
+
+def reset_usage_totals() -> None:
+    """Zero out the cumulative counters (useful in tests and between runs)."""
+    _USAGE_TOTALS["prompt_tokens"] = 0
+    _USAGE_TOTALS["completion_tokens"] = 0
+    _USAGE_TOTALS["calls"] = 0
+
 
 def _extra_headers() -> dict[str, str]:
     raw = os.environ.get("LLM_EXTRA_HEADERS")
@@ -119,6 +179,7 @@ def _one_shot(
             getattr(usage, "completion_tokens", "?"),
             getattr(usage, "total_tokens", "?"),
         )
+    _record_usage(usage)
 
     finish = getattr(resp.choices[0], "finish_reason", None)
     content = resp.choices[0].message.content or ""
