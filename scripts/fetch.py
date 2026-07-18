@@ -564,23 +564,23 @@ def main() -> int:
     # feeds on the same domain, or the arXiv API across multiple queries),
     # eliminating redundant TLS handshakes and connection setup.
     with _make_http_client() as http_client:
-        for src in sources.get("rss", []):
+        for src in sources.get("rss") or []:
             run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client)))
 
         # arXiv asks for >=3 seconds between requests. We have multiple arxiv
         # collectors; sleep between them to avoid 429s.
-        arxiv_sources = sources.get("arxiv", [])
+        arxiv_sources = sources.get("arxiv") or []
         for i, src in enumerate(arxiv_sources):
             if i > 0:
                 time.sleep(3.0)
             run_collector(f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client)))
-        for src in sources.get("hn", []):
+        for src in sources.get("hn") or []:
             run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client)))
-        for src in sources.get("reddit", []):
+        for src in sources.get("reddit") or []:
             run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client)))
         # HTML scraper family (issue #10). Vendor pages that don't offer
         # RSS (Anthropic /news, etc.) go here.
-        for src in sources.get("html", []):
+        for src in sources.get("html") or []:
             run_collector(f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client)))
         if sources.get("github_releases"):
             # GitHub release entries can each carry their own `section:`. Run them
