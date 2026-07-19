@@ -17,10 +17,12 @@ Model id is passed in by the caller (WRITER_MODEL / RANKER_MODEL env vars in
 the existing scripts), and is interpreted by the target endpoint — there's no
 provider-side translation here.
 
-Structured output uses `response_format={"type": "json_schema", strict: true}`,
-which OpenAI and most compatible servers (vLLM, llama.cpp, LM Studio) honor.
-For providers that ignore `strict`, we still json.loads the message content;
-if that fails, the caller sees a JSONDecodeError with the raw text logged.
+Structured output defaults to `response_format={"type": "json_schema", strict:
+true}`, which OpenAI and most compatible servers (vLLM, llama.cpp, LM Studio)
+honor. Set LLM_RESPONSE_FORMAT=json_object (or none) for providers that reject
+json_schema — e.g. LiteLLM-fronted Bedrock Claude, which 400s on the translated
+output_config.format. We json.loads the message content regardless of mode; if
+that fails, the caller sees a JSONDecodeError with the raw text logged.
 """
 from __future__ import annotations
 
@@ -73,17 +75,36 @@ def _one_shot(
     kwargs: dict[str, Any] = dict(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        response_format={
+        timeout=timeout_s,
+        extra_headers=headers or None,
+    )
+
+    # Structured-output mode is provider-dependent. LiteLLM-fronted Bedrock
+    # Claude rejects json_schema (translated to output_config.format, a 400),
+    # so LLM_RESPONSE_FORMAT lets the operator downgrade. json.loads runs on the
+    # content regardless, so json_object/none still yield a dict.
+    #   json_schema (default) — OpenAI/vLLM/llama.cpp strict structured output
+    #   json_object           — ask for a JSON object without a schema
+    #   none                  — omit response_format; rely on the prompt
+    response_mode = os.environ.get("LLM_RESPONSE_FORMAT", "json_schema").strip().lower()
+    if response_mode == "json_schema":
+        kwargs["response_format"] = {
             "type": "json_schema",
             "json_schema": {
                 "name": schema_name,
                 "schema": schema,
                 "strict": True,
             },
-        },
-        timeout=timeout_s,
-        extra_headers=headers or None,
-    )
+        }
+    elif response_mode == "json_object":
+        kwargs["response_format"] = {"type": "json_object"}
+    elif response_mode == "none":
+        pass
+    else:
+        raise RuntimeError(
+            f"LLM_RESPONSE_FORMAT must be one of json_schema|json_object|none, "
+            f"got {response_mode!r}"
+        )
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
 
