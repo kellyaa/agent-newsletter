@@ -37,6 +37,36 @@ log = logging.getLogger("llm")
 
 DEFAULT_TIMEOUT_S = 1200
 
+# Module-level usage accumulator. Every successful call_llm() adds its
+# usage row here so callers (rank.py, write.py) can flush the totals to a
+# sidecar file at the end of a stage. publish.py then aggregates the
+# sidecars into a single runs-table row.
+_USAGE_LOG: list[dict[str, Any]] = []
+
+
+def record_usage(*, label: str, model: str, prompt_tokens: int,
+                 completion_tokens: int, total_tokens: int) -> None:
+    """Append a usage row. Callers usually don't call this directly — the
+    normal call_llm() path records automatically. Exposed for tests and for
+    non-call_llm paths that still want to be counted."""
+    _USAGE_LOG.append({
+        "label": label,
+        "model": model,
+        "prompt_tokens": int(prompt_tokens),
+        "completion_tokens": int(completion_tokens),
+        "total_tokens": int(total_tokens),
+    })
+
+
+def get_usage_log() -> list[dict[str, Any]]:
+    """Return a shallow copy of the accumulated usage entries."""
+    return list(_USAGE_LOG)
+
+
+def reset_usage_log() -> None:
+    """Clear the accumulator. Primarily used by tests."""
+    _USAGE_LOG.clear()
+
 
 def _extra_headers() -> dict[str, str]:
     raw = os.environ.get("LLM_EXTRA_HEADERS")
@@ -112,13 +142,27 @@ def _one_shot(
 
     usage = getattr(resp, "usage", None)
     if usage is not None:
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
         log.info(
             "%s: prompt_tokens=%s completion_tokens=%s total=%s",
             label,
-            getattr(usage, "prompt_tokens", "?"),
-            getattr(usage, "completion_tokens", "?"),
-            getattr(usage, "total_tokens", "?"),
+            prompt_tokens if prompt_tokens is not None else "?",
+            completion_tokens if completion_tokens is not None else "?",
+            total_tokens if total_tokens is not None else "?",
         )
+        # Feed the module-level accumulator. Callers flush this to a
+        # sidecar file so publish.py can persist run totals (issue #13).
+        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            record_usage(
+                label=label,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens if isinstance(total_tokens, int)
+                              else prompt_tokens + completion_tokens,
+            )
 
     finish = getattr(resp.choices[0], "finish_reason", None)
     content = resp.choices[0].message.content or ""

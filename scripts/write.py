@@ -18,7 +18,8 @@ import sys
 from datetime import datetime
 
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
-from llm import call_llm
+from llm import call_llm, get_usage_log
+from usage_sidecar import flush as flush_usage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -388,6 +389,13 @@ def main() -> int:
     out_path = ISSUES_DIR / f"{today}.md"
     out_path.write_text(issue_md)
     log.info("wrote %s (%d bytes)", out_path, len(issue_md))
+
+    # Persist token usage for this stage so publish.py can roll it into
+    # the `runs` row (issue #13). Best-effort — never let this fail the run.
+    try:
+        flush_usage("write", today, get_usage_log())
+    except Exception as e:  # pragma: no cover — defensive
+        log.warning("failed to flush usage sidecar: %s", e)
     return 0
 
 
