@@ -1,0 +1,155 @@
+---
+/**
+ * /tags/<tag>/ — every featured item carrying <tag>, across all issues.
+ *
+ * Statically generated: one page per unique tag encountered on any
+ * featured item. Sorted by date desc, then score desc.
+ *
+ * Appendix items intentionally excluded (they have no tags — only
+ * featured items get the editorial treatment that includes tagging).
+ */
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ScoreBar from "../../components/ScoreBar.astro";
+
+export async function getStaticPaths() {
+  const issues = await getCollection("issues");
+
+  // Collect every (tag → items[]) pair across every issue.
+  type TagItem = {
+    tag: string;
+    date: string;
+    id: string;
+    section: "papers" | "news" | "blogs";
+    title: string;
+    url: string;
+    source: string;
+    score: number;
+    summary: string;
+    tags: string[];
+  };
+
+  const byTag = new Map<string, TagItem[]>();
+  for (const issue of issues) {
+    const date = issue.data.date;
+    for (const item of issue.data.featured) {
+      for (const tag of item.tags ?? []) {
+        const bucket = byTag.get(tag) ?? [];
+        bucket.push({
+          tag,
+          date,
+          id: item.id,
+          section: item.section,
+          title: item.title,
+          url: item.url,
+          source: item.source,
+          score: item.score,
+          summary: item.summary,
+          tags: item.tags ?? [],
+        });
+        byTag.set(tag, bucket);
+      }
+    }
+  }
+
+  // Emit one route per tag.
+  return Array.from(byTag.entries()).map(([tag, items]) => ({
+    params: { tag },
+    props: {
+      tag,
+      items: items.sort((a, b) =>
+        a.date === b.date ? b.score - a.score : b.date.localeCompare(a.date)
+      ),
+    },
+  }));
+}
+
+interface Props {
+  tag: string;
+  items: {
+    tag: string;
+    date: string;
+    id: string;
+    section: "papers" | "news" | "blogs";
+    title: string;
+    url: string;
+    source: string;
+    score: number;
+    summary: string;
+    tags: string[];
+  }[];
+}
+
+const { tag, items } = Astro.props;
+const baseUrl = import.meta.env.BASE_URL || "/";
+const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+---
+<BaseLayout
+  title={`#${tag} — AI Agents Daily`}
+  description={`Every featured item tagged #${tag} across all issues.`}
+>
+  <article>
+    <header class="issue-header">
+      <div class="issue-header__date">
+        <a href={`${trimmedBase}/tags/`}>tags</a> / {tag}
+      </div>
+      <h1 class="issue-header__title">#{tag}</h1>
+      <p class="issue-header__theme">
+        {items.length} featured item{items.length === 1 ? "" : "s"} across all issues,
+        newest first.
+      </p>
+    </header>
+
+    <section class="section">
+      {items.map((item) => (
+        <article class="tag-item">
+          <h3 class="tag-item__title">
+            <a href={item.url} rel="noopener noreferrer external">{item.title}</a>
+          </h3>
+          <div class="tag-item__meta">
+            <a class="tag-item__date" href={`${trimmedBase}/issues/${item.date}/`}>
+              {item.date}
+            </a>
+            <span class="tag-item__section">{item.section}</span>
+            <span class="tag-item__source">{item.source}</span>
+            <ScoreBar score={item.score} />
+          </div>
+          {item.summary && (
+            <p class="tag-item__summary">{item.summary}</p>
+          )}
+        </article>
+      ))}
+    </section>
+  </article>
+</BaseLayout>
+
+<style>
+  .tag-item {
+    padding: var(--s-4) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tag-item:last-child { border-bottom: 0; }
+  .tag-item__title {
+    font-size: var(--fs-md);
+    margin: 0 0 var(--s-2) 0;
+  }
+  .tag-item__title a { color: var(--fg); text-decoration: none; }
+  .tag-item__title a:hover { color: var(--accent); text-decoration: underline; }
+  .tag-item__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
+    margin-bottom: var(--s-2);
+  }
+  .tag-item__date { color: var(--fg-muted); text-decoration: none; }
+  .tag-item__date:hover { color: var(--accent); text-decoration: underline; }
+  .tag-item__summary {
+    color: var(--fg);
+    margin: 0;
+    max-width: 65ch;
+  }
+</style>

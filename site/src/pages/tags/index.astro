@@ -1,0 +1,87 @@
+---
+/**
+ * /tags/ — landing page listing every tag encountered across all issues,
+ * with a count per tag. Statically generated at build time.
+ *
+ * Uses the closed 13-tag vocabulary defined by the ranker prompt; any tag
+ * that shows up on a featured item makes it here even if it wasn't in the
+ * original list (defensive against future vocabulary growth).
+ */
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const issues = await getCollection("issues");
+
+// Flatten featured items and count tag occurrences.
+const counts = new Map<string, number>();
+for (const issue of issues) {
+  for (const item of issue.data.featured) {
+    for (const tag of item.tags ?? []) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+}
+const tags = Array.from(counts.entries())
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+const baseUrl = import.meta.env.BASE_URL || "/";
+const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+---
+<BaseLayout title="Tags — AI Agents Daily" description="Browse featured items by tag.">
+  <article>
+    <header class="issue-header">
+      <div class="issue-header__date">tags</div>
+      <h1 class="issue-header__title">Browse by tag</h1>
+      <p class="issue-header__theme">
+        Every featured item is tagged from a closed vocabulary. Each page below
+        collects all featured items carrying that tag across every issue.
+      </p>
+    </header>
+
+    {tags.length === 0 ? (
+      <p class="empty-state">No tags yet — the first issue will populate this.</p>
+    ) : (
+      <ul class="tag-index">
+        {tags.map(([tag, count]) => (
+          <li class="tag-index__row">
+            <a class="tag-index__link" href={`${trimmedBase}/tags/${tag}/`}>
+              <span class="tag-index__tag">{tag}</span>
+              <span class="tag-index__count">{count}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </article>
+</BaseLayout>
+
+<style>
+  .tag-index {
+    list-style: none;
+    padding: 0;
+    margin: var(--s-6) 0 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--s-2);
+  }
+  .tag-index__link {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--s-3) var(--s-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--fg);
+    text-decoration: none;
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+  .tag-index__link:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tag-index__count {
+    color: var(--fg-muted);
+    font-size: var(--fs-xs);
+  }
+</style>
