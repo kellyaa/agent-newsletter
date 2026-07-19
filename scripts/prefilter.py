@@ -250,9 +250,9 @@ def main() -> int:
 
     # Age out papers candidates that have hit the per-paper competition cap or
     # exceeded the recency ceiling. Done up front so they don't appear in
-    # candidates.json this run. Recency uses julianday() which treats
-    # published_at/fetched_at as UTC dates; the cutoff matches the
-    # PAPER_POOL_MAX_AGE_DAYS constant.
+    # candidates.json this run. Recency passes `now` explicitly (rather than
+    # SQLite's julianday('now')) so tests that freeze the Python clock also
+    # freeze this comparison; production `now` is real UTC time.
     aged = conn.execute(
         """
         UPDATE items
@@ -260,9 +260,13 @@ def main() -> int:
         WHERE status = 'candidate'
           AND section = 'papers'
           AND (times_competed >= ?
-               OR julianday('now') - julianday(COALESCE(published_at, fetched_at)) >= ?)
+               OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
         """,
-        (PAPER_POOL_MAX_COMPETES, PAPER_POOL_MAX_AGE_DAYS),
+        (
+            PAPER_POOL_MAX_COMPETES,
+            now.strftime("%Y-%m-%d %H:%M:%S"),
+            PAPER_POOL_MAX_AGE_DAYS,
+        ),
     )
     aged_out = aged.rowcount or 0
     conn.commit()
