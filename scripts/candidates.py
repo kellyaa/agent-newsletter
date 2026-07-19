@@ -79,7 +79,7 @@ def _load(conn, prerank_cap, prerank_scorer, now) -> dict[str, list[dict]]:
     rows = conn.execute(
         """
         SELECT id, source, url, title, author, published_at, raw_text,
-               section, section_override, score, tags, why
+               section, section_override, score, tags, why, topic
         FROM items
         WHERE status = 'candidate'
         """
@@ -106,6 +106,7 @@ def _load(conn, prerank_cap, prerank_scorer, now) -> dict[str, list[dict]]:
             except (TypeError, ValueError):
                 emitted["tags"] = []
             emitted["why"] = d["why"] or ""
+            emitted["topic"] = d.get("topic") or ""
             grouped["papers_prescored"].append(emitted)
         elif section in grouped:
             grouped[section].append(emitted)

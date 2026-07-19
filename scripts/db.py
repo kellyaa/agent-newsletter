@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS items (
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
-  times_competed INTEGER NOT NULL DEFAULT 0
+  times_competed INTEGER NOT NULL DEFAULT 0,
+  topic TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
@@ -110,6 +111,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE items ADD COLUMN times_competed INTEGER NOT NULL DEFAULT 0"
         )
+    if "topic" not in cols:
+        # Cross-day topic-dedup slug (issue #4). LLM-generated during rank;
+        # persisted into topics_covered at publish time so the next day's
+        # ranker sees what's been covered recently.
+        conn.execute("ALTER TABLE items ADD COLUMN topic TEXT")
 
 
 def canonicalize_url(url: str) -> str:

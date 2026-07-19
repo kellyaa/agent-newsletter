@@ -92,29 +92,82 @@ RANKER_OUTPUT_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["id", "score", "tags", "why"],
+                "required": ["id", "score", "tags", "why", "topic"],
                 "additionalProperties": False,
                 "properties": {
                     "id":    {"type": "string", "minLength": 1},
                     "score": {"type": "integer", "minimum": 0, "maximum": 10},
                     "tags":  {"type": "array", "items": {"type": "string"}, "maxItems": 5},
                     "why":   {"type": "string", "minLength": 1, "maxLength": 300},
+                    # Short kebab-case slug identifying the underlying topic
+                    # (issue #4). Used for cross-day dedup — the ranker's
+                    # prompt gets a list of topics covered in the last 7
+                    # days and is told to penalize rehashes. Empty string
+                    # is acceptable when nothing sensible fits.
+                    "topic": {"type": "string", "maxLength": 80},
                 },
             },
         },
     },
 }
 
+# How many days of prior topics to feed the ranker.
+RECENT_TOPICS_DAYS = 7
 
-def build_prompt(section: str, items: list[dict], rubric: str) -> str:
-    """Return the full prompt: section header + items JSON + rubric."""
+
+def load_recent_topics(conn, days: int = RECENT_TOPICS_DAYS) -> list[dict]:
+    """Return distinct topics covered in the last `days` days.
+
+    Reads from `topics_covered`, which publish.py populates from
+    `items.topic` on every promotion to `published`. Returns a list of
+    `{"topic": "...", "date": "YYYY-MM-DD"}` dicts, most recent first,
+    deduped on (topic).
+    """
+    rows = conn.execute(
+        """
+        SELECT topic, MAX(date) AS latest
+        FROM topics_covered
+        WHERE date >= date('now', ?)
+          AND topic IS NOT NULL AND topic != ''
+        GROUP BY topic
+        ORDER BY latest DESC, topic
+        """,
+        (f"-{int(days)} days",),
+    ).fetchall()
+    return [{"topic": r["topic"], "date": r["latest"]} for r in rows]
+
+
+def build_prompt(section: str, items: list[dict], rubric: str,
+                 recent_topics: list[dict] | None = None) -> str:
+    """Return the full prompt: section header + items JSON + optional
+    "topics covered recently" context + rubric.
+
+    The recent-topics block is soft context, not a hard filter — the
+    ranker is told to penalize items that rehash a covered topic. We
+    trust its judgment more than a regex match on drifty LLM-generated
+    slugs (see issue #4 pitfalls).
+    """
     items_json = json.dumps(items, ensure_ascii=False, indent=2)
+    topics_block = ""
+    if recent_topics:
+        topics_json = json.dumps(recent_topics, ensure_ascii=False, indent=2)
+        topics_block = (
+            "## Topics covered in the last 7 days\n\n"
+            "These topics already ran in recent issues. If a candidate is "
+            "substantively the same story as one of these — a follow-up "
+            "HN thread on yesterday's release, a commentary post on the "
+            "same paper, etc. — score it lower and note the prior coverage "
+            "in `why`. Do NOT drop them mechanically; use judgment. Do NOT "
+            "apply this to papers (paper-level dedup is done by URL).\n\n"
+            f"```json\n{topics_json}\n```\n\n"
+        )
     return (
         f"# Section to rank: {section}\n\n"
         f"Number of items: {len(items)}\n\n"
         f"Candidates (JSON array):\n\n"
         f"```json\n{items_json}\n```\n\n"
         f"---\n\n"
+        f"{topics_block}"
         f"{rubric}"
     )
 
@@ -182,6 +235,7 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
                 "tags": entry.get("tags", []),
                 "why": entry.get("why", ""),
                 "section": section,
+                "topic": (entry.get("topic") or "").strip(),
             }
     return final
 
@@ -190,9 +244,14 @@ def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
+        # Topic slug (issue #4): store on items now, publish.py copies
+        # winners into topics_covered.
+        topic = (d.get("topic") or "").strip() or None
         conn.execute(
-            "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
-            (d["score"], json.dumps(clean_tags), d["why"], d["status"], item_id),
+            "UPDATE items SET score = ?, tags = ?, why = ?, status = ?, topic = ? "
+            "WHERE id = ?",
+            (d["score"], json.dumps(clean_tags), d["why"], d["status"],
+             topic, item_id),
         )
         counts[d["status"]] = counts.get(d["status"], 0) + 1
     conn.commit()
@@ -236,12 +295,22 @@ def main() -> int:
 
     scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
 
+    # Recent topics for cross-day dedup (issue #4). Passed as soft context
+    # into every section's prompt. Papers-only sources still get it, but
+    # the prompt instructs the ranker to skip topic-dedup for papers.
+    conn_for_topics = connect()
+    recent_topics = load_recent_topics(conn_for_topics, RECENT_TOPICS_DAYS)
+    conn_for_topics.close()
+    if recent_topics:
+        log.info("loaded %d recent topics for cross-day dedup context",
+                 len(recent_topics))
+
     # Papers: only invoke the LLM on the unscored bucket. Prescored items
     # already have a score from a prior day's run and bypass the LLM entirely.
     unscored_papers = candidates.get("papers", [])
     prescored_papers = candidates.get("papers_prescored", [])
     if unscored_papers:
-        prompt = build_prompt("papers", unscored_papers, rubric)
+        prompt = build_prompt("papers", unscored_papers, rubric, recent_topics)
         scored = invoke_ranker(prompt, label="papers")
         log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
         scored_by_section["papers"].extend(scored)
@@ -255,6 +324,7 @@ def main() -> int:
             "score": it["score"],
             "tags": it.get("tags", []),
             "why": it.get("why", ""),
+            "topic": it.get("topic", ""),
         })
     if prescored_papers:
         log.info("papers: merged %d prescored items from the multi-day pool", len(prescored_papers))
@@ -264,7 +334,7 @@ def main() -> int:
         items = candidates.get(section, [])
         if not items:
             continue
-        prompt = build_prompt(section, items, rubric)
+        prompt = build_prompt(section, items, rubric, recent_topics)
         scored = invoke_ranker(prompt, label=section)
         log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
         scored_by_section[section] = scored
@@ -297,6 +367,7 @@ def main() -> int:
                 "tags": [],
                 "why": "fallback: ranker did not return a score",
                 "section": by_id_section[iid],
+                "topic": "",
             }
 
     conn = connect()
