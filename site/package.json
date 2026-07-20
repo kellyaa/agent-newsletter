@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.19",
-    "astro": "^5.0.0",
-    "isomorphic-dompurify": "^2.23.0",
-    "marked": "^14.1.0"
+    "astro": "^7.1.1",
+    "isomorphic-dompurify": "^3.19.0",
+    "marked": "^18.0.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
