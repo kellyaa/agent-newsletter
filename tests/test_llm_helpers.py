@@ -228,3 +228,105 @@ class TestOneShotMarkdownFence:
 
         assert any("prompt_tokens" in r.message or "100" in r.message
                    for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Usage accumulator (get_usage_totals / reset_usage_totals / _record_usage)
+# ---------------------------------------------------------------------------
+
+class TestUsageAccumulator:
+    def setup_method(self):
+        from llm import reset_usage_totals
+        reset_usage_totals()
+
+    def teardown_method(self):
+        from llm import reset_usage_totals
+        reset_usage_totals()
+
+    def test_totals_start_at_zero(self):
+        from llm import get_usage_totals
+        totals = get_usage_totals()
+        assert totals == {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+
+    def test_reset_zeros_after_activity(self):
+        from llm import _record_usage, reset_usage_totals, get_usage_totals
+        u = MagicMock()
+        u.prompt_tokens = 10
+        u.completion_tokens = 20
+        _record_usage(u)
+        reset_usage_totals()
+        assert get_usage_totals() == {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+
+    def test_record_usage_accumulates_across_calls(self):
+        from llm import _record_usage, get_usage_totals
+        u1 = MagicMock(); u1.prompt_tokens = 100; u1.completion_tokens = 50
+        u2 = MagicMock(); u2.prompt_tokens = 30; u2.completion_tokens = 10
+        _record_usage(u1)
+        _record_usage(u2)
+        totals = get_usage_totals()
+        assert totals["prompt_tokens"] == 130
+        assert totals["completion_tokens"] == 60
+        assert totals["calls"] == 2
+
+    def test_record_usage_none_is_noop(self):
+        from llm import _record_usage, get_usage_totals
+        _record_usage(None)
+        assert get_usage_totals() == {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+
+    def test_missing_attrs_treated_as_zero(self):
+        """SDK usage objects that omit fields (unusual providers) count as 0, not crash."""
+        from llm import _record_usage, get_usage_totals
+        class Bare:
+            pass
+        _record_usage(Bare())
+        totals = get_usage_totals()
+        assert totals == {"prompt_tokens": 0, "completion_tokens": 0, "calls": 1}
+
+    def test_non_numeric_values_treated_as_zero(self):
+        """Defensive: SDKs occasionally return '?' or None; must not raise."""
+        from llm import _record_usage, get_usage_totals
+        u = MagicMock()
+        u.prompt_tokens = "not-a-number"
+        u.completion_tokens = None
+        _record_usage(u)
+        totals = get_usage_totals()
+        assert totals == {"prompt_tokens": 0, "completion_tokens": 0, "calls": 1}
+
+    def test_get_usage_totals_returns_copy(self):
+        """Mutating the returned dict must not affect internal state."""
+        from llm import _record_usage, get_usage_totals
+        u = MagicMock(); u.prompt_tokens = 5; u.completion_tokens = 5
+        _record_usage(u)
+        snap = get_usage_totals()
+        snap["prompt_tokens"] = 9999
+        again = get_usage_totals()
+        assert again["prompt_tokens"] == 5
+
+    def test_one_shot_records_usage_into_totals(self):
+        """Every successful _one_shot must feed the accumulator."""
+        from llm import _one_shot, get_usage_totals
+
+        usage = MagicMock()
+        usage.prompt_tokens = 77
+        usage.completion_tokens = 22
+        usage.total_tokens = 99
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message.content = '{"answer": "ok"}'
+
+        resp = MagicMock()
+        resp.choices = [choice]
+        resp.usage = usage
+
+        client = MagicMock()
+        client.chat.completions.create.return_value = resp
+
+        _one_shot(
+            client, prompt="p", schema=SCHEMA, schema_name="s",
+            model="m", timeout_s=10, headers={}, max_tokens=None, label="t",
+        )
+        totals = get_usage_totals()
+        assert totals["prompt_tokens"] == 77
+        assert totals["completion_tokens"] == 22
+        assert totals["calls"] == 1
