@@ -19,6 +19,7 @@ from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
 from llm import call_llm
 from models import RankDecision, ScoredItem
+from prefilter import PAPER_PRERANK_CAP, _prerank_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -213,7 +214,17 @@ def main() -> int:
     # handles idempotent resume: if rank.py crashed after papers but before
     # blogs, the already-ranked items will have moved to 'featured'/'appendix'/
     # 'dropped' and won't appear in this result set.
-    candidates = load_candidates_from_db()
+    #
+    # The prerank cap must be applied here, not just in prefilter's debug
+    # artifact: it's what bounds the papers prompt (and so the LLM call's
+    # duration) on burst days. Uncapped, a backlog after a failed run sends
+    # 130+ papers in one call, which runs past the endpoint's 300s ceiling and
+    # fails every attempt. Items beyond the cap stay 'candidate' and re-compete
+    # on the next run.
+    candidates = load_candidates_from_db(
+        prerank_cap=PAPER_PRERANK_CAP,
+        prerank_scorer=_prerank_score,
+    )
 
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
     # Items here have score+tags+why already; we skip the LLM and merge them
