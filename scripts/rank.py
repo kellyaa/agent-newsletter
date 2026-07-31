@@ -17,7 +17,7 @@ import sys
 
 from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
-from llm import call_llm
+from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem
 from prefilter import PAPER_PRERANK_CAP, _prerank_score
 
@@ -139,6 +139,37 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     return rankings
 
 
+def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
+    """Rank one section, isolating items the endpoint's content filter blocks.
+
+    A single item can trip the filter (e.g. a malware writeup), and because the
+    whole section goes in one call, that one item otherwise costs us every other
+    item in the section — this failed the rank stage two days running.
+
+    On a block we bisect: rank each half independently, so only the offending
+    item is dropped. Recursion bottoms out at a single item, which we skip. A
+    skipped item keeps status='candidate' and re-competes on the next run.
+    """
+    try:
+        return invoke_ranker(build_prompt(section, items, rubric), label=section)
+    except ContentFilterError:
+        if len(items) == 1:
+            log.warning(
+                "%s: dropping content-filtered item, staying 'candidate': %r",
+                section, items[0].get("title"),
+            )
+            return []
+        mid = len(items) // 2
+        log.warning(
+            "%s: content filter blocked a batch of %d; bisecting into %d + %d",
+            section, len(items), mid, len(items) - mid,
+        )
+        return (
+            rank_section(section, items[:mid], rubric)
+            + rank_section(section, items[mid:], rubric)
+        )
+
+
 def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str, RankDecision]:
     """Apply thresholds + per-section caps. Returns id -> {status, ...}.
 
@@ -252,8 +283,7 @@ def main() -> int:
     unscored_papers = candidates.get("papers", [])
     prescored_papers = candidates.get("papers_prescored", [])
     if unscored_papers:
-        prompt = build_prompt("papers", unscored_papers, rubric)
-        scored = invoke_ranker(prompt, label="papers")
+        scored = rank_section("papers", unscored_papers, rubric)
         log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
         scored_by_section["papers"].extend(scored)
     else:
@@ -275,8 +305,7 @@ def main() -> int:
         items = candidates.get(section, [])
         if not items:
             continue
-        prompt = build_prompt(section, items, rubric)
-        scored = invoke_ranker(prompt, label=section)
+        scored = rank_section(section, items, rubric)
         log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
         scored_by_section[section] = scored
 
