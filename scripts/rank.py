@@ -147,15 +147,19 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     item in the section — this failed the rank stage two days running.
 
     On a block we bisect: rank each half independently, so only the offending
-    item is dropped. Recursion bottoms out at a single item, which we skip. A
-    skipped item keeps status='candidate' and re-competes on the next run.
+    item goes unscored. Recursion bottoms out at a single item, which we skip.
+
+    A skipped item returns no ranking, so main()'s defensive fallback sweeps it
+    into the appendix with score 0 — it still appears in the issue, by title and
+    URL only, with no LLM-written summary. That's the pre-existing behaviour for
+    any unscored candidate; keeping it means we never silently lose an item.
     """
     try:
         return invoke_ranker(build_prompt(section, items, rubric), label=section)
     except ContentFilterError:
         if len(items) == 1:
             log.warning(
-                "%s: dropping content-filtered item, staying 'candidate': %r",
+                "%s: content-filtered item left unscored (appendix fallback): %r",
                 section, items[0].get("title"),
             )
             return []
