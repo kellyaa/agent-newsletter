@@ -51,6 +51,17 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
+# ─── Single-run lock ───────────────────────────────────────────────────────
+# Hold an advisory lock for the life of this run. scripts/watchdog.sh probes
+# this same lock to tell "died mid-run" apart from "still running", so it never
+# starts a second pipeline on top of a live one. Released when the shell exits.
+LOCK_FILE="$REPO_ROOT/.watchdog.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  log "another run holds $LOCK_FILE; exiting without doing anything"
+  exit 0
+fi
+
 # Fire a macOS notification. No-op on non-Darwin or if osascript is missing.
 notify() {
   local title="$1"; shift
