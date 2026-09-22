@@ -82,6 +82,28 @@ fail_handler() {
 }
 trap fail_handler ERR
 
+# ─── Python runner ─────────────────────────────────────────────────────────
+# Normally `uv run python`. But on this pod `uv` is a lazy shim that installs
+# uv through mise on first use, and that install lands outside $HOME — so a pod
+# restart wipes it and the reinstall has to succeed again. On 2026-09-22 it
+# stopped succeeding: mise's GitHub-attestation check can't reach
+# tuf-repo-cdn.sigstore.dev, so `uv --version` hangs in a retry loop forever and
+# every stage dies before it starts. The committed .venv and the interpreter it
+# points at are both under $HOME and survive restarts, so fall back to calling
+# that python directly rather than letting a broken tool installer sink the run.
+# The probe is cheap and self-correcting: once uv works again, uv is used again.
+PY_RUN=()
+if timeout 45 uv --version >/dev/null 2>&1; then
+  PY_RUN=(uv run python)
+  log "── python runner ── uv run python"
+elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+  PY_RUN=("$REPO_ROOT/.venv/bin/python")
+  log "── python runner ── .venv/bin/python (uv unavailable — see comment in run.sh)"
+else
+  log "── python runner ── none usable: uv is broken and .venv/bin/python is missing"
+  exit 1
+fi
+
 # ─── Environment loading ───────────────────────────────────────────────────
 # Load LLM credentials and other config. Sourced in order, so the *last* file
 # wins for any given key:
@@ -125,7 +147,7 @@ export CONTENT_ROOT="$CONTENT_WORKTREE"
 # on rows that we're about to delete here.
 if [ "$REFETCH" = true ]; then
   log "REFETCH: deleting today's fetched items so fetch runs again"
-  uv run python - <<'PY'
+  "${PY_RUN[@]}" - <<'PY'
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -152,7 +174,7 @@ fi
 # ─── Force: reset today's post-fetch state ─────────────────────────────────
 if [ "$FORCE" = true ]; then
   log "FORCE: resetting today's post-fetch state"
-  uv run python - <<'PY'
+  "${PY_RUN[@]}" - <<'PY'
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -201,11 +223,11 @@ run_stage() {
   fi
 }
 
-run_stage "fetch"     uv run python scripts/fetch.py
-run_stage "prefilter" uv run python scripts/prefilter.py
-run_stage "rank"      uv run python scripts/rank.py
-run_stage "write"     uv run python scripts/write.py
-run_stage "publish"   uv run python scripts/publish.py
+run_stage "fetch"     "${PY_RUN[@]}" scripts/fetch.py
+run_stage "prefilter" "${PY_RUN[@]}" scripts/prefilter.py
+run_stage "rank"      "${PY_RUN[@]}" scripts/rank.py
+run_stage "write"     "${PY_RUN[@]}" scripts/write.py
+run_stage "publish"   "${PY_RUN[@]}" scripts/publish.py
 
 # ─── Git commit/push (content branch) ──────────────────────────────────────
 # Commit and push generated artifacts to the 'content' branch via the
