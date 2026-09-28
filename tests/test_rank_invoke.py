@@ -60,3 +60,46 @@ class TestInvokeRanker:
         debug_files = list((tmp_path / "logs").glob("ranker-output-*.json"))
         assert len(debug_files) == 1
         assert json.loads(debug_files[0].read_text()) == bad_response
+
+
+class TestRankSectionContentFilter:
+    """rank_section() isolates items the endpoint's content filter blocks.
+
+    One blocked item (e.g. a malware writeup) must not cost the whole section.
+    """
+
+    @staticmethod
+    def _items(n: int) -> list[dict]:
+        return [{"id": f"i{k}", "title": f"t{k}"} for k in range(n)]
+
+    def test_passes_through_when_nothing_blocked(self):
+        from rank import rank_section
+        rankings = [{"id": "i0", "score": 7, "tags": [], "why": "ok"}]
+        with patch("rank.invoke_ranker", return_value=rankings) as m:
+            out = rank_section("blogs", self._items(3), "rubric")
+        assert out == rankings
+        assert m.call_count == 1  # no bisection on the happy path
+
+    def test_single_blocked_item_is_dropped(self):
+        from llm import ContentFilterError
+        from rank import rank_section
+        with patch("rank.invoke_ranker", side_effect=ContentFilterError("blocked")):
+            out = rank_section("blogs", self._items(1), "rubric")
+        assert out == []
+
+    def test_bisects_and_keeps_the_good_items(self):
+        from llm import ContentFilterError
+        from rank import rank_section
+
+        # 4 items; only "t2" trips the filter. Any batch containing it blocks.
+        def fake_invoke(prompt: str, label: str):
+            if "t2" in prompt:
+                raise ContentFilterError("blocked")
+            ids = [f"i{k}" for k in range(4) if f"t{k}" in prompt]
+            return [{"id": i, "score": 6, "tags": [], "why": "ok"} for i in ids]
+
+        with patch("rank.invoke_ranker", side_effect=fake_invoke):
+            out = rank_section("blogs", self._items(4), "rubric")
+
+        got = sorted(r["id"] for r in out)
+        assert got == ["i0", "i1", "i3"]  # the other three survive

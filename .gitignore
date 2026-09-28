@@ -24,3 +24,6 @@ state.db
 site/src/content/issues/*.md
 # Content worktree
 .worktrees/
+# Advisory run locks (run.sh, scripts/watchdog.sh)
+.watchdog.lock
+.watchdog-self.lock

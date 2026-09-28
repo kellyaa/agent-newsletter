@@ -115,6 +115,17 @@ class TestCallLlmRetry:
             call_llm("p", SCHEMA, "s", model="m", max_attempts=5)
         assert mock_shot.call_count == 1
 
+    def test_content_filter_not_retried(self, monkeypatch):
+        """ContentFilterError propagates on the first attempt — retrying an
+        identical blocked prompt can only fail the same way."""
+        from llm import ContentFilterError
+
+        _mock_env(monkeypatch)
+        with patch("llm._one_shot", side_effect=ContentFilterError("blocked")) as mock_shot:
+            with pytest.raises(ContentFilterError):
+                call_llm("p", SCHEMA, "s", model="m", max_attempts=3)
+        assert mock_shot.call_count == 1
+
     def test_max_attempts_one_raises_immediately_on_failure(self, monkeypatch):
         _mock_env(monkeypatch)
         with patch("llm._one_shot", side_effect=RuntimeError("error")):
@@ -165,6 +176,15 @@ class TestOneShotMarkdownFence:
     def test_finish_reason_length_raises(self):
         with pytest.raises(RuntimeError, match="truncated"):
             self._call_one_shot('{"answer": "trunc', finish_reason="length")
+
+    def test_finish_reason_content_filter_raises(self):
+        """A filtered response raises ContentFilterError, not RuntimeError, so
+        call_llm()'s retry loop doesn't burn attempts re-sending it."""
+        from llm import ContentFilterError
+
+        with pytest.raises(ContentFilterError, match="content filter"):
+            self._call_one_shot("", finish_reason="content_filter")
+        assert not issubclass(ContentFilterError, RuntimeError)
 
     def test_invalid_json_raises(self):
         with pytest.raises(RuntimeError, match="non-JSON"):

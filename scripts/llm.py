@@ -38,6 +38,16 @@ log = logging.getLogger("llm")
 DEFAULT_TIMEOUT_S = 1200
 
 
+class ContentFilterError(Exception):
+    """The endpoint's content filter blocked the response.
+
+    Deliberately not a RuntimeError: call_llm()'s retry loop catches
+    RuntimeError, and re-sending an identical blocked prompt always fails the
+    same way. Callers that can split the batch and drop the offending item
+    should catch this instead.
+    """
+
+
 def _extra_headers() -> dict[str, str]:
     raw = os.environ.get("LLM_EXTRA_HEADERS")
     if not raw:
@@ -127,6 +137,14 @@ def _one_shot(
         txt = txt.split("\n", 1)[1] if "\n" in txt else txt
         if txt.endswith("```"):
             txt = txt.rsplit("```", 1)[0]
+
+    if finish == "content_filter":
+        # The endpoint's content filter blocked the response: HTTP 200, empty
+        # content, one completion token. Retrying the identical prompt can
+        # never succeed, so raise a distinct type the retry loop won't catch —
+        # callers that can subdivide the batch handle it instead.
+        log.error("%s: blocked by endpoint content filter (finish_reason=content_filter)", label)
+        raise ContentFilterError(f"llm response blocked by content filter for {label}")
 
     if finish == "length":
         # Truncated mid-response — almost always a degenerate repetition loop

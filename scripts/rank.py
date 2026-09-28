@@ -17,8 +17,9 @@ import sys
 
 from candidates import load_candidates_from_db
 from db import REPO_ROOT, connect, init_db
-from llm import call_llm
+from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem
+from prefilter import PAPER_PRERANK_CAP, _prerank_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -138,6 +139,41 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     return rankings
 
 
+def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
+    """Rank one section, isolating items the endpoint's content filter blocks.
+
+    A single item can trip the filter (e.g. a malware writeup), and because the
+    whole section goes in one call, that one item otherwise costs us every other
+    item in the section — this failed the rank stage two days running.
+
+    On a block we bisect: rank each half independently, so only the offending
+    item goes unscored. Recursion bottoms out at a single item, which we skip.
+
+    A skipped item returns no ranking, so main()'s defensive fallback sweeps it
+    into the appendix with score 0 — it still appears in the issue, by title and
+    URL only, with no LLM-written summary. That's the pre-existing behaviour for
+    any unscored candidate; keeping it means we never silently lose an item.
+    """
+    try:
+        return invoke_ranker(build_prompt(section, items, rubric), label=section)
+    except ContentFilterError:
+        if len(items) == 1:
+            log.warning(
+                "%s: content-filtered item left unscored (appendix fallback): %r",
+                section, items[0].get("title"),
+            )
+            return []
+        mid = len(items) // 2
+        log.warning(
+            "%s: content filter blocked a batch of %d; bisecting into %d + %d",
+            section, len(items), mid, len(items) - mid,
+        )
+        return (
+            rank_section(section, items[:mid], rubric)
+            + rank_section(section, items[mid:], rubric)
+        )
+
+
 def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str, RankDecision]:
     """Apply thresholds + per-section caps. Returns id -> {status, ...}.
 
@@ -213,7 +249,17 @@ def main() -> int:
     # handles idempotent resume: if rank.py crashed after papers but before
     # blogs, the already-ranked items will have moved to 'featured'/'appendix'/
     # 'dropped' and won't appear in this result set.
-    candidates = load_candidates_from_db()
+    #
+    # The prerank cap must be applied here, not just in prefilter's debug
+    # artifact: it's what bounds the papers prompt (and so the LLM call's
+    # duration) on burst days. Uncapped, a backlog after a failed run sends
+    # 130+ papers in one call, which runs past the endpoint's 300s ceiling and
+    # fails every attempt. Items beyond the cap stay 'candidate' and re-compete
+    # on the next run.
+    candidates = load_candidates_from_db(
+        prerank_cap=PAPER_PRERANK_CAP,
+        prerank_scorer=_prerank_score,
+    )
 
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
     # Items here have score+tags+why already; we skip the LLM and merge them
@@ -241,8 +287,7 @@ def main() -> int:
     unscored_papers = candidates.get("papers", [])
     prescored_papers = candidates.get("papers_prescored", [])
     if unscored_papers:
-        prompt = build_prompt("papers", unscored_papers, rubric)
-        scored = invoke_ranker(prompt, label="papers")
+        scored = rank_section("papers", unscored_papers, rubric)
         log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
         scored_by_section["papers"].extend(scored)
     else:
@@ -264,8 +309,7 @@ def main() -> int:
         items = candidates.get(section, [])
         if not items:
             continue
-        prompt = build_prompt(section, items, rubric)
-        scored = invoke_ranker(prompt, label=section)
+        scored = rank_section(section, items, rubric)
         log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
         scored_by_section[section] = scored
 

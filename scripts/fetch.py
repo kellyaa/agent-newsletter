@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+import certifi
 import feedparser
 import httpx
 import yaml
@@ -31,6 +33,29 @@ USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
 HTTP_TIMEOUT = 20.0
 
 
+class _NoALPNContext(ssl.SSLContext):
+    """SSLContext that ignores attempts to advertise ALPN protocols.
+
+    The pod's egress proxy answers 406 (empty body, no content-type, and one
+    fewer x-cache hop than a real response) to any TLS handshake that carries
+    an ALPN extension, so the request never reaches the origin. httpx always
+    calls set_alpn_protocols(["http/1.1"]) on its context; curl and urllib
+    happen not to send ALPN through the proxy, which is why they still work.
+    Swallowing the call keeps the ClientHello ALPN-free.
+    """
+
+    def set_alpn_protocols(self, protocols):  # noqa: D102 - see class docstring
+        return None
+
+
+def _make_ssl_context() -> ssl.SSLContext:
+    ctx = _NoALPNContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.load_verify_locations(cafile=certifi.where())
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.check_hostname = True
+    return ctx
+
+
 def _make_http_client() -> httpx.Client:
     """Create a shared HTTP client with connection pooling.
 
@@ -43,6 +68,7 @@ def _make_http_client() -> httpx.Client:
         timeout=HTTP_TIMEOUT,
         headers={"User-Agent": USER_AGENT},
         follow_redirects=True,
+        verify=_make_ssl_context(),
     )
 
 
