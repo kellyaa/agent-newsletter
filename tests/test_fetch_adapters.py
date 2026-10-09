@@ -231,6 +231,57 @@ class TestFetchRss:
         assert items == []
 
 
+FETCHERS_WITH_HTTP_CLIENT = [
+    pytest.param(
+        fetch_rss,
+        {"id": "test-blog", "url": "https://example.com/feed.xml"},
+        id="rss",
+    ),
+    pytest.param(
+        fetch_arxiv,
+        {"id": "cs-ai", "query": "cat:cs.AI"},
+        id="arxiv",
+    ),
+    pytest.param(
+        fetch_hn,
+        {"id": "agents", "query": "agents"},
+        id="hacker-news",
+    ),
+    pytest.param(
+        fetch_reddit,
+        {"id": "localllama", "url": "https://reddit.com/r/LocalLLaMA/.json"},
+        id="reddit",
+    ),
+]
+
+
+@pytest.mark.parametrize(("fetcher", "source"), FETCHERS_WITH_HTTP_CLIENT)
+def test_fetcher_closes_created_http_client_when_request_fails(
+    fetcher, source, monkeypatch
+):
+    client = MagicMock()
+    client.get.side_effect = RuntimeError("request failed")
+    monkeypatch.setattr("fetch._make_http_client", lambda: client)
+
+    with pytest.raises(RuntimeError, match="request failed"):
+        list(fetcher(source))
+
+    client.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(("fetcher", "source"), FETCHERS_WITH_HTTP_CLIENT)
+def test_fetcher_keeps_caller_owned_http_client_open_when_request_fails(
+    fetcher, source
+):
+    client = MagicMock()
+    client.get.side_effect = RuntimeError("request failed")
+
+    with pytest.raises(RuntimeError, match="request failed"):
+        list(fetcher(source, client=client))
+
+    client.close.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # fetch_arxiv()
 # ---------------------------------------------------------------------------
