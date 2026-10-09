@@ -69,6 +69,32 @@ def _client() -> OpenAI:
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
+def _last_json_object(content: str, required: list[str]) -> dict[str, Any] | None:
+    """Return the last JSON object in `content` with all `required` keys, or None.
+
+    Models sometimes emit a valid object, then prose like "I notice one tag is
+    not in the closed vocabulary. Correcting:", then a second (fenced) object.
+    json.loads fails on that with "Extra data"; the last object is the one the
+    model meant. Seen 2026-08-30 and 2026-10-08, both sinking the whole run.
+
+    `required` (the schema's top-level required keys) keeps a truncated outer
+    object from being "recovered" as one of its own nested entries.
+    """
+    decoder = json.JSONDecoder()
+    last: dict[str, Any] | None = None
+    i = content.find("{")
+    while i != -1:
+        try:
+            obj, end = decoder.raw_decode(content, i)
+        except json.JSONDecodeError:
+            i = content.find("{", i + 1)
+            continue
+        if isinstance(obj, dict) and all(k in obj for k in required):
+            last = obj
+        i = content.find("{", end)
+    return last
+
+
 def _one_shot(
     client: OpenAI,
     *,
@@ -80,6 +106,7 @@ def _one_shot(
     headers: dict[str, str],
     max_tokens: int | None,
     label: str,
+    bypass_cache: bool = False,
 ) -> dict[str, Any]:
     """Single attempt: call the API, parse, validate. Raises on any failure."""
     kwargs: dict[str, Any] = dict(
@@ -88,6 +115,13 @@ def _one_shot(
         timeout=timeout_s,
         extra_headers=headers or None,
     )
+    if bypass_cache:
+        # LiteLLM's response cache keys on the request body, so an identical
+        # retry gets the identical bad reply back (2026-10-08: attempt 2 came
+        # back in 0.09s with the same token counts). LiteLLM's per-request
+        # opt-out; set LLM_RETRY_NO_CACHE=0 for endpoints that reject unknown
+        # body params.
+        kwargs["extra_body"] = {"cache": {"no-cache": True}}
 
     # Structured-output mode is provider-dependent. LiteLLM-fronted Bedrock
     # Claude rejects json_schema (translated to output_config.format, a 400),
@@ -157,9 +191,13 @@ def _one_shot(
     try:
         parsed = json.loads(txt)
     except json.JSONDecodeError as e:
-        log.error("%s: could not parse llm content as JSON: %s", label, e)
-        log.error("%s: raw content (first 2KB): %s", label, content[:2000])
-        raise RuntimeError(f"llm returned non-JSON content for {label}") from e
+        parsed = _last_json_object(content, list(schema.get("required", [])))
+        if parsed is None:
+            log.error("%s: could not parse llm content as JSON: %s", label, e)
+            log.error("%s: raw content (first 2KB): %s", label, content[:2000])
+            raise RuntimeError(f"llm returned non-JSON content for {label}") from e
+        log.warning("%s: content was not a single JSON object (%s); "
+                    "using the last complete object in it", label, e)
 
     if not isinstance(parsed, dict):
         raise RuntimeError(f"llm returned non-object for {label}: {type(parsed).__name__}")
@@ -199,6 +237,7 @@ def call_llm(
         max_attempts,
     )
 
+    retry_no_cache = os.environ.get("LLM_RETRY_NO_CACHE", "1").strip() != "0"
     last_err: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
@@ -215,6 +254,7 @@ def call_llm(
                 headers=headers,
                 max_tokens=max_tokens,
                 label=f"{label} (attempt {attempt})" if max_attempts > 1 else label,
+                bypass_cache=attempt > 1 and retry_no_cache,
             )
         except RuntimeError as e:
             last_err = e
