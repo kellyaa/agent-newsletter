@@ -196,6 +196,37 @@ def test_fetch_html_matches_wrapping_element_with_anchor():
     assert items[0].title == "the title"
 
 
+@pytest.mark.parametrize(
+    ("markup", "link_selector", "title_selector"),
+    [
+        ('<article class="post">No anchor</article>', "article.post", None),
+        ('<a class="c"><h3>Missing href</h3></a>', "a.c", None),
+        ('<a href="/x" class="c"><p>No matching title</p></a>', "a.c", "h3"),
+    ],
+    ids=["wrapper-without-anchor", "anchor-without-href", "missing-title"],
+)
+def test_fetch_html_skips_matches_without_valid_items(
+    markup, link_selector, title_selector, caplog
+):
+    """Malformed markup or selectors must not emit incomplete HTML items."""
+    import logging
+    import fetch
+
+    client = _FakeClient(_FakeResponse(f"<html><body>{markup}</body></html>"))
+    source = {
+        "id": "x",
+        "url": "https://ex.com",
+        "link_selector": link_selector,
+        "title_selector": title_selector,
+    }
+
+    with caplog.at_level(logging.WARNING, logger="fetch"):
+        items = list(fetch.fetch_html(source, client=client))
+
+    assert items == []
+    assert any("produced 0 items" in record.message for record in caplog.records)
+
+
 def test_prefilter_html_family_defaults():
     """html family maps to news section and 30-day recency."""
     import prefilter
