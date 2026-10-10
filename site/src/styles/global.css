@@ -335,6 +335,15 @@ code {
   padding: 0.05em 0.55em;
   line-height: 1.4;
 }
+/* Clickable variant — /tags/<label>/ navigation. Same visual weight as
+   the static chip; hover matches the accent used elsewhere. */
+.chip--link {
+  text-decoration: none;
+}
+.chip--link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 /* ─── Callout ───────────────────────────────────────────────────────────── */
 
