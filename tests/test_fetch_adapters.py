@@ -940,6 +940,55 @@ reddit:
         assert result == 0
         assert "ml-reddit" in called
 
+    def test_html_sources_called_with_shared_client_and_overrides(
+        self, db_path, sources_path, monkeypatch
+    ):
+        import fetch as fetch_mod
+        import db as db_mod
+
+        sources_path.write_text("""
+html:
+  - id: vendor-news
+    url: https://example.com/news
+    link_selector: a.article
+    section: blogs
+    keyword_gate_bypass: true
+    recency_days: 14
+""")
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+        monkeypatch.setattr(fetch_mod, "_make_http_client", lambda: client)
+        calls = []
+
+        def mock_fetch_html(source, **kwargs):
+            calls.append((source, kwargs["client"]))
+            return [Item(
+                source="html:vendor-news",
+                url="https://example.com/news/article",
+                title="Vendor announcement",
+                author=None,
+                published_at=None,
+                raw_text="Announcement body",
+            )]
+
+        monkeypatch.setattr(fetch_mod, "fetch_html", mock_fetch_html)
+
+        assert self._run_main(db_path, sources_path, monkeypatch) == 0
+
+        assert len(calls) == 1
+        source, passed_client = calls[0]
+        assert source["id"] == "vendor-news"
+        assert passed_client is client
+        conn = db_mod.connect(db_path)
+        row = conn.execute(
+            "SELECT section_override, keyword_gate_bypass, recency_days_override "
+            "FROM items WHERE url = ?",
+            ("https://example.com/news/article",),
+        ).fetchone()
+        conn.close()
+        assert tuple(row) == ("blogs", 1, 14)
+
     def test_github_releases_called_in_main(self, db_path, sources_path, monkeypatch):
         import fetch as fetch_mod
         sources_path.write_text("""
