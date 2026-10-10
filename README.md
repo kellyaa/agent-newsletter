@@ -151,7 +151,9 @@ To uninstall the schedulers:
 
 ## Development
 
-Tests: `uv run --extra test pytest`
+Python tests: `uv run --extra test pytest`
+
+Site tests (Node.js 22.6+): `cd site && pnpm test`
 
 ## Forking to run your own instance
 
