@@ -282,6 +282,35 @@ def test_fetcher_keeps_caller_owned_http_client_open_when_request_fails(
     client.close.assert_not_called()
 
 
+def _happy_response_for(fetcher):
+    """Minimal successful response body each fetcher's happy path accepts."""
+    if fetcher is fetch_rss:
+        return _mock_httpx_response(_rss_feed_content([]))
+    if fetcher is fetch_arxiv:
+        return _mock_httpx_response(_arxiv_feed_content([]))
+    if fetcher is fetch_hn:
+        return _mock_httpx_response({"hits": []}, is_json=True)
+    if fetcher is fetch_reddit:
+        return _mock_httpx_response({"data": {"children": []}}, is_json=True)
+    raise AssertionError(f"no happy-path fixture for {fetcher!r}")
+
+
+@pytest.mark.parametrize(("fetcher", "source"), FETCHERS_WITH_HTTP_CLIENT)
+def test_fetcher_keeps_caller_owned_http_client_open_on_success(fetcher, source):
+    """The success path's `if client is None: _client.close()` guard must
+    also be exercised with client is NOT None (every existing success-path
+    test for these four fetchers goes through `patch("httpx.Client")`,
+    i.e. client=None internally — the caller-owned branch of that same
+    line was only ever exercised via the request-failure test above)."""
+    client = MagicMock()
+    client.get.return_value = _happy_response_for(fetcher)
+
+    items = list(fetcher(source, client=client))
+
+    assert items == []
+    client.close.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # fetch_arxiv()
 # ---------------------------------------------------------------------------
