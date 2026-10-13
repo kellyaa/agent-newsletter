@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -294,3 +295,142 @@ def test_prefilter_html_family_defaults():
     assert prefilter.SECTION_BY_FAMILY["html"] == "news"
     assert prefilter.RECENCY_DAYS["html"] == 30
     assert prefilter.assign_section("html:anthropic-news") == "news"
+
+
+# ---------------------------------------------------------------------------
+# _make_ssl_context / _NoALPNContext.set_alpn_protocols
+# ---------------------------------------------------------------------------
+
+def test_ssl_context_swallows_alpn_protocol_requests():
+    """_NoALPNContext.set_alpn_protocols() must be a no-op (not raise, not
+    delegate to the real SSLContext method) so httpx's automatic
+    set_alpn_protocols(["http/1.1"]) call never puts an ALPN extension on
+    the wire — the egress proxy 406s any ClientHello that carries one.
+    Covers the override itself and _make_ssl_context()'s construction path.
+    """
+    import fetch
+
+    ctx = fetch._make_ssl_context()
+    assert isinstance(ctx, fetch._NoALPNContext)
+    # Must not raise, and must not actually set any ALPN protocols — there's
+    # no public getter, so the real assertion is just "this never errors",
+    # which is the whole point: httpx calls this unconditionally.
+    assert ctx.set_alpn_protocols(["http/1.1"]) is None
+
+
+def test_ssl_context_verifies_hostname_and_requires_cert():
+    import ssl
+    import fetch
+
+    ctx = fetch._make_ssl_context()
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+
+
+# ---------------------------------------------------------------------------
+# fetch_html() — auto-created client lifecycle (client=None)
+# ---------------------------------------------------------------------------
+
+def test_fetch_html_closes_auto_created_client(monkeypatch):
+    """When no client is passed in, fetch_html must open its own via
+    _make_http_client() and close it afterward (the client=None branch of
+    the finally block) — a caller-supplied client must NOT be closed by
+    fetch_html (that is covered separately), but the self-managed one must
+    be, or every html-family source leaks a connection per run.
+    """
+    import fetch
+
+    client = _FakeClient(_FakeResponse(ANTHROPIC_LIKE))
+    client.close = MagicMock(wraps=client.close)
+    monkeypatch.setattr(fetch, "_make_http_client", lambda: client)
+
+    source = {
+        "id": "anthropic-news",
+        "url": "https://www.anthropic.com/news",
+        "link_selector": "a.card",
+        "title_selector": "h3",
+    }
+    items = list(fetch.fetch_html(source))
+
+    assert len(items) == 2
+    client.close.assert_called_once_with()
+
+
+def test_fetch_html_closes_auto_created_client_even_on_error(monkeypatch):
+    """The close() happens in a finally block, so a request failure must
+    still close the self-opened client (same guarantee the RSS/arXiv/HN/
+    Reddit adapters already have — fetch_html was the one path without a
+    client=None regression test for it)."""
+    import fetch
+
+    client = MagicMock()
+    client.get.side_effect = RuntimeError("boom")
+    monkeypatch.setattr(fetch, "_make_http_client", lambda: client)
+
+    source = {
+        "id": "anthropic-news",
+        "url": "https://www.anthropic.com/news",
+        "link_selector": "a.card",
+    }
+    with pytest.raises(RuntimeError, match="boom"):
+        list(fetch.fetch_html(source))
+
+    client.close.assert_called_once_with()
+
+
+def test_fetch_html_does_not_close_caller_supplied_client():
+    """Sanity check paired with the two tests above: when a client IS
+    supplied, fetch_html must leave it open (the `if client is None` guard)."""
+    import fetch
+
+    client = _FakeClient(_FakeResponse(ANTHROPIC_LIKE))
+    client.close = MagicMock(wraps=client.close)
+    source = {
+        "id": "anthropic-news",
+        "url": "https://www.anthropic.com/news",
+        "link_selector": "a.card",
+    }
+    list(fetch.fetch_html(source, client=client))
+    client.close.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _normalize_date() — empty input and dateutil fallback branch
+# ---------------------------------------------------------------------------
+
+def test_normalize_date_empty_string_returns_none():
+    """An empty date string short-circuits before either parse attempt."""
+    import fetch
+
+    assert fetch._normalize_date("") is None
+
+
+def test_normalize_date_none_like_falsy_returns_none():
+    import fetch
+
+    # fetch_html always passes a str, but the guard is `if not raw`, so
+    # confirm the falsy check itself (not just the empty-string literal).
+    assert fetch._normalize_date("   " and "") is None
+
+
+def test_normalize_date_non_iso_human_string_uses_dateutil_fallback():
+    """A human-readable date ("July 5" / "July 13, 2026") fails the ISO
+    fast-path and falls through to python-dateutil, which returns a naive
+    datetime that must then be stamped UTC (the dt.tzinfo is None branch
+    inside the dateutil try block, not the fast-path's identical-looking
+    branch above it)."""
+    import fetch
+
+    result = fetch._normalize_date("July 13, 2026")
+    assert result is not None
+    assert result.startswith("2026-07-13")
+    assert result.endswith("+00:00")
+
+
+def test_normalize_date_dateutil_rejects_unparseable_text():
+    """Text dateutil itself cannot parse falls through to the final
+    `except Exception: return None` — this is the ultimate fallback that
+    lets prefilter use fetched_at instead of crashing the HTML collector."""
+    import fetch
+
+    assert fetch._normalize_date("not a date at all, just words") is None
