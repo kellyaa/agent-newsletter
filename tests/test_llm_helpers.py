@@ -248,3 +248,186 @@ class TestOneShotMarkdownFence:
 
         assert any("prompt_tokens" in r.message or "100" in r.message
                    for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# _one_shot — bypass_cache and LLM_RESPONSE_FORMAT branches
+# ---------------------------------------------------------------------------
+
+class TestOneShotResponseFormat:
+    """LLM_RESPONSE_FORMAT selects the structured-output mode sent to the
+    endpoint (json_schema/json_object/none); bypass_cache opts a single
+    request out of LiteLLM's response cache. None of these branches were
+    exercised — every existing _one_shot test relies on the json_schema
+    default and bypass_cache=False.
+    """
+
+    def test_bypass_cache_sets_no_cache_extra_body(self, monkeypatch):
+        """bypass_cache=True adds extra_body={'cache': {'no-cache': True}}
+        (line 124), so a retry after a bad cached reply actually re-samples."""
+        monkeypatch.delenv("LLM_RESPONSE_FORMAT", raising=False)
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+            bypass_cache=True,
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert call_kwargs["extra_body"] == {"cache": {"no-cache": True}}
+
+    def test_bypass_cache_false_omits_extra_body(self, monkeypatch):
+        monkeypatch.delenv("LLM_RESPONSE_FORMAT", raising=False)
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+            bypass_cache=False,
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert "extra_body" not in call_kwargs
+
+    def test_json_object_mode_sets_response_format_type_only(self, monkeypatch):
+        """LLM_RESPONSE_FORMAT=json_object (line 143-144) asks for an object
+        without a schema — used for providers that 400 on json_schema."""
+        monkeypatch.setenv("LLM_RESPONSE_FORMAT", "json_object")
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_json_object_mode_is_case_and_whitespace_insensitive(self, monkeypatch):
+        monkeypatch.setenv("LLM_RESPONSE_FORMAT", "  JSON_Object  ")
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_none_mode_omits_response_format_entirely(self, monkeypatch):
+        """LLM_RESPONSE_FORMAT=none (line 145-146) relies on the prompt alone;
+        no response_format key should be sent at all."""
+        monkeypatch.setenv("LLM_RESPONSE_FORMAT", "none")
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert "response_format" not in call_kwargs
+
+    def test_unknown_mode_raises_runtime_error(self, monkeypatch):
+        """An unrecognized LLM_RESPONSE_FORMAT value fails loudly (line 147-150)
+        instead of silently falling back to a default — a misconfigured env
+        var should never pass unnoticed."""
+        monkeypatch.setenv("LLM_RESPONSE_FORMAT", "yaml")
+        client = _make_fake_client('{"answer": "yes"}')
+        with pytest.raises(RuntimeError, match="json_schema.*json_object.*none"):
+            _one_shot(
+                client,
+                prompt="test",
+                schema=SCHEMA,
+                schema_name="test",
+                model="m",
+                timeout_s=10,
+                headers={},
+                max_tokens=None,
+                label="test",
+            )
+        client.chat.completions.create.assert_not_called()
+
+    def test_default_mode_is_json_schema(self, monkeypatch):
+        monkeypatch.delenv("LLM_RESPONSE_FORMAT", raising=False)
+        client = _make_fake_client('{"answer": "yes"}')
+        _one_shot(
+            client,
+            prompt="test",
+            schema=SCHEMA,
+            schema_name="test",
+            model="m",
+            timeout_s=10,
+            headers={},
+            max_tokens=None,
+            label="test",
+        )
+        call_kwargs = client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"]["type"] == "json_schema"
+        assert call_kwargs["response_format"]["json_schema"]["name"] == "test"
+        assert call_kwargs["response_format"]["json_schema"]["schema"] == SCHEMA
+        assert call_kwargs["response_format"]["json_schema"]["strict"] is True
+
+
+# ---------------------------------------------------------------------------
+# _one_shot — salvage-path warning log (line 199)
+# ---------------------------------------------------------------------------
+
+class TestOneShotSalvageWarningLogged:
+    def test_recovered_trailing_object_logs_warning(self, caplog):
+        """When json.loads fails with trailing content but _last_json_object
+        recovers a complete object, a warning is logged naming the label and
+        the reason (line 198-199) — this is the only visibility into a
+        model self-correcting mid-response, so it must not be silent."""
+        import logging
+
+        content = (
+            '{"answer": "first"}\n\n'
+            'Wait, that is wrong. Correcting:\n\n'
+            '{"answer": "second"}'
+        )
+        client = _make_fake_client(content)
+        with caplog.at_level(logging.WARNING, logger="llm"):
+            result = _one_shot(
+                client,
+                prompt="test",
+                schema=SCHEMA,
+                schema_name="test",
+                model="m",
+                timeout_s=10,
+                headers={},
+                max_tokens=None,
+                label="salvage-test",
+            )
+        assert result == {"answer": "second"}
+        assert any(
+            "salvage-test" in r.message and "not a single JSON object" in r.message
+            for r in caplog.records
+        )
