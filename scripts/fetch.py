@@ -246,7 +246,18 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
     from urllib.parse import urljoin
 
     try:
-        from selectolax.parser import HTMLParser  # type: ignore
+        # Use the lexbor backend explicitly rather than the default
+        # `selectolax.parser.HTMLParser` (Modest backend). Modest was
+        # removed as an importable backend in selectolax 1.0 — importing
+        # `selectolax.parser` there raises ImportError with a deprecation
+        # message instead of returning a parser — which broke every HTML
+        # source outright under the declared `selectolax>=0.3.21` range
+        # the moment pip resolved to 1.0+. The lexbor backend has shipped
+        # since 0.3.21 (our floor) and exposes the same Node API used
+        # below (`.css`, `.css_first`, `.attributes`, `.text()`, `.tag`),
+        # so pinning to it keeps this scraper working across the entire
+        # declared range instead of just the one version in uv.lock.
+        from selectolax.lexbor import LexborHTMLParser as HTMLParser  # type: ignore
     except ImportError as e:  # pragma: no cover — dependency gate
         log.error("html: selectolax not installed; source %s skipped: %s",
                   source.get("id"), e)

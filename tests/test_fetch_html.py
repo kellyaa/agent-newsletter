@@ -227,6 +227,67 @@ def test_fetch_html_skips_matches_without_valid_items(
     assert any("produced 0 items" in record.message for record in caplog.records)
 
 
+def test_fetch_html_uses_lexbor_backend_not_deprecated_parser():
+    """fetch_html must import selectolax.lexbor, not selectolax.parser.
+
+    `selectolax.parser.HTMLParser` wraps the Modest backend, which was
+    removed as an importable backend in selectolax 1.0 (importing
+    `selectolax.parser` there raises ImportError with a deprecation
+    message). The project's pyproject.toml declares `selectolax>=0.3.21`
+    with no upper bound, so pip is free to resolve 1.0+, and a scraper
+    built on `selectolax.parser` breaks every HTML source outright at
+    that resolution — see the regression this guards against. The
+    `lexbor` backend exposes the same Node API (`.css`, `.css_first`,
+    `.attributes`, `.text()`, `.tag`) and has shipped since 0.3.21 (the
+    declared floor) through 1.0+ (the declared ceiling), so pinning the
+    import to it keeps `fetch_html` working across the whole declared
+    range, not just whatever happens to be in uv.lock.
+
+    `LexborHTMLParser` is a Cython extension type and cannot be
+    monkeypatched (its `__init__`/methods are immutable), so this
+    asserts the contract at the source level instead of via a spy:
+    `fetch_html`'s HTML-parser import must come from
+    `selectolax.lexbor`, never `selectolax.parser`.
+    """
+    import ast
+    import inspect
+    import fetch
+
+    source_text = inspect.getsource(fetch.fetch_html)
+    tree = ast.parse(source_text)
+    import_froms = [
+        node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+    ]
+    html_parser_imports = [
+        node for node in import_froms
+        if any(
+            alias.name == "HTMLParser" or alias.asname == "HTMLParser"
+            for alias in node.names
+        )
+    ]
+    assert html_parser_imports, "fetch_html no longer imports an HTMLParser"
+    assert all(
+        node.module == "selectolax.lexbor" for node in html_parser_imports
+    ), (
+        "fetch_html must import HTMLParser from selectolax.lexbor "
+        "(the deprecated selectolax.parser.HTMLParser / Modest backend "
+        "is unimportable on selectolax>=1.0, which the declared "
+        "selectolax>=0.3.21 range permits pip to resolve)"
+    )
+
+    # And prove the behavioral contract still holds end-to-end against
+    # whatever selectolax version is actually installed in this run.
+    client = _FakeClient(_FakeResponse(ANTHROPIC_LIKE))
+    source = {
+        "id": "anthropic-news",
+        "url": "https://www.anthropic.com/news",
+        "link_selector": "a.card",
+        "title_selector": "h3",
+    }
+    items = list(fetch.fetch_html(source, client=client))
+    assert len(items) == 2
+
+
 def test_prefilter_html_family_defaults():
     """html family maps to news section and 30-day recency."""
     import prefilter
