@@ -169,6 +169,22 @@ def test_fetch_html_unparseable_date_falls_back_to_none():
     assert items[0].published_at is None
 
 
+def test_fetch_html_excerpt_selector_with_no_match_yields_none():
+    """excerpt_selector set but matching NO element in this item's markup
+    must leave raw_text as None (the `if e_node is not None` → False
+    branch) — every existing excerpt_selector test uses markup where the
+    selector always matches, so this branch was unexercised. Mirrors the
+    already-covered date_selector no-match case above."""
+    import fetch
+    body = '<a href="/x" class="c"><h3>t</h3></a>'
+    client = _FakeClient(_FakeResponse(f"<html><body>{body}</body></html>"))
+    items = list(fetch.fetch_html(
+        {"id": "x", "url": "https://ex.com", "link_selector": "a.c",
+         "title_selector": "h3", "excerpt_selector": ".excerpt"},
+        client=client))
+    assert items[0].raw_text is None
+
+
 def test_fetch_html_relative_hrefs_absolutized():
     import fetch
     body = '<a href="/rel/x" class="c"><h3>t</h3></a>'
@@ -434,3 +450,26 @@ def test_normalize_date_dateutil_rejects_unparseable_text():
     import fetch
 
     assert fetch._normalize_date("not a date at all, just words") is None
+
+
+def test_normalize_date_iso_with_explicit_offset_keeps_it():
+    """An ISO string that already carries a UTC offset must take the
+    `dt.tzinfo is None` → False branch in the fast path (left untested
+    before this: every other ISO-fast-path test uses a bare date or a
+    trailing 'Z', both of which hit the True branch via the 'Z'->'+00:00'
+    substitution) — the original offset must survive untouched, not be
+    overwritten with +00:00."""
+    import fetch
+
+    result = fetch._normalize_date("2026-07-13T09:00:00+05:00")
+    assert result == "2026-07-13T09:00:00+05:00"
+
+
+def test_normalize_date_dateutil_result_with_explicit_offset_keeps_it():
+    """Same tzinfo-is-not-None branch, but on the dateutil fallback path:
+    a human-readable (non-ISO) string that itself names a UTC offset must
+    not be re-stamped to +00:00."""
+    import fetch
+
+    result = fetch._normalize_date("Mon, 13 Jul 2026 09:00:00 +0500")
+    assert result == "2026-07-13T09:00:00+05:00"
