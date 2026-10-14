@@ -246,6 +246,40 @@ class TestRankMainFallback:
         assert missed_row["status"] == "appendix"
         assert missed_row["score"] == 0
 
+    def test_one_section_llm_failure_does_not_abort_the_run(
+        self, db_path, prompt_path, monkeypatch
+    ):
+        """A RuntimeError from one section's LLM call (e.g. unparseable
+        content surviving every retry) must not kill the whole rank stage.
+        Other sections still get scored and persisted; the failed section's
+        items land in the appendix as unscored, and main() returns 0 — the
+        same outcome as any other defensive fallback, not a crash. Refs #208
+        ('blast radius' follow-up: rank shouldn't abort for one section)."""
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_candidate(conn, "news1", section="news")
+        _insert_candidate(conn, "blog1", section="blogs")
+        conn.close()
+
+        def fake_invoke(prompt, label):
+            if label == "blogs":
+                raise RuntimeError("llm returned non-JSON content for blogs")
+            return [{"id": "news1", "score": 7, "tags": [], "why": "ok"}]
+
+        with patch("rank.invoke_ranker", side_effect=fake_invoke):
+            rc = _run_main(db_path, prompt_path, monkeypatch)
+
+        assert rc == 0
+        conn = db_mod.connect(db_path)
+        rows = {
+            r["id"]: r
+            for r in conn.execute("SELECT id, status, score FROM items").fetchall()
+        }
+        conn.close()
+        assert rows["news1"]["status"] == "featured"
+        assert rows["blog1"]["status"] == "appendix"
+        assert rows["blog1"]["score"] == 0
+
 
 # ---------------------------------------------------------------------------
 # main() — times_competed bump for papers
