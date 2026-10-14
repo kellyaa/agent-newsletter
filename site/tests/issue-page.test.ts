@@ -59,9 +59,23 @@ test("issue page sanitizes markdown fields and escapes tags, allowing only safe 
       join(fixtureSite, "package.json"),
       await readFile(join(siteRoot, "package.json")),
     );
+    // Astro's content-layer cache defaults to <root>/node_modules/.astro.
+    // The fixture's node_modules is a *symlink* to the real site's (so
+    // Astro's own dependency tree doesn't need reinstalling per test), which
+    // means that default cache path resolves to the SAME real directory for
+    // every fixture — including the one the sibling rss.test.ts build runs
+    // concurrently. Two `astro build` runs racing on one shared
+    // data-store.json corrupts whichever build loses the race, producing a
+    // nondeterministic ENOENT reading the built HTML (first surfaced once
+    // CI actually ran this suite in parallel, see PR adding site-tests.yml).
+    // Point cacheDir at this fixture's own tmp root so each build gets an
+    // isolated cache.
     await writeFile(
       join(fixtureSite, "astro.config.mjs"),
-      await readFile(join(siteRoot, "astro.config.mjs")),
+      (await readFile(join(siteRoot, "astro.config.mjs"), "utf8")).replace(
+        'trailingSlash: "ignore",',
+        `trailingSlash: "ignore",\n  cacheDir: ${JSON.stringify(join(fixtureRoot, ".astro-cache"))},`,
+      ),
     );
     await writeFile(
       join(fixtureSite, "tsconfig.json"),
