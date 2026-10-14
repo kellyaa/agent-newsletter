@@ -140,7 +140,8 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
 
 
 def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
-    """Rank one section, isolating items the endpoint's content filter blocks.
+    """Rank one section, isolating items the endpoint's content filter blocks
+    and never letting one section's LLM failure abort the whole run.
 
     A single item can trip the filter (e.g. a malware writeup), and because the
     whole section goes in one call, that one item otherwise costs us every other
@@ -153,6 +154,18 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     into the appendix with score 0 — it still appears in the issue, by title and
     URL only, with no LLM-written summary. That's the pre-existing behaviour for
     any unscored candidate; keeping it means we never silently lose an item.
+
+    Separately, call_llm() can exhaust its retries and raise RuntimeError —
+    truncation, a repetition loop, or content that even the tolerant parser in
+    llm.py can't salvage (issue #208). Previously that propagated out of
+    rank_section(), out of main(), and killed the entire rank stage: one bad
+    blogs response meant zero newsletter that day, even though papers and news
+    had already scored cleanly. We now catch it here, log it, and leave the
+    whole batch unscored instead — the same appendix fallback that handles a
+    content-filter block or an LLM omission. The run finishes and publishes
+    whatever sections *did* score; the failed section's items reappear next
+    run (unscored papers re-compete; news/blogs land in the appendix with no
+    summary rather than vanishing).
     """
     try:
         return invoke_ranker(build_prompt(section, items, rubric), label=section)
@@ -172,6 +185,13 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
             rank_section(section, items[:mid], rubric)
             + rank_section(section, items[mid:], rubric)
         )
+    except RuntimeError as e:
+        log.error(
+            "%s: ranker call failed for a batch of %d items (%s); leaving "
+            "unscored (appendix fallback) instead of aborting the run",
+            section, len(items), e,
+        )
+        return []
 
 
 def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str, RankDecision]:

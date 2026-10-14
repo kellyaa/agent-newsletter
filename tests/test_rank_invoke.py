@@ -103,3 +103,33 @@ class TestRankSectionContentFilter:
 
         got = sorted(r["id"] for r in out)
         assert got == ["i0", "i1", "i3"]  # the other three survive
+
+
+class TestRankSectionRuntimeError:
+    """rank_section() must not let one section's LLM failure abort the run.
+
+    call_llm() raises RuntimeError when every retry attempt fails to produce
+    parseable content (truncation, repetition loop, or content json.loads +
+    the tolerant fallback both can't salvage — issue #208's blast-radius
+    concern). Previously this propagated straight out of rank_section() and
+    killed the whole rank stage.
+    """
+
+    @staticmethod
+    def _items(n: int) -> list[dict]:
+        return [{"id": f"i{k}", "title": f"t{k}"} for k in range(n)]
+
+    def test_runtime_error_leaves_batch_unscored_instead_of_raising(self):
+        from rank import rank_section
+        with patch("rank.invoke_ranker", side_effect=RuntimeError("llm returned non-JSON content for blogs")):
+            out = rank_section("blogs", self._items(3), "rubric")
+        assert out == []
+
+    def test_runtime_error_does_not_bisect(self):
+        """Unlike ContentFilterError, a RuntimeError isn't attributable to a
+        single offending item, so there's no reason to retry via bisection —
+        just drop the whole batch to the appendix fallback in one shot."""
+        from rank import rank_section
+        with patch("rank.invoke_ranker", side_effect=RuntimeError("truncated")) as m:
+            rank_section("papers", self._items(10), "rubric")
+        assert m.call_count == 1
