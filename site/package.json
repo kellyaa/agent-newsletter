@@ -7,7 +7,7 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build && pagefind --site dist",
-    "test": "node --experimental-strip-types --test",
+    "test": "node --experimental-strip-types --test --experimental-test-coverage",
     "preview": "astro preview",
     "astro": "astro"
   },
