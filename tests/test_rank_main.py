@@ -60,18 +60,17 @@ def _insert_candidate(conn, item_id, section="papers", status="candidate",
 def _run_main(db_path, prompt_path, monkeypatch):
     import rank as rank_mod
     import db as db_mod
+    import candidates as candidates_mod
 
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", prompt_path)
     monkeypatch.setattr(rank_mod, "RANKED_PATH", prompt_path.parent / "ranked.json")
     monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
-    # Patch load_candidates_from_db to use the test DB
-    monkeypatch.setattr(
-        "rank.load_candidates_from_db",
-        lambda **kwargs: __import__("candidates").load_candidates_from_db(
-            conn=db_mod.connect(db_path), **{k: v for k, v in kwargs.items() if k != "conn"}
-        ),
-    )
+    # Point candidates.py's own connect() at the test DB so
+    # load_candidates_from_db(conn=None) opens *and closes* its connection
+    # itself (its close_conn=True auto-close path) instead of us opening
+    # one here that never gets closed.
+    monkeypatch.setattr(candidates_mod, "connect", lambda: db_mod.connect(db_path))
 
     return rank_mod.main()
 
@@ -89,12 +88,6 @@ class TestRankMainGuards:
         monkeypatch.setattr(rank_mod, "RANKED_PATH", prompt_path.parent / "ranked.json")
         monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
-        monkeypatch.setattr(
-            "rank.load_candidates_from_db",
-            lambda **kwargs: __import__("candidates").load_candidates_from_db(
-                conn=db_mod.connect(db_path),
-            ),
-        )
         result = rank_mod.main()
         assert result == 2
 
