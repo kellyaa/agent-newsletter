@@ -115,14 +115,31 @@ async function buildFixtureSite() {
     join(fixtureSite, "package.json"),
     await readFile(join(siteRoot, "package.json")),
   );
-  // See issue-page.test.ts: each fixture needs its own Astro content-layer
-  // cache dir so concurrent `astro build` runs in this suite (and sibling
-  // suites) don't race on a shared data-store.json.
+  // Astro's content-layer cache defaults to <root>/node_modules/.astro, AND
+  // Vite's own dependency-optimization cache defaults separately to
+  // <root>/node_modules/.vite (hardcoded in astro/dist/core/create-vite.js,
+  // NOT derived from Astro's `cacheDir` option). The fixture's node_modules
+  // is a *symlink* to the real site's (so Astro's own dependency tree
+  // doesn't need reinstalling per test), which means BOTH default cache
+  // paths resolve to the SAME real directory for every fixture — including
+  // the ones sibling Astro-build suites (issue-page.test.ts, rss.test.ts,
+  // month-view.test.ts, appendix-section.test.ts) run concurrently. Two
+  // `astro build` runs racing on either shared cache corrupts whichever
+  // build loses the race (see PR #238's thread for the reproduction: 4/5
+  // concurrent runs failed with only `cacheDir` set). `vite: { cacheDir }`
+  // is required too — Astro merges `settings.config.vite` into Vite's own
+  // config, overriding the hardcoded `node_modules/.vite` default (see
+  // astro/dist/core/create-vite.js). Point both caches at this fixture's own
+  // tmp root so each build gets fully isolated caches.
   await writeFile(
     join(fixtureSite, "astro.config.mjs"),
     (await readFile(join(siteRoot, "astro.config.mjs"), "utf8")).replace(
       'trailingSlash: "ignore",',
-      `trailingSlash: "ignore",\n  cacheDir: ${JSON.stringify(join(fixtureRoot, ".astro-cache"))},`,
+      [
+        'trailingSlash: "ignore",',
+        `  cacheDir: ${JSON.stringify(join(fixtureRoot, ".astro-cache"))},`,
+        `  vite: { cacheDir: ${JSON.stringify(join(fixtureRoot, ".vite-cache"))} },`,
+      ].join("\n"),
     ),
   );
   await writeFile(
