@@ -83,7 +83,7 @@ Pure Python, no LLM calls. Pulls from:
 
 **Removed / not yet implemented sources:**
 - **Semantic Scholar** REST API (citation-count backfill for arXiv hits) — designed but never implemented; no adapter in `fetch.py`.
-- **HF Daily** HTML scrape (https://huggingface.co/papers) — configured in `sources.yaml` but no `fetch_hf_daily()` adapter exists in `fetch.py`. Tracked in #96 for removal. The `hf-daily` section prefix in `sources.yaml` and the `hf-daily → papers` mapping in `prefilter.py` are dead code pending that cleanup.
+- **HF Daily** HTML scrape (removed 2026-10-15 / issue #96) — was configured in `sources.yaml` but no adapter existed.
 
 Feed list lives in `sources.yaml` — easy to edit without touching code.
 
@@ -168,7 +168,7 @@ The prompt gives the writer:
 The writer produces:
 1. **Header** — date, and an optional **theme**: two-part front-page card copy (~60 words) consisting of a lede (1-2 sentences introducing 1-2 featured items in plain framing for a cold reader) plus a territory sentence (gesturing at what else is in the issue by kinds-of-work, not system names). Returns `null` when fewer than 3 featured items exist. See `prompts/write.md` §Theme for the full rubric and examples.
 2. **Featured items, grouped into three top-level sections** in this fixed order:
-   1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:` or `hf-daily:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
+   1. **Papers** — academic preprints and peer-reviewed work. Items where `source` starts with `arxiv:`. Lead with the contribution, not the title's vocabulary. If the methodology is weak (no baseline, n=1, cherry-picked task), say so.
    2. **News** — releases, launches, incidents, deprecations, vendor announcements. Items from `gh:*` (trending repos), or content from RSS/HN/Reddit that is announcement-shaped (release notes, "we launched X", incident postmortems). Prioritize items with concrete version numbers, deprecation dates, or breaking changes.
    3. **Blogs** — practitioner writeups, deep dives, tutorials, opinion. Items from RSS feeds (Simon Willison, Latent Space, Interconnects, etc.) and HN/Reddit discussions of practitioner posts. This is where the editorial voice should be sharpest.
 
@@ -189,7 +189,7 @@ Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY
 
 | Source family | Default section |
 |---|---|
-| `arxiv:*`, `hf-daily:*` | `papers` |
+| `arxiv:*` | `papers` |
 | `gh:*` (trending repos; releases watchlist removed 2026-05-14) | `news` |
 | `hn:*`, `reddit:*` | `news` |
 | `rss:*` | `blogs` |

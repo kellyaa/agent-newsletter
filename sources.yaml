@@ -144,11 +144,6 @@ reddit:
 # 15-minute timeout. Re-add via the github_releases: key if needed.
 github_releases: []
 
-hf_daily:
-  # Hugging Face daily papers — scrape, no official API.
-  - id: hf-daily-papers
-    url: https://huggingface.co/papers
-
 # Generic HTML index-page scraper (issue #10). Use for vendor pages that
 # don't expose RSS. Selectors are CSS; matching is via selectolax.
 #
