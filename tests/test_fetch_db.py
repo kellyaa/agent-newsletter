@@ -179,6 +179,51 @@ class TestUpsertItemsGenerator:
 
 
 # ---------------------------------------------------------------------------
+# upsert_items — URL scheme allowlist (issue #248)
+# ---------------------------------------------------------------------------
+
+class TestUpsertItemsSchemeAllowlist:
+    def test_rejects_javascript_scheme(self, db):
+        item = _make_item(url="javascript:alert(1)")
+        seen, inserted = upsert_items(db, [item])
+        assert seen == 1
+        assert inserted == 0
+        assert db.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+    def test_rejects_data_scheme(self, db):
+        item = _make_item(url="data:text/html,<script>alert(1)</script>")
+        seen, inserted = upsert_items(db, [item])
+        assert inserted == 0
+        assert db.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+    def test_rejects_file_scheme(self, db):
+        item = _make_item(url="file:///etc/passwd")
+        seen, inserted = upsert_items(db, [item])
+        assert inserted == 0
+        assert db.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+    def test_disallowed_scheme_does_not_block_other_items(self, db):
+        items = [
+            _make_item(url="javascript:alert(1)", title="Bad"),
+            _make_item(url="https://example.com/good", title="Good"),
+        ]
+        seen, inserted = upsert_items(db, items)
+        assert seen == 2
+        assert inserted == 1
+        row = db.execute("SELECT title FROM items").fetchone()
+        assert row["title"] == "Good"
+
+    def test_accepts_http_and_https(self, db):
+        items = [
+            _make_item(url="http://example.com/a", title="A"),
+            _make_item(url="https://example.com/b", title="B"),
+        ]
+        seen, inserted = upsert_items(db, items)
+        assert seen == 2
+        assert inserted == 2
+
+
+# ---------------------------------------------------------------------------
 # _already_fetched_today
 # ---------------------------------------------------------------------------
 

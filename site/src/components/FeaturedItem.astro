@@ -2,6 +2,7 @@
 import ScoreBar from "./ScoreBar.astro";
 import TagChip from "./TagChip.astro";
 import Callout from "./Callout.astro";
+import { safeHref } from "../scripts/safe-href";
 
 interface Item {
   id: string;
@@ -43,7 +44,7 @@ function safeInline(text: string | null | undefined): string {
 ---
 <article class="item" id={item.id}>
   <h3 class="item__title">
-    <a href={item.url} rel="noopener noreferrer external">{item.title}</a>
+    <a href={safeHref(item.url)} rel="noopener noreferrer external">{item.title}</a>
   </h3>
   <div class="item__meta">
     <span class="item__source">{item.source}</span>

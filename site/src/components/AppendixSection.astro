@@ -1,4 +1,6 @@
 ---
+import { safeHref } from "../scripts/safe-href";
+
 interface AppendixItem {
   id: string;
   section: "papers" | "news" | "blogs";
@@ -32,7 +34,7 @@ const groups: { key: keyof typeof appendix; label: string }[] = [
             <ul class="appendix__list">
               {appendix[g.key].map((it) => (
                 <li>
-                  <a href={it.url} rel="noopener noreferrer external">{it.title}</a>
+                  <a href={safeHref(it.url)} rel="noopener noreferrer external">{it.title}</a>
                   <span class="appendix__source">{it.source}</span>
                 </li>
               ))}

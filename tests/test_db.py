@@ -2,7 +2,7 @@ import hashlib
 
 import pytest
 
-from db import canonicalize_url, url_id
+from db import canonicalize_url, is_allowed_url, url_id
 
 
 def test_canonicalize_url_normalizes_host_only_url() -> None:
@@ -72,3 +72,41 @@ def test_db_path_defaults_to_repo_root(monkeypatch):
     import db
     importlib.reload(db)
     assert db.DB_PATH == db.REPO_ROOT / "state.db"
+
+
+# ---------------------------------------------------------------------------
+# is_allowed_url — scheme allowlist (issue #248)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/article",
+        "http://example.com/article",
+        "HTTPS://Example.COM/Article",
+        "  https://example.com/padded  ",
+    ],
+)
+def test_is_allowed_url_accepts_http_and_https(url: str) -> None:
+    assert is_allowed_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "JaVaScRiPt:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "vbscript:msgbox(1)",
+        "ftp://example.com/file",
+        "",
+        "not a url at all",
+    ],
+)
+def test_is_allowed_url_rejects_non_http_schemes(url: str) -> None:
+    assert is_allowed_url(url) is False
+
+
+def test_is_allowed_url_rejects_non_string_input() -> None:
+    assert is_allowed_url(None) is False  # type: ignore[arg-type]

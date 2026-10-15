@@ -20,7 +20,7 @@ import feedparser
 import httpx
 import yaml
 
-from db import REPO_ROOT, canonicalize_url, connect, init_db, url_id
+from db import REPO_ROOT, canonicalize_url, connect, init_db, is_allowed_url, url_id
 
 logging.basicConfig(
     level=logging.INFO,
@@ -450,11 +450,22 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
 # ---------- Persistence ----------
 
 def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
+    """Dedup/insert items into state.db.
+
+    Rejects items whose URL scheme isn't http(s) — javascript:, data:,
+    file:, etc. — here, at the single choke point every source adapter
+    (RSS, arXiv, HN, HTML, reddit, GitHub releases) funnels through, so
+    a malicious/compromised feed entry never reaches state.db (and from
+    there the rendered site or RSS feed). See issue #248.
+    """
     seen, inserted = 0, 0
     today = datetime.now().date().isoformat()
     fetched_at = datetime.now(timezone.utc).isoformat()
     for it in items:
         seen += 1
+        if not is_allowed_url(it.url):
+            log.warning("upsert_items: rejecting item with disallowed URL scheme: %r", it.url)
+            continue
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
         cur = conn.execute(

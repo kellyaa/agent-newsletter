@@ -1,5 +1,6 @@
 import rss from "@astrojs/rss";
 import { getCollection } from "astro:content";
+import { safeHref } from "../scripts/safe-href";
 
 function escapeHtml(s) {
   return String(s)
@@ -20,7 +21,7 @@ function renderItemContent(issue) {
     parts.push("<h2>Featured</h2>");
     for (const f of featured) {
       parts.push(
-        `<h3><a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a></h3>`,
+        `<h3><a href="${escapeHtml(safeHref(f.url))}">${escapeHtml(f.title)}</a></h3>`,
       );
       const meta = [f.section, f.author].filter(Boolean).map(escapeHtml).join(" · ");
       if (meta) parts.push(`<p><small>${meta}</small></p>`);

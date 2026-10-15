@@ -1,5 +1,6 @@
 ---
 import TagChip from "./TagChip.astro";
+import { safeHref } from "../scripts/safe-href";
 
 interface MonthEntry {
   key: string;
@@ -81,7 +82,7 @@ function countsString(m: {
               {top.length > 0 && (
                 <ul class="timeline__featured">
                   {top.map((f: any) => (
-                    <li><a href={f.url} rel="noopener">{f.title}</a></li>
+                    <li><a href={safeHref(f.url)} rel="noopener">{f.title}</a></li>
                   ))}
                 </ul>
               )}
