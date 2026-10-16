@@ -73,12 +73,14 @@ function featuredItem({
 
 function issueMarkdown({
   date,
+  theme,
   featuredEntries,
   papers,
   news,
   blogs,
 }: {
   date: string;
+  theme?: string;
   featuredEntries: string[];
   papers: number;
   news: number;
@@ -87,6 +89,7 @@ function issueMarkdown({
   return [
     "---",
     `date: ${quoted(date)}`,
+    ...(theme === undefined ? [] : [`theme: ${quoted(theme)}`]),
     "featured:",
     ...featuredEntries,
     "appendix:",
@@ -265,6 +268,93 @@ test("issue page buckets featured items by section, omits empty sections, and re
     assert.ok(
       !newsNoAuthorBlock.includes('class="item__author"'),
       "an item with no author must not render an item__author span at all",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+// Covers two branches of src/pages/issues/[...slug].astro that neither test
+// above exercises: both existing tests' issueMarkdown fixtures omit `theme`
+// entirely, so neither the `{theme && <p class="issue-header__theme">...}`
+// conditional's "render" arm, nor the page's `description={theme || ...}`
+// prop (passed to BaseLayout) ever renders a theme-derived value anywhere
+// that's asserted on. Verified by hand: blanking out the theme paragraph's
+// conditional and replacing the description ternary with a hardcoded string
+// both left every existing issue-page test green.
+test("issue page renders the theme paragraph and passes it as BaseLayout's description when present, and omits/falls back when absent", async () => {
+  const { fixtureRoot, fixtureSite } = await buildFixtureSite();
+
+  try {
+    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    await mkdir(issueDirectory, { recursive: true });
+
+    await writeFile(
+      join(issueDirectory, "2026-06-01.md"),
+      issueMarkdown({
+        date: "2026-06-01",
+        theme: "Agents are eating code review",
+        featuredEntries: [
+          featuredItem({ id: "pa1", section: "papers", title: "Paper One", score: 5 }),
+        ],
+        papers: 1,
+        news: 0,
+        blogs: 0,
+      }),
+    );
+
+    // A second issue with no `theme` field at all, to exercise the other
+    // side of both the `{theme && ...}` conditional and the
+    // `description={theme || fallback}` ternary.
+    await writeFile(
+      join(issueDirectory, "2026-06-02.md"),
+      issueMarkdown({
+        date: "2026-06-02",
+        featuredEntries: [
+          featuredItem({ id: "pa2", section: "papers", title: "Paper Two", score: 5 }),
+        ],
+        papers: 1,
+        news: 0,
+        blogs: 0,
+      }),
+    );
+
+    runBuild(fixtureSite);
+
+    const withTheme = await readFile(
+      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      "utf8",
+    );
+    const withoutTheme = await readFile(
+      join(fixtureSite, "dist", "issues", "2026-06-02", "index.html"),
+      "utf8",
+    );
+
+    // Theme present: the header paragraph renders the theme text, and
+    // BaseLayout's <meta description> uses the theme as-is (not the
+    // date-derived fallback).
+    assert.ok(
+      withTheme.includes('<p class="issue-header__theme">Agents are eating code review</p>'),
+      "the issue header should render the theme in a <p> when present",
+    );
+    assert.ok(
+      withTheme.includes(
+        '<meta name="description" content="Agents are eating code review">',
+      ),
+      "the page description should be the theme itself when present",
+    );
+
+    // Theme absent: no header paragraph renders at all (not an empty one),
+    // and the description falls back to the date-derived default string.
+    assert.ok(
+      !withoutTheme.includes('class="issue-header__theme"'),
+      "the issue header must not render a theme paragraph at all when theme is absent",
+    );
+    assert.ok(
+      withoutTheme.includes(
+        '<meta name="description" content="AI Agents Daily issue for 2026-06-02">',
+      ),
+      "the page description should fall back to the date-derived default when theme is absent",
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
