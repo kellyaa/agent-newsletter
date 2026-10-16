@@ -113,6 +113,20 @@ test("home page renders the empty state when the issues collection has no entrie
     );
     // The MonthView branch must not render anything in this case.
     assert.ok(!html.includes("month-view"), "MonthView must not render when there are no issues");
+
+    // index.astro is BaseLayout's only caller that omits the `description`
+    // prop (search.astro and issues/[...slug].astro both pass one
+    // explicitly — see base-layout.test.ts and issue-page.test.ts), so this
+    // is the only place BaseLayout.astro's own default value for
+    // `description` ever actually renders. No existing test asserted on it:
+    // replacing the default string entirely still left every other site
+    // test green.
+    assert.ok(
+      html.includes(
+        '<meta name="description" content="A daily, opinionated digest on building and running AI agents.">',
+      ),
+      "BaseLayout's default description should render in the meta tag when no page passes its own",
+    );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
