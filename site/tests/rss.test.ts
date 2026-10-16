@@ -221,3 +221,121 @@ test("RSS renders newest issues, links, optional fields, and escaped content", a
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+// Covers two branches of src/pages/rss.xml.js that the test above doesn't
+// exercise because its fixtures happen to avoid them:
+//
+// 1. `renderItemContent`'s `[...issue.data.featured].sort((a, b) => b.score
+//    - a.score)` — the one existing test's two featured items are already
+//    authored in descending-score order, so removing the sort entirely
+//    (verified locally) still passes that test. This test authors a lower-
+//    score item first and a higher-score item second, so only a real sort
+//    produces the expected order.
+// 2. The `<title>` field's `issue.data.theme.split(/[.!?]/)[0]` sentence
+//    truncation — the existing test's theme contains no `.`/`!`/`?`, so the
+//    split is a no-op there (and `<title>` isn't even asserted on). This
+//    test gives the theme a sentence-ending punctuation mark followed by
+//    more text, and asserts the item's `<title>` stops at the first one.
+test("RSS orders a single issue's featured items by score (not authored order) and truncates the item title at the theme's first sentence boundary", async () => {
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "newsletter-rss-order-"));
+  const fixtureSite = join(fixtureRoot, "site");
+
+  try {
+    await mkdir(fixtureSite, { recursive: true });
+    await symlink(join(siteRoot, "node_modules"), join(fixtureSite, "node_modules"), "dir");
+    await writeFile(
+      join(fixtureSite, "package.json"),
+      await readFile(join(siteRoot, "package.json")),
+    );
+    // See the test above: isolated Astro/Vite caches per fixture to avoid
+    // the concurrent-build cache race (PR #238/#239).
+    await writeFile(
+      join(fixtureSite, "astro.config.mjs"),
+      (await readFile(join(siteRoot, "astro.config.mjs"), "utf8")).replace(
+        'trailingSlash: "ignore",',
+        [
+          'trailingSlash: "ignore",',
+          `  cacheDir: ${JSON.stringify(join(fixtureRoot, ".astro-cache"))},`,
+          `  vite: { cacheDir: ${JSON.stringify(join(fixtureRoot, ".vite-cache"))} },`,
+        ].join("\n"),
+      ),
+    );
+    await writeFile(
+      join(fixtureSite, "tsconfig.json"),
+      await readFile(join(siteRoot, "tsconfig.json")),
+    );
+    await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+
+    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    await mkdir(issueDirectory, { recursive: true });
+
+    // Authored LOW score first, HIGH score second — the opposite of the
+    // order a correct `b.score - a.score` sort must produce.
+    await writeFile(
+      join(issueDirectory, "2026-06-10.md"),
+      issueMarkdown({
+        date: "2026-06-10",
+        // Sentence boundary ('.') followed by more text the title must NOT
+        // include.
+        theme: "First sentence stays. Second sentence must be dropped.",
+        featured: [
+          featuredItem({
+            url: "https://example.test/low",
+            title: "Low Score Item",
+            summary: "Low score summary",
+            score: 1,
+          }),
+          featuredItem({
+            url: "https://example.test/high",
+            title: "High Score Item",
+            summary: "High score summary",
+            score: 9,
+          }),
+        ].join("\n"),
+      }),
+    );
+
+    execFileSync(join(siteRoot, "node_modules", ".bin", "astro"), ["build"], {
+      cwd: fixtureSite,
+      env: { ...process.env, SITE_BASE: "/newsletter", SITE_URL: "https://example.test" },
+      stdio: "pipe",
+    });
+
+    const feed = await readFile(join(fixtureSite, "dist", "rss.xml"), "utf8");
+
+    // Title truncates at the first sentence boundary: the date-prefixed
+    // <title> must contain "First sentence stays" but not the second
+    // sentence's text. (The full theme legitimately still appears
+    // elsewhere — e.g. <description> and the <content:encoded> theme
+    // paragraph render the untruncated theme by design — so the
+    // "not dropped" half of this assertion is scoped to the <title>
+    // element specifically, not the whole feed.)
+    const itemTitleStart = feed.indexOf("<title>2026-06-10");
+    assert.notEqual(itemTitleStart, -1, "the item's <title> should start with the issue date");
+    const itemTitleEnd = feed.indexOf("</title>", itemTitleStart);
+    const itemTitle = feed.slice(itemTitleStart, itemTitleEnd);
+    assert.equal(
+      itemTitle,
+      "<title>2026-06-10 — First sentence stays",
+      "issue <title> should be the date plus only the theme's first sentence",
+    );
+    assert.ok(
+      !itemTitle.includes("Second sentence must be dropped"),
+      "text after the theme's first sentence boundary must not appear in the item's <title>",
+    );
+
+    // Score ordering: "High Score Item" (score 9) must render before "Low
+    // Score Item" (score 1) in this issue's <content:encoded>, despite being
+    // authored second in the source file.
+    const highIndex = feed.indexOf("High Score Item");
+    const lowIndex = feed.indexOf("Low Score Item");
+    assert.notEqual(highIndex, -1);
+    assert.notEqual(lowIndex, -1);
+    assert.ok(
+      highIndex < lowIndex,
+      "the higher-scoring featured item must render before the lower-scoring one, regardless of authored order",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
