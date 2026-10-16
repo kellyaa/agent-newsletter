@@ -51,6 +51,12 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
+# Run accounting for publish.py's runs row (#13). llm.py appends one line per
+# LLM call; the file is per day and never truncated, so a re-run's spend adds
+# to the earlier attempts'. Duration is this run's only.
+export LLM_USAGE_LOG="$LOG_DIR/usage-$DATE_TODAY.jsonl"
+export RUN_STARTED_AT="$(ts)"
+
 # ─── Single-run lock ───────────────────────────────────────────────────────
 # Hold an advisory lock for the life of this run. scripts/watchdog.sh probes
 # this same lock to tell "died mid-run" apart from "still running", so it never
