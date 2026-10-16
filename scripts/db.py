@@ -70,6 +70,27 @@ CREATE TABLE IF NOT EXISTS topics_covered (
 TRACKING_PARAM_PREFIXES = ("utm_", "ref_")
 TRACKING_PARAMS = {"ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source"}
 
+# Schemes allowed for item URLs that flow into rendered <a href> on the
+# public site (and RSS feed links). Anything else — javascript:, data:,
+# file:, vbscript:, etc. — is a click-to-execute or local-file-disclosure
+# vector and must be rejected at ingest, before it ever reaches state.db.
+# See issue #248.
+ALLOWED_URL_SCHEMES = {"http", "https"}
+
+
+def is_allowed_url(url: str) -> bool:
+    """Return True iff `url` parses to an http(s) scheme.
+
+    Used at ingest (fetch.py) to reject non-http(s) URLs — javascript:,
+    data:, file:, etc. — before they're persisted to state.db and
+    eventually rendered as a clickable link on the site or in RSS.
+    """
+    try:
+        scheme = urlparse(url.strip()).scheme.lower()
+    except (AttributeError, ValueError):
+        return False
+    return scheme in ALLOWED_URL_SCHEMES
+
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=30)

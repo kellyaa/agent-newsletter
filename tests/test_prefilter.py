@@ -14,7 +14,10 @@ from prefilter import (
     ("source", "override", "expected"),
     [
         ("arxiv:cs.AI", None, "papers"),
-        ("hf-daily:papers", None, "papers"),
+        # hf-daily was removed as a source family (issue #96, dead code —
+        # no fetch.py adapter was ever implemented for it); unknown
+        # families fall through to the "blogs" default below.
+        ("hf-daily:papers", None, "blogs"),
         ("gh:releases", None, "news"),
         ("hn:frontpage", None, "news"),
         ("reddit:LocalLLaMA", None, "news"),

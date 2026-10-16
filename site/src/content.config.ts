@@ -3,11 +3,26 @@ import { glob } from "astro/loaders";
 
 const SECTIONS = ["papers", "news", "blogs"] as const;
 
+// Item URLs come from scraped/fed content (RSS, arXiv, HN, scraped HTML)
+// and flow straight into rendered <a href> on the public site and in the
+// RSS feed. `.url()` alone accepts javascript:/data:/file: schemes (zod 3
+// only checks that the string parses as a URL, not its scheme), so without
+// this refinement a malicious/compromised feed entry becomes a
+// click-to-execute link. scripts/fetch.py's upsert_items() already rejects
+// non-http(s) URLs before they reach state.db, but this schema check is a
+// second line of defense at the content-collection boundary. See #248.
+const httpUrl = z
+  .string()
+  .url()
+  .refine((u) => /^https?:\/\//i.test(u), {
+    message: "url must use the http or https scheme",
+  });
+
 const featuredItem = z.object({
   id: z.string(),
   section: z.enum(SECTIONS),
   source: z.string(),
-  url: z.string().url(),
+  url: httpUrl,
   title: z.string(),
   author: z.string().nullable().optional(),
   score: z.number().int().min(0).max(10),
@@ -23,7 +38,7 @@ const appendixItem = z.object({
   id: z.string(),
   section: z.enum(SECTIONS),
   source: z.string(),
-  url: z.string().url(),
+  url: httpUrl,
   title: z.string(),
 });
 

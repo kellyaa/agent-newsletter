@@ -1,5 +1,5 @@
 # Source-family → section defaults (in scripts/prefilter.py SECTION_BY_FAMILY):
-#   rss → blogs, arxiv/hf-daily → papers, gh/hn/reddit → news
+#   rss → blogs, arxiv → papers, gh/hn/reddit → news
 #
 # Any source entry below may add an optional `section:` field to override the
 # family default. Allowed values: papers | news | blogs. Invalid values are
@@ -143,11 +143,6 @@ reddit:
 # struggled to score concisely, occasionally pushing the rank step past its
 # 15-minute timeout. Re-add via the github_releases: key if needed.
 github_releases: []
-
-hf_daily:
-  # Hugging Face daily papers — scrape, no official API.
-  - id: hf-daily-papers
-    url: https://huggingface.co/papers
 
 # Generic HTML index-page scraper (issue #10). Use for vendor pages that
 # don't expose RSS. Selectors are CSS; matching is via selectolax.
