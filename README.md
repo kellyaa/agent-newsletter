@@ -20,6 +20,7 @@ scripts/
   write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
+  run_attempt.py        — records each run.sh invocation in run_attempts (called by run.sh)
   db.py                 — schema, URL canonicalization
   models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
@@ -190,10 +191,11 @@ A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls
 
 The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker's LLM-generated scores and rationales — **no secrets, no PII, no credentials**. LLM endpoints and keys live in `.env` (gitignored).
 
-Three tables:
+Four tables:
 
 - **`items`** — every fetched item, with status (`new` / `candidate` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count). (Note: `ranked` is never written as a status; `rank.py` transitions directly from `candidate` to `featured`/`appendix`/`dropped`.)
-- **`runs`** — one row per daily pipeline run: item counts by section, wall-clock duration; `tokens_in` / `tokens_out` / `cost_usd` columns are scaffolded (see #13) and populated when the LLM endpoint exposes usage.
+- **`runs`** — one row per published issue: item counts by section, wall-clock duration of the publishing attempt, and `tokens_in` / `tokens_out` summed over every attempt that day (#13; filled when the LLM endpoint reports usage). Models and per-model tokens are in `notes`. `cost_usd` stays empty: cost is priced downstream from the per-model tokens.
+- **`run_attempts`** — one row per `run.sh` invocation, failed ones included (`scripts/run_attempt.py`): start and finish time, `ok` / `failed` (or `started` if the run died mid-way), the failed stage and exit code, the code commit it ran, and that attempt's tokens and models. After a failure, `run.sh` commits and pushes `state.db` alone to `content`, so failures are visible off the pod. Nothing in the pipeline reads this table.
 - **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
 
 **Schema auto-migration.** `db.py` runs `_migrate()` on every `init_db()` call, applying any missing `ALTER TABLE` column additions automatically. Upgrading your checkout and re-running the pipeline is safe — the DB schema self-heals. No manual migration needed.

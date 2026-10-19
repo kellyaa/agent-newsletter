@@ -371,7 +371,7 @@ macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
 
 - `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns.
-- `llm.py` captures token usage from the OpenAI API response (`usage.prompt_tokens`, `usage.completion_tokens`) and passes it back to `rank.py` / `write.py`, which write it to the `runs` row.
+- `llm.py` appends each response's token usage (`usage.prompt_tokens`, `usage.completion_tokens`), model and run attempt to `logs/usage-<date>.jsonl` (`$LLM_USAGE_LOG`, set by `run.sh`). `publish.py` sums the day's into the `runs` row; `run_attempt.py` sums each attempt's into `run_attempts` (#13).
 - `BUDGET_USD` env var is defined as a future budget cap. **Not yet implemented in `run.sh` or enforced** in v1 — the column scaffolding is in place for when enforcement is added.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
 

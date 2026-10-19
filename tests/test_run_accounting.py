@@ -38,12 +38,15 @@ class TestAppendUsage:
         from llm import _append_usage
         path = tmp_path / "usage.jsonl"
         monkeypatch.setenv("LLM_USAGE_LOG", str(path))
+        monkeypatch.delenv("RUN_ATTEMPT", raising=False)
         _append_usage("papers (attempt 1)", "rank-m", _usage(100, 20))
         _append_usage("writer", "write-m", _usage(300, 40))
         lines = [json.loads(l) for l in path.read_text().splitlines()]
         assert lines == [
-            {"label": "papers (attempt 1)", "model": "rank-m", "prompt_tokens": 100, "completion_tokens": 20},
-            {"label": "writer", "model": "write-m", "prompt_tokens": 300, "completion_tokens": 40},
+            {"attempt": None, "label": "papers (attempt 1)", "model": "rank-m",
+             "prompt_tokens": 100, "completion_tokens": 20},
+            {"attempt": None, "label": "writer", "model": "write-m",
+             "prompt_tokens": 300, "completion_tokens": 40},
         ]
 
     def test_missing_usage_records_none(self, monkeypatch, tmp_path):
@@ -135,3 +138,120 @@ class TestRecordRunAccounting:
         record_run(db, "2026-10-17", {"papers": 2}, 3, 50)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-10-17'").fetchone()
         assert (row["tokens_in"], row["duration_seconds"]) == (700, 245)
+
+
+# ---------------------------------------------------------------------------
+# run_attempts table (scripts/run_attempt.py)
+# ---------------------------------------------------------------------------
+
+class TestUsageTotalsByAttempt:
+    def test_counts_only_the_given_attempt(self, tmp_path):
+        from publish import usage_totals
+        path = tmp_path / "usage.jsonl"
+        rows = [
+            {"attempt": "1", "label": "papers", "model": "r", "prompt_tokens": 100, "completion_tokens": 10},
+            {"attempt": "2", "label": "papers", "model": "r", "prompt_tokens": 40, "completion_tokens": 4},
+            {"attempt": "2", "label": "writer", "model": "w", "prompt_tokens": 60, "completion_tokens": 6},
+        ]
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        day = usage_totals(str(path))
+        second = usage_totals(str(path), attempt="2")
+        assert (day["tokens_in"], day["calls"]) == (200, 3)
+        assert (second["tokens_in"], second["tokens_out"], second["calls"]) == (100, 10, 2)
+        assert usage_totals(str(path), attempt="3")["calls"] == 0
+
+
+class TestAppendUsageAttempt:
+    def test_tags_line_with_run_attempt(self, monkeypatch, tmp_path):
+        from llm import _append_usage
+        path = tmp_path / "usage.jsonl"
+        monkeypatch.setenv("LLM_USAGE_LOG", str(path))
+        monkeypatch.setenv("RUN_ATTEMPT", "2")
+        _append_usage("writer", "w", _usage(1, 2))
+        assert json.loads(path.read_text())["attempt"] == "2"
+
+
+class TestRunAttempts:
+    def test_start_numbers_attempts_per_date(self, db, monkeypatch):
+        import run_attempt
+        monkeypatch.setattr(run_attempt, "code_state", lambda: ("abc123", 0))
+        assert run_attempt.start(db, "2026-10-17", "2026-10-17T11:00:00Z") == 1
+        assert run_attempt.start(db, "2026-10-17", "2026-10-17T12:00:00Z") == 2
+        assert run_attempt.start(db, "2026-10-18", "2026-10-18T11:00:00Z") == 1
+        row = db.execute("SELECT * FROM run_attempts WHERE date = '2026-10-17' AND attempt = 1").fetchone()
+        assert (row["outcome"], row["code_commit"], row["code_dirty"], row["finished_at"]) == \
+            ("started", "abc123", 0, None)
+
+    def test_finish_failed_records_stage_and_usage(self, db, monkeypatch):
+        import run_attempt
+        monkeypatch.setattr(run_attempt, "code_state", lambda: (None, None))
+        n = run_attempt.start(db, "2026-10-17", "2026-10-17T11:00:00Z")
+        usage = {"tokens_in": 100, "tokens_out": 10, "calls": 1, "models": "papers:r",
+                 "tokens_by_model": "r:100/10"}
+        run_attempt.finish(db, "2026-10-17", n, "failed", "rank", 1, usage)
+        row = db.execute("SELECT * FROM run_attempts").fetchone()
+        assert (row["outcome"], row["failed_stage"], row["exit_code"]) == ("failed", "rank", 1)
+        assert (row["tokens_in"], row["models"], row["tokens_by_model"]) == (100, "papers:r", "r:100/10")
+        assert row["finished_at"] is not None
+
+    def test_finish_ok_drops_stage(self, db, monkeypatch):
+        import run_attempt
+        monkeypatch.setattr(run_attempt, "code_state", lambda: (None, None))
+        n = run_attempt.start(db, "2026-10-17", "2026-10-17T11:00:00Z")
+        run_attempt.finish(db, "2026-10-17", n, "ok", "git", None, None)
+        row = db.execute("SELECT * FROM run_attempts").fetchone()
+        assert (row["outcome"], row["failed_stage"], row["tokens_in"]) == ("ok", None, None)
+
+    def test_finish_unknown_attempt_warns(self, db, caplog):
+        import run_attempt
+        run_attempt.finish(db, "2026-10-17", 9, "ok", None, None, None)
+        assert "no run_attempts row" in caplog.text
+
+    def test_code_state_reads_this_checkout(self):
+        import run_attempt
+        commit, dirty = run_attempt.code_state()
+        assert commit is None or len(commit) == 40
+        assert dirty in (None, 0, 1)
+
+    def test_code_state_without_git(self, monkeypatch):
+        import run_attempt
+        def boom(*a, **k):
+            raise FileNotFoundError("git")
+        monkeypatch.setattr(run_attempt.subprocess, "run", boom)
+        assert run_attempt.code_state() == (None, None)
+
+    def test_main_start_then_finish(self, tmp_path, monkeypatch, capsys):
+        import db as db_mod
+        import run_attempt
+        db_path = tmp_path / "state.db"
+        monkeypatch.setattr(run_attempt, "init_db", lambda: db_mod.init_db(db_path))
+        monkeypatch.setattr(run_attempt, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(run_attempt, "code_state", lambda: ("abc", 1))
+        monkeypatch.setenv("RUN_DATE", "2026-10-17")
+        monkeypatch.setenv("RUN_STARTED_AT", "2026-10-17T11:00:00Z")
+        usage = tmp_path / "usage.jsonl"
+        usage.write_text(json.dumps({"attempt": "1", "label": "writer", "model": "w",
+                                     "prompt_tokens": 5, "completion_tokens": 1}) + "\n")
+        monkeypatch.setenv("LLM_USAGE_LOG", str(usage))
+        assert run_attempt.main(["start"]) == 0
+        assert capsys.readouterr().out.strip() == "1"
+        assert run_attempt.main(["finish", "1", "failed", "--stage", "write", "--exit-code", "3"]) == 0
+        conn = db_mod.connect(db_path)
+        row = conn.execute("SELECT * FROM run_attempts").fetchone()
+        conn.close()
+        assert (row["started_at"], row["outcome"], row["failed_stage"], row["exit_code"],
+                row["tokens_in"], row["code_dirty"]) == \
+            ("2026-10-17T11:00:00Z", "failed", "write", 3, 5, 1)
+
+    def test_existing_db_gains_the_table(self, tmp_path):
+        import sqlite3
+        import db as db_mod
+        db_path = tmp_path / "old.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE runs (date TEXT PRIMARY KEY)")
+        conn.close()
+        db_mod.init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        conn.close()
+        assert "run_attempts" in names

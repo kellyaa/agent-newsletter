@@ -37,12 +37,14 @@ MIN_FEATURED_FOR_PUBLISH = 1  # tunable; lower = more permissive
 MIN_FILE_SIZE_BYTES = 400     # frontmatter+body should comfortably exceed this
 
 
-def usage_totals(path: str | None) -> dict | None:
+def usage_totals(path: str | None, attempt: str | None = None) -> dict | None:
     """Sum the per-call lines llm.py appended to `path` (one JSON object each).
 
-    Returns None when there is no usage log. A token total is None when no
-    call reported it, so a missing count is never recorded as zero. `models`
-    is "<label>:<model>" pairs, retries folded into their label.
+    With `attempt`, only that run attempt's lines count; without it, the
+    whole day's (every attempt's spend went into the issue). Returns None
+    when there is no usage log. A token total is None when no call reported
+    it, so a missing count is never recorded as zero. `models` is
+    "<label>:<model>" pairs, retries folded into their label.
     `tokens_by_model` is "<model>:<in>/<out>" pairs ("?" when unreported), so
     cost can be priced per model downstream.
     """
@@ -57,6 +59,8 @@ def usage_totals(path: str | None) -> dict | None:
             try:
                 line = json.loads(raw)
             except json.JSONDecodeError:
+                continue
+            if attempt is not None and line.get("attempt") != attempt:
                 continue
             calls += 1
             model = str(line.get("model", "?"))

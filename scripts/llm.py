@@ -72,10 +72,12 @@ def _client() -> OpenAI:
 def _append_usage(label: str, model: str, usage: Any) -> None:
     """Append one JSON line per API response to $LLM_USAGE_LOG, if set.
 
-    run.sh points this at logs/usage-<date>.jsonl so publish.py can fill the
-    runs table's token columns (#13). Every response counts, including ones
-    that fail to parse, since they were still billed. Never raises: usage
-    accounting must not sink an otherwise-good call.
+    run.sh points this at logs/usage-<date>.jsonl so publish.py and
+    run_attempt.py can fill the runs and run_attempts token columns (#13).
+    Each line carries $RUN_ATTEMPT so one attempt's spend can be told apart
+    from the day's. Every response counts, including ones that fail to
+    parse, since they were still billed. Never raises: usage accounting must
+    not sink an otherwise-good call.
     """
     path = os.environ.get("LLM_USAGE_LOG")
     if not path:
@@ -84,6 +86,7 @@ def _append_usage(label: str, model: str, usage: Any) -> None:
         v = getattr(usage, name, None)
         return v if isinstance(v, int) else None
     line = {
+        "attempt": os.environ.get("RUN_ATTEMPT"),
         "label": label,
         "model": model,
         "prompt_tokens": _int("prompt_tokens"),

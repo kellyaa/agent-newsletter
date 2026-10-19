@@ -51,11 +51,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
-# Run accounting for publish.py's runs row (#13). llm.py appends one line per
-# LLM call; the file is per day and never truncated, so a re-run's spend adds
-# to the earlier attempts'. Duration is this run's only.
+# Run accounting (#13). llm.py appends one line per LLM call, tagged with
+# RUN_ATTEMPT; the file is per day and never truncated, so publish.py's runs
+# row counts every attempt's spend, and run_attempt.py counts this attempt's.
 export LLM_USAGE_LOG="$LOG_DIR/usage-$DATE_TODAY.jsonl"
 export RUN_STARTED_AT="$(ts)"
+export RUN_DATE="$DATE_TODAY"
+RUN_ATTEMPT=""
 
 # ─── Single-run lock ───────────────────────────────────────────────────────
 # Hold an advisory lock for the life of this run. scripts/watchdog.sh probes
@@ -84,7 +86,28 @@ fail_handler() {
   local stage="${CURRENT_STAGE:-unknown}"
   log "FAILED at stage=$stage rc=$rc — see $LOG_FILE"
   notify "Newsletter pipeline failed" "stage=$stage  rc=$rc — see logs/$(basename "$LOG_FILE")"
+  record_failed_attempt "$stage" "$rc"
   exit "$rc"
+}
+
+# Mark this attempt failed in state.db's run_attempts table and push state.db
+# (never the issue file) to content, so the failure is visible off the pod and
+# the next attempt starts from this one's state. Best effort: every step may
+# fail without masking the original error. A no-op until the attempt row
+# exists, i.e. for failures before the content worktree is ready.
+record_failed_attempt() {
+  [ -n "$RUN_ATTEMPT" ] || return 0
+  set +e
+  "${PY_RUN[@]}" scripts/run_attempt.py finish "$RUN_ATTEMPT" failed \
+    --stage "$1" --exit-code "$2"
+  # `commit -- state.db` commits that path only, even if the issue file was
+  # already staged by the commit step below.
+  git -C "$CONTENT_WORKTREE" add state.db \
+    && git -C "$CONTENT_WORKTREE" commit -qm \
+      "newsletter: $DATE_TODAY attempt $RUN_ATTEMPT failed at $1" -- state.db \
+    && git -C "$CONTENT_WORKTREE" push --quiet \
+    && log "git: pushed failed attempt $RUN_ATTEMPT to content"
+  set -e
 }
 trap fail_handler ERR
 
@@ -147,6 +170,15 @@ log "── content worktree ── pulling"
 git -C "$CONTENT_WORKTREE" pull --ff-only
 
 export CONTENT_ROOT="$CONTENT_WORKTREE"
+
+# ─── Run attempt ───────────────────────────────────────────────────────────
+# One run_attempts row per invocation (scripts/run_attempt.py). Written only
+# now: a modified state.db before the pull above would stop it fast-forwarding.
+# Accounting must not sink the run, so a failure here just skips the row.
+RUN_ATTEMPT="$("${PY_RUN[@]}" scripts/run_attempt.py start)" || RUN_ATTEMPT=""
+[[ "$RUN_ATTEMPT" =~ ^[0-9]+$ ]] || RUN_ATTEMPT=""
+export RUN_ATTEMPT
+log "── run attempt ── ${RUN_ATTEMPT:-not recorded}"
 
 # ─── Refetch: delete today's fetched items so fetch runs again ─────────────
 # This must run BEFORE the --force block, since --force resets statuses based
@@ -234,6 +266,15 @@ run_stage "prefilter" "${PY_RUN[@]}" scripts/prefilter.py
 run_stage "rank"      "${PY_RUN[@]}" scripts/rank.py
 run_stage "write"     "${PY_RUN[@]}" scripts/write.py
 run_stage "publish"   "${PY_RUN[@]}" scripts/publish.py
+
+# Mark the attempt ok before committing, so the commit below carries the row.
+# A git add/commit error re-marks it failed at stage=git. A failed push does
+# not: the issue is committed locally and goes out with the next push.
+CURRENT_STAGE="git"
+if [ -n "$RUN_ATTEMPT" ]; then
+  "${PY_RUN[@]}" scripts/run_attempt.py finish "$RUN_ATTEMPT" ok \
+    || log "run attempt: could not mark $RUN_ATTEMPT ok"
+fi
 
 # ─── Git commit/push (content branch) ──────────────────────────────────────
 # Commit and push generated artifacts to the 'content' branch via the
