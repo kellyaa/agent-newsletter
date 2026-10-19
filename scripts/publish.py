@@ -4,7 +4,8 @@ The Astro site's content collection is at site/src/content/issues/. write.py
 emits a YAML-frontmatter+body MD file there. This script:
   - Verifies the issue file exists and is non-trivial.
   - Promotes today's featured + appendix items to status='published'.
-  - Records a row in the `runs` table.
+  - Records a row in the `runs` table, with token usage and duration when
+    run.sh provides them (LLM_USAGE_LOG, RUN_STARTED_AT; #13).
 
 URL hallucination is no longer possible: write.py splices URLs from the DB
 into the frontmatter, so the LLM has no opportunity to invent them. The
@@ -13,9 +14,12 @@ site/src/content.config.ts, providing a second line of defense.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
+import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
@@ -33,24 +37,93 @@ MIN_FEATURED_FOR_PUBLISH = 1  # tunable; lower = more permissive
 MIN_FILE_SIZE_BYTES = 400     # frontmatter+body should comfortably exceed this
 
 
+def usage_totals(path: str | None, attempt: str | None = None) -> dict | None:
+    """Sum the per-call lines llm.py appended to `path` (one JSON object each).
+
+    With `attempt`, only that run attempt's lines count; without it, the
+    whole day's (every attempt's spend went into the issue). Returns None
+    when there is no usage log. A token total is None when no call reported
+    it, so a missing count is never recorded as zero. `models` is
+    "<label>:<model>" pairs, retries folded into their label.
+    `tokens_by_model` is "<model>:<in>/<out>" pairs ("?" when unreported), so
+    cost can be priced per model downstream.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    calls = 0
+    tokens = {"prompt_tokens": None, "completion_tokens": None}
+    models: set[str] = set()
+    by_model: dict[str, list[int | None]] = {}
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            try:
+                line = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if attempt is not None and line.get("attempt") != attempt:
+                continue
+            calls += 1
+            model = str(line.get("model", "?"))
+            per = by_model.setdefault(model, [None, None])
+            for i, k in enumerate(tokens):
+                if isinstance(line.get(k), int):
+                    tokens[k] = (tokens[k] or 0) + line[k]
+                    per[i] = (per[i] or 0) + line[k]
+            label = re.sub(r" \(attempt \d+\)$", "", str(line.get("label", "?")))
+            models.add(f"{label}:{model}")
+    def _n(v: int | None) -> str:
+        return "?" if v is None else str(v)
+    return {
+        "tokens_in": tokens["prompt_tokens"],
+        "tokens_out": tokens["completion_tokens"],
+        "calls": calls,
+        "models": ",".join(sorted(models)),
+        "tokens_by_model": ",".join(
+            f"{m}:{_n(i)}/{_n(o)}" for m, (i, o) in sorted(by_model.items())
+        ),
+    }
+
+
+def run_duration_s(started_at: str | None, now: datetime | None = None) -> int | None:
+    """Seconds since RUN_STARTED_AT (ISO 8601 UTC, set by run.sh), or None."""
+    if not started_at:
+        return None
+    try:
+        start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return max(0, int((now - start).total_seconds()))
+
+
 def record_run(
     conn,
     today: str,
     featured_counts: dict[str, int],
     appendix_count: int,
     items_considered: int,
+    usage: dict | None = None,
+    duration_s: int | None = None,
 ) -> None:
+    notes = f"appendix={appendix_count}"
+    if usage is not None:
+        notes += (f" llm_calls={usage['calls']} models={usage['models']}"
+                  f" tokens_by_model={usage['tokens_by_model']}")
     conn.execute(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
-                          items_papers, items_news, items_blogs, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                          items_papers, items_news, items_blogs,
+                          duration_seconds, tokens_in, tokens_out, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
             items_featured = excluded.items_featured,
             items_papers = excluded.items_papers,
             items_news = excluded.items_news,
             items_blogs = excluded.items_blogs,
+            duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
+            tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
+            tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
             notes = excluded.notes
         """,
         (
@@ -64,7 +137,10 @@ def record_run(
             featured_counts.get("papers", 0),
             featured_counts.get("news", 0),
             featured_counts.get("blogs", 0),
-            f"appendix={appendix_count}",
+            duration_s,
+            (usage or {}).get("tokens_in"),
+            (usage or {}).get("tokens_out"),
+            notes,
         ),
     )
     conn.commit()
@@ -136,7 +212,11 @@ def main() -> int:
         appendix_count,
     )
 
-    record_run(conn, today, featured_counts, appendix_count, items_considered)
+    record_run(
+        conn, today, featured_counts, appendix_count, items_considered,
+        usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
+        duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
+    )
     conn.close()
 
     log.info("issue file: %s (%d bytes)", issue_path, size)

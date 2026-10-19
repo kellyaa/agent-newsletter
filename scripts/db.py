@@ -59,6 +59,27 @@ CREATE TABLE IF NOT EXISTS runs (
   notes TEXT
 );
 
+-- One row per run.sh invocation, failed ones included (scripts/run_attempt.py).
+-- Unlike runs, nothing in the pipeline reads it, so it can't change behaviour.
+CREATE TABLE IF NOT EXISTS run_attempts (
+  date TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  outcome TEXT NOT NULL,   -- started | ok | failed; 'started' = died mid-run
+  failed_stage TEXT,
+  exit_code INTEGER,
+  code_commit TEXT,
+  code_dirty INTEGER,
+  host TEXT,
+  llm_calls INTEGER,
+  tokens_in INTEGER,
+  tokens_out INTEGER,
+  models TEXT,
+  tokens_by_model TEXT,
+  PRIMARY KEY (date, attempt)
+);
+
 CREATE TABLE IF NOT EXISTS topics_covered (
   topic TEXT NOT NULL,
   date TEXT NOT NULL,

@@ -69,6 +69,36 @@ def _client() -> OpenAI:
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
+def _append_usage(label: str, model: str, usage: Any) -> None:
+    """Append one JSON line per API response to $LLM_USAGE_LOG, if set.
+
+    run.sh points this at logs/usage-<date>.jsonl so publish.py and
+    run_attempt.py can fill the runs and run_attempts token columns (#13).
+    Each line carries $RUN_ATTEMPT so one attempt's spend can be told apart
+    from the day's. Every response counts, including ones that fail to
+    parse, since they were still billed. Never raises: usage accounting must
+    not sink an otherwise-good call.
+    """
+    path = os.environ.get("LLM_USAGE_LOG")
+    if not path:
+        return
+    def _int(name: str) -> int | None:
+        v = getattr(usage, name, None)
+        return v if isinstance(v, int) else None
+    line = {
+        "attempt": os.environ.get("RUN_ATTEMPT"),
+        "label": label,
+        "model": model,
+        "prompt_tokens": _int("prompt_tokens"),
+        "completion_tokens": _int("completion_tokens"),
+    }
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(line) + "\n")
+    except OSError as e:
+        log.warning("could not append usage to %s: %s", path, e)
+
+
 def _last_json_object(content: str, required: list[str]) -> dict[str, Any] | None:
     """Return the last JSON object in `content` with all `required` keys, or None.
 
@@ -163,6 +193,7 @@ def _one_shot(
             getattr(usage, "completion_tokens", "?"),
             getattr(usage, "total_tokens", "?"),
         )
+    _append_usage(label, model, usage)
 
     finish = getattr(resp.choices[0], "finish_reason", None)
     content = resp.choices[0].message.content or ""
