@@ -3,6 +3,9 @@
 #
 # Grouped updates reduce noise: all Python bumps arrive as one PR per week,
 # all npm bumps as one PR, and Actions as one PR.
+#
+# Major version bumps are ignored — only minor and patch updates are proposed.
+# Majors are breaking by semver and should be upgraded deliberately.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -15,6 +18,9 @@ updates:
       python-deps:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /site
@@ -26,6 +32,9 @@ updates:
       npm-deps:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -37,3 +46,6 @@ updates:
       github-actions:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
