@@ -100,7 +100,7 @@ test("BaseLayout renders CSP, title/description, and base-aware search/RSS/brand
     // loudly.
     assert.ok(
       html.includes(
-        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\' https://rsms.me https://fonts.googleapis.com; font-src \'self\' https://rsms.me https://fonts.gstatic.com; img-src \'self\' data: https:; connect-src \'self\'; base-uri \'self\'; form-action \'none\'; frame-ancestors \'none\'">',
+        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'self\' \'unsafe-inline\' \'wasm-unsafe-eval\'; style-src \'self\' \'unsafe-inline\' https://rsms.me https://fonts.googleapis.com; font-src \'self\' https://rsms.me https://fonts.gstatic.com; img-src \'self\' data: https:; connect-src \'self\'; worker-src \'self\'; base-uri \'self\'; form-action \'none\'; frame-ancestors \'none\'">',
       ),
       "the CSP meta tag's exact policy string should render unchanged",
     );
