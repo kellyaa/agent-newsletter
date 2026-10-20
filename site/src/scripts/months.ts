@@ -33,9 +33,9 @@ export function groupByMonth(issues: any[]): MonthBucket[] {
     if (arr) arr.push(issue);
     else buckets.set(k, [issue]);
   }
-  return [...buckets.entries()]
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([key, issues]) => ({ key, issues }));
+  // `sorted` is newest-first and a month key is a prefix of the date, so the
+  // Map's insertion order is already newest-month-first; no second sort needed.
+  return [...buckets.entries()].map(([key, issues]) => ({ key, issues }));
 }
 
 export function buildMonthList(buckets: MonthBucket[]): MonthEntry[] {
