@@ -20,7 +20,7 @@ Thank you for contributing. This document covers development setup, the test sui
 
 ## Prerequisites
 
-- **macOS** (primary platform — the scheduler uses launchd; Linux is supported for development and CI but the cron wiring is macOS-only)
+- **macOS** (primary platform — the scheduler uses launchd; Linux is supported for development and CI, but the launchd install is macOS-only — on Linux schedule with cron or a systemd user service, see the README)
 - [**uv**](https://docs.astral.sh/uv/) — Python package manager (`brew install uv` or the official installer)
 - [**Node.js ≥ 18.17.1**](https://nodejs.org/) — required for the Astro 5 site build (CI pins Node 22; `node --version` should show ≥ 18.17.1)
 - [**pnpm**](https://pnpm.io/) — Node package manager for the Astro site (`npm install -g pnpm`)

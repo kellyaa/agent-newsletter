@@ -31,7 +31,7 @@ Explicitly down-weighted: consumer AI hype, funding announcements, VC takes, "pr
 
 ```
   ┌──────────────┐
-  │ launchd cron │  (daily, ~07:00 local)
+  │   launchd    │  (daily, ~07:00 local; cron/systemd on Linux)
   └──────┬───────┘
          │ invokes
          ▼
@@ -354,7 +354,7 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 | LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
-| Cost runaway                      | Per-run cost recorded in `runs.cost_usd`; `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
+| Cost runaway                      | Per-run token usage recorded in `runs.tokens_in` / `tokens_out` (`runs.cost_usd` exists but is not populated); `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
 | No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks main-branch HEAD for `newsletter:` commit pattern. **Current limitation:** since all pipeline commits land on the `content` branch, the watchdog always skips and never fires. Use the `runs` table to verify pipeline health. |
 
 ## Failure Notifications
@@ -368,9 +368,9 @@ macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 ## Cost Budget
 
-v1 records cost; v2 enforces it. Scaffolding now so we don't have to retrofit:
+v1 records token usage (not priced cost); v2 enforces a budget. Scaffolding now so we don't have to retrofit:
 
-- `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns.
+- `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns. `tokens_in` / `tokens_out` are populated (see below); `cost_usd` is **not** written by any code path and stays NULL — cost is priced downstream from the per-model tokens in `notes`.
 - `llm.py` appends each response's token usage (`usage.prompt_tokens`, `usage.completion_tokens`), model and run attempt to `logs/usage-<date>.jsonl` (`$LLM_USAGE_LOG`, set by `run.sh`). `publish.py` sums the day's into the `runs` row; `run_attempt.py` sums each attempt's into `run_attempts` (#13).
 - `BUDGET_USD` env var is defined as a future budget cap. **Not yet implemented in `run.sh` or enforced** in v1 — the column scaffolding is in place for when enforcement is added.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
@@ -397,7 +397,7 @@ Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. 
 - **Run time:** 07:00 local, daily.
 - **Voice:** opinionated and willing to be skeptical, but only on the basis of the actual content. No contrarianism for its own sake; if a piece is solid, say so plainly. Skepticism must cite specifics (sample size, missing ablation, cherry-picked benchmark).
 - **Failure notifications:** macOS notifications via `osascript` from `run.sh` and `watchdog.sh`. No email, no third-party service. Run logs in `logs/`.
-- **Cost cap:** not enforced in v1, but scaffolded — `runs.cost_usd` recorded every run, `BUDGET_USD` env var defined for future enforcement.
+- **Cost cap:** not enforced in v1, but scaffolded — per-run token usage recorded in `runs` (`cost_usd` itself is not populated), `BUDGET_USD` env var defined for future enforcement.
 - **Repo:** public on GitHub. Enables free GitHub Pages hosting for the published newsletter.
 
 ## Initial Source List (`sources.yaml` seed)
