@@ -252,8 +252,8 @@ test("issue page buckets featured items by section, omits empty sections, and re
     assert.ok(html.includes(">0/10<"));
 
     // Multiple tags each render as their own chip (not merged/truncated).
-    assert.ok(html.includes('<span class="chip">evals</span>'));
-    assert.ok(html.includes('<span class="chip">safety</span>'));
+    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/tags/evals/">evals</a>'));
+    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/tags/safety/">safety</a>'));
 
     // Author renders as "— Name" when present...
     assert.ok(
