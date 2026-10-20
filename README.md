@@ -26,6 +26,7 @@ scripts/
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
+scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh` if today's log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
 watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
@@ -61,6 +62,7 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 - [**uv**](https://docs.astral.sh/uv/) — Python package manager
 - [**Node.js ≥ 18.17.1**](https://nodejs.org/) + [**pnpm**](https://pnpm.io/) — for the Astro site build
 - An **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, Together, Groq, etc.)
+- **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `another run holds .watchdog.lock; exiting without doing anything` and **exits 0**, so a scheduled job looks healthy while never running the pipeline (see Troubleshooting §3)
 - The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14)
 
 The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. The only macOS-only feature is `watchdog.sh`, which uses `osascript` for desktop notifications (gracefully no-ops on non-macOS).
@@ -75,10 +77,9 @@ pnpm --prefix site install
 # LLM credentials — copy the template and fill in your values
 cp .env.template .env
 $EDITOR .env
-
-# Schedule the daily run + hourly watchdog (macOS — see below for Linux)
-./launchd/install.sh
 ```
+
+**Scheduling (macOS):** first apply the path substitutions in the warning below, *then* run `./launchd/install.sh` to install the daily-run and hourly-watchdog launchd jobs. Linux: see the next paragraph.
 
 **Linux scheduler:** The `launchd/` plists are macOS-only. On Linux, use cron or a systemd user service:
 
@@ -107,6 +108,12 @@ $EDITOR .env
 > Installing without making these substitutions will silently install plists that point at
 > the wrong location and the scheduled job will never run.
 
+Once the substitutions are done and `grep` is clean, install the jobs:
+
+```bash
+./launchd/install.sh
+```
+
 ### LLM configuration (`.env`)
 
 The ranker and writer scripts read their endpoint, key, and model ids from environment variables. `run.sh` sources `.env` (repo-local, gitignored) at startup; you can also put values in `~/.config/agent-newsletter/env` for machine-wide defaults that `.env` overrides.
@@ -123,7 +130,9 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `RANKER_MAX_TOKENS` | no | Max completion tokens for ranker calls, default 32000 |
 | `WRITER_MAX_TOKENS` | no | Max completion tokens for writer call, default 16000 |
 | `LLM_EXTRA_HEADERS` | no | JSON object of extra headers to send on every request |
-| `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; `runs.cost_usd` is recorded each run as the basis for future enforcement (see SPEC.md §Cost Budget). |
+| `LLM_RESPONSE_FORMAT` | no | Structured-output mode: `json_schema` (default; strict schema, honored by OpenAI, vLLM, llama.cpp, LM Studio), `json_object`, or `none` (rely on the prompt). Any other value raises. Use `json_object` for providers that reject `json_schema` — e.g. LiteLLM-fronted Bedrock Claude returns HTTP 400. |
+| `LLM_RETRY_NO_CACHE` | no | Default `1`: when `llm.py` retries after a parse/truncation failure it sends `extra_body={"cache": {"no-cache": true}}` (LiteLLM per-request cache opt-out) so the retry isn't served the identical bad reply. Set `0` for endpoints that reject unknown body params. |
+| `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; The `runs.cost_usd` column exists but is **not populated** (always NULL): per-run tokens are recorded in `runs.tokens_in` / `tokens_out` and per-model tokens in `runs.notes`, and cost is priced downstream from those (see SPEC.md §Cost Budget). |
 | `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). Note: under the current implementation the watchdog checks main-branch HEAD, not the content branch where pipeline commits land — see the watchdog section in Troubleshooting for details. |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
@@ -183,11 +192,11 @@ No additional secrets or environment variables are required in the GitHub Action
 
 ## Cost & runtime
 
-A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run cost is logged in the `runs` table.
+A typical run takes ~10 minutes wall time, most of it the three ranker LLM calls plus the one writer call. Cost depends entirely on which models you point `RANKER_MODEL` / `WRITER_MODEL` at. Per-run token usage is logged in the `runs` table (`tokens_in` / `tokens_out`, and per-model tokens in `notes`); the `cost_usd` column is not populated, so price the tokens against your provider's rates.
 
 ## state.db
 
-`state.db` is a SQLite file tracked on the **`content` branch** (not `main` — see "Repository layout" below). It's small (single-digit MB, growing slowly) and holding it in git is deliberate: the daily macOS cron run is self-healing, and re-cloning `content` on a new machine reproduces dedup state, run history, and topic coverage tracking without a bootstrap step. Because commits go up alongside daily runs, the DB at `content`'s HEAD roughly matches what's live at https://kellyaa.github.io/agent-newsletter/. (Soft: individual runs can fail or be retried, so this is a match "as of the last successful publish," not a strict invariant.)
+`state.db` is a SQLite file tracked on the **`content` branch** (not `main` — see "Repository layout" below). It's small (single-digit MB, growing slowly) and holding it in git is deliberate: the daily scheduled run is self-healing, and re-cloning `content` on a new machine reproduces dedup state, run history, and topic coverage tracking without a bootstrap step. Because commits go up alongside daily runs, the DB at `content`'s HEAD roughly matches what's live at https://kellyaa.github.io/agent-newsletter/. (Soft: individual runs can fail or be retried, so this is a match "as of the last successful publish," not a strict invariant.)
 
 The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker's LLM-generated scores and rationales — **no secrets, no PII, no credentials**. LLM endpoints and keys live in `.env` (gitignored).
 
@@ -247,13 +256,31 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 ### 3. Common stall modes
 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
+- **LLM call fails with HTTP 400 on structured output** (typical on LiteLLM/Bedrock-style proxies). Try `LLM_RESPONSE_FORMAT=json_object` in `.env`. If the 400 appears only on a retry, try `LLM_RETRY_NO_CACHE=0`.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
+- **`run.sh` exits instantly with "another run holds .watchdog.lock" but nothing is running.** Either a run really is in flight (`ps aux | grep run.sh`) or `flock` is not installed (`command -v flock`); in the latter case the lock guard fires on the missing command and `run.sh` exits 0 without doing any work. Install `flock` (see Prerequisites).
 - **watchdog noise / always-skipping.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check`. This is expected — and *always* happens — because `watchdog.sh` runs from the main-branch worktree and checks main-branch HEAD (`git log -1`), while all daily pipeline commits land on the `content` branch via the content worktree. Main never receives `newsletter:` commits, so the pattern check never matches. **The watchdog currently does not detect stuck pipelines.** To verify the pipeline ran, query the `runs` table directly:
   ```bash
-  sqlite3 .worktrees/content/state.db "SELECT date, items_featured, cost_usd FROM runs ORDER BY date DESC LIMIT 1;"
+  sqlite3 .worktrees/content/state.db "SELECT date, items_featured, tokens_in, tokens_out FROM runs ORDER BY date DESC LIMIT 1;"
   ```
   See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 - **watchdog notification throttle.** Once the stale-pipeline notification fires, `watchdog.sh` will not re-fire for 4 hours (throttle state in `logs/watchdog-last-fire`). If you want to force an immediate re-check after diagnosing the problem, run: `rm -f logs/watchdog-last-fire && ./watchdog.sh`
+
+### Self-heal watchdog (`scripts/watchdog.sh`)
+
+Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier). `scripts/watchdog.sh` checks whether today's `logs/run-YYYY-MM-DD.log` ends in `DONE` and, if not, re-runs `run.sh`. It probes the same lock `run.sh` holds (`.watchdog.lock`, gitignored; the watchdog's own `.watchdog-self.lock` is likewise gitignored) so it never starts a second pipeline on top of a live one. Its last stdout line is a status line:
+
+| Status line | Meaning | Exit |
+|---|---|---|
+| `STATUS: ALREADY_RAN <date>` | today's log exists and ended in `DONE` | 0 |
+| `STATUS: IN_PROGRESS <date>` | a run is mid-flight; left alone | 0 |
+| `STATUS: HEALED <date>` | log was missing/incomplete; it re-ran the pipeline successfully | 0 |
+| `STATUS: FAILED <date> <stage>` | it ran (or found) a failed run | 1 |
+
+```bash
+./scripts/watchdog.sh          # check, and run the pipeline if needed
+./scripts/watchdog.sh --check  # check only, never run the pipeline
+```
 
 ### 4. Unsticking it
 
@@ -262,7 +289,7 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 kill <pid-of-rank.py-or-write.py>
 
 # Or kill the whole pipeline
-pkill -f run.sh
+pkill -f "$(pwd)/run.sh"   # run from the repo root; or kill the PID from `ps aux | grep run.sh`
 
 # Then re-run idempotently — completed stages are skipped
 ./run.sh
@@ -275,7 +302,7 @@ pkill -f run.sh
 
 ```bash
 # Did publish.py record a run today?
-sqlite3 .worktrees/content/state.db "SELECT date, items_featured, items_papers, items_news, items_blogs, cost_usd FROM runs ORDER BY date DESC LIMIT 5;"
+sqlite3 .worktrees/content/state.db "SELECT date, items_featured, items_papers, items_news, items_blogs, tokens_in, tokens_out FROM runs ORDER BY date DESC LIMIT 5;"
 
 # Is there a newsletter file for today?
 ls .worktrees/content/site/src/content/issues/$(date +%Y-%m-%d).md 2>/dev/null && echo present || echo missing
