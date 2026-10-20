@@ -149,16 +149,22 @@ test("TagChip renders the label prop inside a chip span", async () => {
 
     // Each tag should render as a chip span.
     assert.ok(
-      html.includes('<span class="chip">machine-learning</span>'),
-      "machine-learning tag should render as a chip span",
+      html.includes(
+        '<a class="chip chip--link" href="/newsletter/tags/machine-learning/">machine-learning</a>',
+      ),
+      "machine-learning tag should render as a link chip to its tag page",
     );
     assert.ok(
-      html.includes('<span class="chip">safety</span>'),
-      "safety tag should render as a chip span",
+      html.includes(
+        '<a class="chip chip--link" href="/newsletter/tags/safety/">safety</a>',
+      ),
+      "safety tag should render as a link chip to its tag page",
     );
     assert.ok(
-      html.includes('<span class="chip">scaling</span>'),
-      "scaling tag should render as a chip span",
+      html.includes(
+        '<a class="chip chip--link" href="/newsletter/tags/scaling/">scaling</a>',
+      ),
+      "scaling tag should render as a link chip to its tag page",
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
@@ -195,7 +201,7 @@ test("TagChip does not render when an item has no tags", async () => {
     // FeaturedItem's `{item.tags.length > 0 && (...)}` guard should prevent
     // any chip rendering when tags array is empty.
     assert.ok(
-      !html.includes('<span class="chip">'),
+      !html.includes('class="chip'),
       "no chip spans should render when the item has no tags",
     );
   } finally {
@@ -239,9 +245,14 @@ test("TagChip escapes HTML special characters in label", async () => {
       "script tag content should not appear unescaped in HTML",
     );
     // The tag text itself should appear (escaped).
+    // Non-slug tags render as inert spans: no link to a /tags/ page.
     assert.ok(
-      html.includes('class="chip"'),
+      html.includes('<span class="chip">'),
       "chip span should render even with special characters",
+    );
+    assert.ok(
+      !html.includes("/tags/ai"),
+      "non-slug tags must not produce tag-page links",
     );
     // Verify that the escaped versions appear.
     assert.ok(
