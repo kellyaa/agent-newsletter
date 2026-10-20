@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.19",
-    "astro": "^5.0.0",
+    "astro": "^5.18.2",
     "isomorphic-dompurify": "^2.23.0",
     "marked": "^14.1.0"
   },
