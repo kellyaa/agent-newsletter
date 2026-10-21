@@ -190,3 +190,13 @@ def test_deploy_site_build_uses_pnpm_build_with_base_url_env():
     steps = _load("deploy.yml")["jobs"]["build"]["steps"]
     build = next(s for s in steps if s.get("run") == "pnpm build")
     assert {"SITE_URL", "SITE_BASE"} <= set(build["env"])
+
+
+def test_deploy_configures_pages_before_the_build_reads_its_outputs():
+    # Step outputs are only visible to later steps; otherwise SITE_URL always
+    # falls back to <owner>.github.io (#263).
+    steps = _load("deploy.yml")["jobs"]["build"]["steps"]
+    ids = [s.get("id") for s in steps]
+    build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
+    assert "steps.pages.outputs" in steps[build]["env"]["SITE_URL"]
+    assert ids.index("pages") < build
