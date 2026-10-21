@@ -102,6 +102,14 @@ def test_test_workflows_only_cancel_superseded_pull_request_runs(name):
     assert "==" in str(group["cancel-in-progress"])
 
 
+@pytest.mark.parametrize("name", ["tests.yml", "site-tests.yml"])
+def test_test_workflows_give_each_push_its_own_concurrency_group(name):
+    # A shared group holds only one pending run, so back-to-back merges would
+    # cancel each other even with cancel-in-progress false (#262).
+    group = _load(name)["concurrency"]["group"]
+    assert "github.event_name == 'push' && github.sha" in group
+
+
 def test_pytest_workflow_does_not_hardcode_the_coverage_gate():
     # The gate is owned by pyproject.toml so local runs and CI cannot diverge.
     runs = [s["run"] for s in _steps(_load("tests.yml")) if "run" in s]
@@ -182,3 +190,13 @@ def test_deploy_site_build_uses_pnpm_build_with_base_url_env():
     steps = _load("deploy.yml")["jobs"]["build"]["steps"]
     build = next(s for s in steps if s.get("run") == "pnpm build")
     assert {"SITE_URL", "SITE_BASE"} <= set(build["env"])
+
+
+def test_deploy_configures_pages_before_the_build_reads_its_outputs():
+    # Step outputs are only visible to later steps; otherwise SITE_URL always
+    # falls back to <owner>.github.io (#263).
+    steps = _load("deploy.yml")["jobs"]["build"]["steps"]
+    ids = [s.get("id") for s in steps]
+    build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
+    assert "steps.pages.outputs" in steps[build]["env"]["SITE_URL"]
+    assert ids.index("pages") < build
