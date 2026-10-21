@@ -8,9 +8,9 @@ on:
 
 # Cancel superseded runs on the same PR/branch to avoid duplicate work.
 # Do NOT cancel main-branch runs — every merge should get a clean signal.
-# Mirrors the concurrency policy in tests.yml.
+# Mirrors the concurrency policy in tests.yml, including per-SHA push groups.
 concurrency:
-  group: site-tests-${{ github.workflow }}-${{ github.ref }}
+  group: site-tests-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

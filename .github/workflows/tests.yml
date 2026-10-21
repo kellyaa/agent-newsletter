@@ -8,8 +8,10 @@ on:
 
 # Cancel superseded runs on the same PR/branch to avoid duplicate work.
 # Do NOT cancel main-branch runs — every merge should get a clean signal.
+# Pushes group by SHA: even with cancel-in-progress false, a shared group keeps
+# only one pending run, so back-to-back merges would cancel each other (#262).
 concurrency:
-  group: tests-${{ github.workflow }}-${{ github.ref }}
+  group: tests-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege token: pytest job only needs to read the checkout;
