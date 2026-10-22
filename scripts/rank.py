@@ -139,6 +139,56 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     return rankings
 
 
+def sanitize_rankings(rankings: list, sent_ids: set[str], label: str) -> list[dict]:
+    """Keep only well-formed ranker entries for ids we actually sent.
+
+    The output schema is only enforced when the provider honours
+    response_format=json_schema (LLM_RESPONSE_FORMAT=json_object|none, e.g.
+    LiteLLM-fronted Bedrock Claude, does not), so entries can arrive with a
+    missing/null/non-integer score, a null `tags`, an id we never sent, or the
+    same id twice. Unchecked, a bad score crashes the whole rank stage in
+    assign_statuses' sort, and a made-up id takes a featured slot and counts
+    against the cap while its UPDATE matches no row. Dropping the entry sends
+    the real item (if any) through main()'s unscored → appendix fallback.
+    Duplicates keep the first entry.
+    """
+    clean: list[dict] = []
+    seen: set[str] = set()
+    dropped = 0
+    for e in rankings:
+        if not isinstance(e, dict):
+            dropped += 1
+            continue
+        item_id, score = e.get("id"), e.get("score")
+        if isinstance(score, float) and score.is_integer():
+            score = int(score)
+        if (
+            not isinstance(item_id, str)
+            or item_id not in sent_ids
+            or item_id in seen
+            or isinstance(score, bool)
+            or not isinstance(score, int)
+            or not 0 <= score <= 10
+        ):
+            dropped += 1
+            continue
+        seen.add(item_id)
+        tags = e.get("tags")
+        why = e.get("why")
+        clean.append({
+            **e,
+            "score": score,
+            "tags": [t for t in tags if isinstance(t, str)] if isinstance(tags, list) else [],
+            "why": why if isinstance(why, str) else "",
+        })
+    if dropped:
+        log.warning(
+            "%s: ignored %d malformed/unknown/duplicate ranker entries (of %d)",
+            label, dropped, len(rankings),
+        )
+    return clean
+
+
 def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     """Rank one section, isolating items the endpoint's content filter blocks
     and never letting one section's LLM failure abort the whole run.
@@ -168,7 +218,8 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     summary rather than vanishing).
     """
     try:
-        return invoke_ranker(build_prompt(section, items, rubric), label=section)
+        rankings = invoke_ranker(build_prompt(section, items, rubric), label=section)
+        return sanitize_rankings(rankings, {it["id"] for it in items}, section)
     except ContentFilterError:
         if len(items) == 1:
             log.warning(
