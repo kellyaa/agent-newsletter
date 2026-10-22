@@ -206,6 +206,12 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
         log.info("invoking ranker LLM for %s (%d unscored)", section, len(items))
         prompt = rank_mod.build_prompt(section, items, rubric)
         scored = rank_mod.invoke_ranker(prompt, label=section)
+        # Same validation rank.rank_section applies: drop malformed, unknown
+        # or duplicate entries so they can't crash assign_statuses or take a
+        # featured slot.
+        scored = rank_mod.sanitize_rankings(
+            scored, {it["id"] for it in items}, section,
+        )
         scored_by_section[section].extend(scored)
 
     # Use rank.py's assign_statuses for threshold/cap logic.

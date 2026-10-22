@@ -426,6 +426,39 @@ class TestRankWithOptionalLlm:
         bf.rank_with_optional_llm(None, grouped)
         assert "news" in invoked_labels
 
+    def test_malformed_ranker_entries_are_sanitized(self, monkeypatch, tmp_path):
+        """Ghost ids, null scores and duplicates must not crash or take slots."""
+        import backfill as bf
+        import rank as rank_mod
+
+        def fake_invoke(prompt, label):
+            return [
+                {"id": "ghost", "score": 10, "tags": [], "why": "never sent"},
+                {"id": "u1", "score": None, "tags": [], "why": "null score"},
+                {"id": "u2", "score": 8, "tags": None, "why": "ok"},
+                {"id": "u2", "score": 1, "tags": [], "why": "duplicate"},
+            ]
+
+        monkeypatch.setattr(rank_mod, "invoke_ranker", fake_invoke)
+        monkeypatch.setattr(rank_mod, "persist", lambda conn, decisions: {})
+        (tmp_path / "prompts").mkdir(exist_ok=True)
+        (tmp_path / "prompts" / "rank.md").write_text("rubric")
+        monkeypatch.setattr(bf, "REPO", tmp_path)
+
+        def paper(pid):
+            return {"id": pid, "score": None, "title": pid, "url": "http://x.com/" + pid,
+                    "source": "arxiv:cs", "author": "A", "published_at": "2026-07-01",
+                    "raw_text": "abstract"}
+
+        grouped = {"papers": [paper("u1"), paper("u2")],
+                   "papers_prescored": [], "news": [], "blogs": []}
+
+        decisions = bf.rank_with_optional_llm(None, grouped)
+
+        assert "ghost" not in decisions
+        assert "u1" not in decisions
+        assert "u2" in decisions
+
 
 # ---------------------------------------------------------------------------
 # run_writer_for_date
