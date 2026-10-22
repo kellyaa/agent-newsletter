@@ -102,11 +102,22 @@ class TestAgeOutForSyntheticDate:
         # Published much older than PAPER_POOL_MAX_AGE_DAYS before the synthetic date
         very_old = "2026-05-01T00:00:00Z"
         _insert_candidate(db, "old-paper", section="papers",
-                          times_competed=0, published_at=very_old)
+                          times_competed=1, published_at=very_old)
         count = age_out_for_synthetic_date(db, "2026-07-01")
         assert count == 1
         row = db.execute("SELECT status FROM items WHERE id='old-paper'").fetchone()
         assert row["status"] == "dropped"
+
+    def test_keeps_old_never_competed_papers(self, db):
+        """Mirrors prefilter: an old paper never sent to the ranker is not
+        expired unjudged (issue #285)."""
+        from backfill import age_out_for_synthetic_date
+
+        _insert_candidate(db, "old-unjudged", section="papers", score=None,
+                          times_competed=0, published_at="2026-05-01T00:00:00Z")
+        assert age_out_for_synthetic_date(db, "2026-07-01") == 0
+        row = db.execute("SELECT status FROM items WHERE id='old-unjudged'").fetchone()
+        assert row["status"] == "candidate"
 
     def test_keeps_fresh_papers_below_cap(self, db):
         from backfill import age_out_for_synthetic_date
