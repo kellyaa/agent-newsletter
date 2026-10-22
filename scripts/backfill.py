@@ -166,14 +166,7 @@ def age_out_for_synthetic_date(conn, target_date: str) -> int:
     """
     import prefilter as prefilter_mod
     cur = conn.execute(
-        """
-        UPDATE items
-        SET status = 'dropped'
-        WHERE status = 'candidate'
-          AND section = 'papers'
-          AND (times_competed >= ?
-               OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
-        """,
+        prefilter_mod.PAPER_AGE_OUT_SQL,
         (
             prefilter_mod.PAPER_POOL_MAX_COMPETES,
             target_date,

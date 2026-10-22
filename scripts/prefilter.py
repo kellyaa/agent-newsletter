@@ -112,6 +112,23 @@ PAPER_POOL_MAX_COMPETES = 7
 PAPER_POOL_MAX_AGE_DAYS = 7
 PAPER_PRERANK_CAP = 50
 
+# Age-out for the papers candidate pool. Shared with backfill.py so the two
+# can't drift. The recency clause only applies to papers that have competed at
+# least once (times_competed > 0): a paper that was never sent to the ranker
+# (because the PAPER_PRERANK_CAP truncated it) must not expire unjudged, since
+# an unscored expiry is indistinguishable from an editorial rejection. Such
+# papers leave the pool only via the competition cap or by being scored.
+# Parameters: (max_competes, now, max_age_days).
+PAPER_AGE_OUT_SQL = """
+    UPDATE items
+    SET status = 'dropped'
+    WHERE status = 'candidate'
+      AND section = 'papers'
+      AND (times_competed >= ?
+           OR (times_competed > 0
+               AND julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?))
+"""
+
 # Cached rubric hash. When prompts/rank.md changes, all cached papers scores
 # become stale (they were assigned under a different rubric), so we wipe them
 # and let rank.py re-score from scratch on the next run.
@@ -253,14 +270,7 @@ def main() -> int:
     # SQLite's julianday('now')) so tests that freeze the Python clock also
     # freeze this comparison; production `now` is real UTC time.
     aged = conn.execute(
-        """
-        UPDATE items
-        SET status = 'dropped'
-        WHERE status = 'candidate'
-          AND section = 'papers'
-          AND (times_competed >= ?
-               OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
-        """,
+        PAPER_AGE_OUT_SQL,
         (
             PAPER_POOL_MAX_COMPETES,
             now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -271,6 +281,12 @@ def main() -> int:
     conn.commit()
     if aged_out:
         log.info("aged out %d papers candidates (cap or recency)", aged_out)
+
+    unjudged = conn.execute(
+        "SELECT COUNT(*) FROM items "
+        "WHERE section = 'papers' AND status = 'dropped' AND score IS NULL"
+    ).fetchone()[0]
+    log.info("papers dropped without ever being scored (cumulative): %d", unjudged)
 
     # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
     rows = conn.execute(
