@@ -33,7 +33,7 @@ scripts/
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator; idempotent
 scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh` if today's log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
-watchdog.sh             — fires macOS notification if no newsletter commit in >36h (runs from the main-branch repo root; checks main-branch HEAD for the newsletter: commit pattern — see §Troubleshooting for current limitation)
+watchdog.sh             — fires macOS notification if the `content` branch has no successful `newsletter: <date> daily run` commit in >36h (see §Troubleshooting)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
@@ -139,7 +139,7 @@ The ranker and writer scripts read their endpoint, key, and model ids from envir
 | `LLM_RESPONSE_FORMAT` | no | Structured-output mode: `json_schema` (default; strict schema, honored by OpenAI, vLLM, llama.cpp, LM Studio), `json_object`, or `none` (rely on the prompt). Any other value raises. Use `json_object` for providers that reject `json_schema` — e.g. LiteLLM-fronted Bedrock Claude returns HTTP 400. |
 | `LLM_RETRY_NO_CACHE` | no | Default `1`: when `llm.py` retries after a parse/truncation failure it sends `extra_body={"cache": {"no-cache": true}}` (LiteLLM per-request cache opt-out) so the retry isn't served the identical bad reply. Set `0` for endpoints that reject unknown body params. |
 | `BUDGET_USD` | no | **Not yet enforced.** Scaffolded for a future per-run cost cap; The `runs.cost_usd` column exists but is **not populated** (always NULL): per-run tokens are recorded in `runs.tokens_in` / `tokens_out` and per-model tokens in `runs.notes`, and cost is priced downstream from those (see SPEC.md §Cost Budget). |
-| `STALE_HOURS` | no | Hours without a newsletter commit before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). Note: under the current implementation the watchdog checks main-branch HEAD, not the content branch where pipeline commits land — see the watchdog section in Troubleshooting for details. |
+| `STALE_HOURS` | no | Hours without a successful daily-run commit (`newsletter: <date> daily run`) on the `content` branch before the watchdog fires a notification; default `36` (set in `watchdog.sh`). The watchdog throttles re-firing to once per 4 hours even if the stale condition persists (prevents notification spam during a prolonged outage). |
 | `CONTENT_ROOT` | set by `run.sh` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. Falls back to `cwd` if unset (useful for tests). |
 
 Use `LLM_EXTRA_HEADERS` for endpoints that require additional auth/routing headers beyond the bearer token. Examples:
@@ -265,11 +265,10 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 - **LLM call fails with HTTP 400 on structured output** (typical on LiteLLM/Bedrock-style proxies). Try `LLM_RESPONSE_FORMAT=json_object` in `.env`. If the 400 appears only on a retry, try `LLM_RETRY_NO_CACHE=0`.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
 - **`run.sh` exits instantly with "another run holds .watchdog.lock" but nothing is running.** Either a run really is in flight (`ps aux | grep run.sh`) or `flock` is not installed (`command -v flock`); in the latter case the lock guard fires on the missing command and `run.sh` exits 0 without doing any work. Install `flock` (see Prerequisites).
-- **watchdog noise / always-skipping.** `logs/watchdog.out` says `HEAD is not a newsletter commit … skipping check`. This is expected — and *always* happens — because `watchdog.sh` runs from the main-branch worktree and checks main-branch HEAD (`git log -1`), while all daily pipeline commits land on the `content` branch via the content worktree. Main never receives `newsletter:` commits, so the pattern check never matches. **The watchdog currently does not detect stuck pipelines.** To verify the pipeline ran, query the `runs` table directly:
+- **watchdog says `HEAD is not a newsletter commit … skipping check`.** `watchdog.sh` measures staleness from the newest `newsletter: <date> daily run` commit on the `content` branch (the `.worktrees/content` worktree, or the local/`origin/content` ref if there is no worktree). Failure-recovery commits (`… attempt N failed at <stage>`, `persist state.db from interrupted …`) do not count. It only falls back to main's HEAD, and prints this message when HEAD is not a `newsletter:` commit, if there is no content-branch history at all (e.g. a checkout that has never run the pipeline). To double-check the pipeline independently, query the `runs` table:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, tokens_in, tokens_out FROM runs ORDER BY date DESC LIMIT 1;"
   ```
-  See issue #195 for the tracking item to fix `watchdog.sh` to check the content branch worktree instead of the main-branch HEAD.
 - **watchdog notification throttle.** Once the stale-pipeline notification fires, `watchdog.sh` will not re-fire for 4 hours (throttle state in `logs/watchdog-last-fire`). If you want to force an immediate re-check after diagnosing the problem, run: `rm -f logs/watchdog-last-fire && ./watchdog.sh`
 
 ### Self-heal watchdog (`scripts/watchdog.sh`)
