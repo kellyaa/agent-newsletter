@@ -10,6 +10,7 @@ pin them.
 from __future__ import annotations
 
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -200,3 +201,44 @@ def test_deploy_configures_pages_before_the_build_reads_its_outputs():
     build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
     assert "steps.pages.outputs" in steps[build]["env"]["SITE_URL"]
     assert ids.index("pages") < build
+
+
+def _stage_content(tmp_path: Path, content: dict[str, str]) -> set[str]:
+    # Run the deploy workflow's staging step against a fake _content checkout.
+    steps = _load("deploy.yml")["jobs"]["build"]["steps"]
+    script = next(s for s in steps if s.get("name") == "Stage content from content branch")["run"]
+    for rel, text in content.items():
+        (tmp_path / "_content" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "_content" / rel).write_text(text)
+    subprocess.run(["bash", "-e", "-c", script], cwd=tmp_path, check=True)
+    issues = tmp_path / "site" / "src" / "content" / "issues"
+    return {p.relative_to(issues).as_posix() for p in issues.rglob("*.md")}
+
+
+def test_deploy_stages_each_edition_into_its_own_issues_folder(tmp_path):
+    staged = _stage_content(tmp_path, {
+        "editions/agents/issues/2026-10-01.md": "a",
+        "editions/agents/state.db": "db",
+        "editions/breaking-changes/issues/2026-10-02.md": "b",
+        "editions/_template/issues/example.md": "t",
+    })
+    assert staged == {"agents/2026-10-01.md", "breaking-changes/2026-10-02.md"}
+
+
+def test_deploy_stages_the_legacy_flat_layout_until_content_is_migrated(tmp_path):
+    staged = _stage_content(tmp_path, {"site/src/content/issues/2026-10-01.md": "a"})
+    assert staged == {"2026-10-01.md"}
+
+
+def test_deploy_ignores_the_legacy_layout_once_editions_exist(tmp_path):
+    staged = _stage_content(tmp_path, {
+        "editions/agents/issues/2026-10-02.md": "a",
+        "site/src/content/issues/2026-10-01.md": "stale",
+    })
+    assert staged == {"agents/2026-10-02.md"}
+
+
+def test_deploy_mentions_editions_so_migrate_layout_will_run():
+    # scripts/migrate_layout.py (#301) refuses to migrate unless deploy.yml
+    # contains "editions/".
+    assert "editions/" in (WORKFLOW_DIR / "deploy.yml").read_text()

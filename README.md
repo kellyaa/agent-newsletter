@@ -240,7 +240,7 @@ The repo uses two long-lived branches, split by *authorship*:
 
 The two branches never merge. This keeps `main`'s history readable (no daily automated commits obscuring code changes) and cleanly separates "what humans decided to change" from "what the pipeline produced." The pattern is the same one GitHub Pages uses for its `gh-pages` branch.
 
-**Deploy combines the two.** `.github/workflows/deploy.yml` triggers on push to either branch. It checks out `main` as the primary tree (site scaffold, config, `package.json`) and `content` into a subpath (`_content/`), copies `_content/site/src/content/issues/` into place, then runs Astro's build. The Astro build itself is the deploy gate — a malformed issue file fails the build and the last-good deploy stays live.
+**Deploy combines the two.** `.github/workflows/deploy.yml` triggers on push to either branch. It checks out `main` as the primary tree (site scaffold, config, `package.json`) and `content` into a subpath (`_content/`), copies each `_content/editions/<slug>/issues/` to `site/src/content/issues/<slug>/` (or, before the multi-edition migration, the legacy `_content/site/src/content/issues/` as-is), then runs Astro's build. The Astro build itself is the deploy gate — a malformed issue file fails the build and the last-good deploy stays live.
 
 **Local development.** When iterating on code from `main`, the Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. If you don't have the worktree set up locally, create it once: `git worktree add .worktrees/content content`.
 
