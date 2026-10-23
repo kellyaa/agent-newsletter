@@ -25,8 +25,10 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import prompts  # noqa: E402
 from db import REPO_ROOT, connect, init_db  # noqa: E402
 from write import (  # noqa: E402
+    EDITION,
     ISSUES_DIR,
     PROMPT_PATH,
     RAW_TEXT_MAX,
@@ -168,7 +170,7 @@ def main() -> int:
     prev = find_previous_newsletter(date)
     payload = build_writer_input(date, featured, appendix_by_section, metadata, prev)
 
-    rubric = PROMPT_PATH.read_text()
+    rubric = prompts.render("write", EDITION, template_path=PROMPT_PATH)
     prompt = (
         "You are writing today's AI Agents newsletter prose. The input JSON "
         "is below; the rubric and output schema follow.\n\n"

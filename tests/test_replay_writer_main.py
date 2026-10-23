@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from conftest import base_template
 
 
 @pytest.fixture()
@@ -86,7 +87,7 @@ class TestReplayWriterMainNormal:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         prompt_file = tmp_path / "write.md"
-        prompt_file.write_text("# Rubric")
+        prompt_file.write_text(base_template("write"))
         conn = db_mod.connect(db_path)
         _insert_item(conn, "feat1")
         conn.close()
@@ -109,7 +110,7 @@ class TestReplayWriterMainNormal:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         prompt_file = tmp_path / "write.md"
-        prompt_file.write_text("# Rubric")
+        prompt_file.write_text(base_template("write"))
         conn = db_mod.connect(db_path)
         _insert_item(conn, "feat1")
         conn.close()

@@ -18,6 +18,8 @@ import re
 import sys
 from datetime import datetime
 
+import edition
+import prompts
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import call_llm
 
@@ -27,8 +29,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("write")
 
+EDITION = edition.current()
+# Base template; main() renders it with the edition's fragments.
 PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
-ISSUES_DIR = CONTENT_ROOT / "site" / "src" / "content" / "issues"
+ISSUES_DIR = edition.runtime_paths(CONTENT_ROOT).issues_dir
 
 WRITER_MODEL = os.environ.get("WRITER_MODEL", "gpt-4o-mini")
 WRITER_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
@@ -40,17 +44,8 @@ WRITER_MAX_TOKENS = int(os.environ.get("WRITER_MAX_TOKENS", "16000"))
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
 
-READER_PROFILE = (
-    "Senior engineer / staff+ / architect who already knows what an LLM is, "
-    "writes production code, and cares about: building agents (frameworks, "
-    "tool use, memory, planning, evals, cost/latency); agents for software "
-    "work (codegen, review, devops, incident response, SRE); running agents "
-    "in production (observability, safety, failure modes, guardrails, "
-    "deployment); state-of-the-art papers with concrete techniques; and "
-    "agents for non-software tech work (managing servers, k8s, fleets). "
-    "Down-weighted: consumer AI hype, funding/VC takes, prompt-engineering "
-    "tips, generic ML news, model benchmarks without methodological interest."
-)
+# Reader profile comes from editions/<slug>/edition.yaml.
+READER_PROFILE = EDITION.reader_profile
 
 # JSON Schema enforced by Claude Code. The LLM must return exactly this shape.
 WRITER_SCHEMA = {
@@ -406,7 +401,7 @@ def main() -> int:
     prev = find_previous_newsletter(today)
     payload = build_writer_input(today, featured, appendix_by_section, metadata, prev)
 
-    rubric = PROMPT_PATH.read_text()
+    rubric = prompts.render_and_log("write", EDITION, template_path=PROMPT_PATH)
     prompt = (
         "You are writing today's AI Agents newsletter prose. The input JSON "
         "is below; the rubric and output schema follow.\n\n"

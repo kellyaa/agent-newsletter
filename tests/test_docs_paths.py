@@ -14,7 +14,7 @@ DOCS = [REPO_ROOT / "README.md", REPO_ROOT / "CONTRIBUTING.md"]
 
 # Directories whose every file must be mentioned (by basename) in the README.
 LISTED_DIRS = ["scripts", "prompts", "launchd"]
-LISTED_TOP_LEVEL = ["run.sh", "watchdog.sh", "sources.yaml"]
+LISTED_TOP_LEVEL = ["run.sh", "watchdog.sh", "editions/agents/sources.yaml"]
 
 _PATH = re.compile(
     r"(?<![\w./-])((?:scripts|prompts|launchd|tests|docs|site)/[A-Za-z0-9_./\[\]-]+"

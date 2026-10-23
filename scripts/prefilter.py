@@ -14,7 +14,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from candidates import load_candidates_from_db
-from db import REPO_ROOT, connect, init_db, record_stage_stats
+import edition
+import prompts
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, record_stage_stats
 from models import CandidateItem, PrefilterItem
 
 logging.basicConfig(
@@ -23,37 +25,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("prefilter")
 
-CANDIDATES_OUT = REPO_ROOT / "candidates.json"
+_RUNTIME = edition.runtime_paths(CONTENT_ROOT)
+CANDIDATES_OUT = _RUNTIME.candidates
 
-# Items must mention at least one keyword in title or raw_text.
-KEYWORDS = [
-    r"\bagent(s|ic|s')?\b",
-    r"\btool[- ]use\b",
-    r"\btool[- ]calling\b",
-    r"\bllm\b",
-    r"\blanguage model\b",
-    r"\bmcp\b",
-    r"\bmodel context protocol\b",
-    r"\brag\b",
-    r"\bretrieval[- ]augmented\b",
-    r"\beval(s|uation)?\b",
-    r"\bmulti[- ]agent\b",
-    r"\bcode generation\b",
-    r"\bcopilot\b",
-    r"\bchain[- ]of[- ]thought\b",
-    r"\bplanning\b",
-    r"\bworkflow\b",
-    r"\bautonomous\b",
-    r"\bclaude code\b",
-    r"\bgpt[- ]?\d?\b",
-    r"\bclaude\b",
-    r"\bgemini\b",
-    r"\bdspy\b",
-    r"\blanggraph\b",
-    r"\blangchain\b",
-    r"\bautogen\b",
-    r"\bcrewai\b",
-]
+# Items must mention at least one keyword in title or raw_text. The list is
+# per-edition (editions/<slug>/edition.yaml); importing this module requires
+# EDITION to be set so a missing selection fails before any work is done.
+EDITION = edition.current()
+KEYWORDS = EDITION.keyword_regexes()
 KEYWORD_RE = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
 # Recency windows by source family. RSS is wide because practitioner blogs
@@ -139,7 +118,7 @@ PAPER_AGE_OUT_SQL = """
 # become stale (they were assigned under a different rubric), so we wipe them
 # and let rank.py re-score from scratch on the next run.
 RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
-RUBRIC_HASH_PATH = REPO_ROOT / ".rubric_hash"
+RUBRIC_HASH_PATH = _RUNTIME.rubric_hash
 
 
 def _source_family(source: str) -> str:
@@ -210,9 +189,12 @@ def _prerank_score(item: PrefilterItem, now: datetime) -> float:
 
 
 def _rubric_hash() -> str:
+    """sha256 of the *rendered* rank prompt, so a change to the base template or
+    to any of the edition's fragments invalidates cached paper scores."""
     if not RUBRIC_PATH.exists():
         return ""
-    return hashlib.sha256(RUBRIC_PATH.read_bytes()).hexdigest()
+    rendered = prompts.render("rank", EDITION, template_path=RUBRIC_PATH)
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
 
 
 def _maybe_invalidate_papers_scores(conn) -> int:

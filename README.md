@@ -8,10 +8,14 @@ The site is at: **https://kellyaa.github.io/agent-newsletter**
 
 ```
 SPEC.md                 — design doc; canonical reference
-sources.yaml            — feed list with per-source overrides
+editions/
+  agents/               — the "AI Agents Daily" edition: all editorial config, no code
+    edition.yaml        — name, reader profile, keyword gate, tag vocabulary, per-section thresholds/caps
+    sources.yaml        — feed list with per-source overrides
+    prompts/            — fragments filled into the base prompts (`<stage>.<slot>.md`)
 prompts/
-  rank.md               — ranker rubric (per-section thresholds)
-  write.md              — writer voice/style + JSON output schema
+  rank.md               — ranker base template (rubric mechanics + `{{slots}}` for edition wording)
+  write.md              — writer base template (output schema, theme rules + `{{slots}}`)
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
@@ -21,6 +25,8 @@ scripts/
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
   run_attempt.py        — records each run.sh invocation in run_attempts (called by run.sh)
+  edition.py            — load + strictly validate an edition; `current()` reads `$EDITION` (no default)
+  prompts.py            — render prompts/{rank,write}.md with an edition's fragments
   db.py                 — schema, URL canonicalization
   models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
@@ -63,7 +69,7 @@ Every stage is idempotent. Re-running `run.sh` after a transient failure picks u
 - [**Node.js ≥ 18.17.1**](https://nodejs.org/) + [**pnpm**](https://pnpm.io/) — for the Astro site build
 - An **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, Together, Groq, etc.)
 - **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `another run holds .watchdog.lock; exiting without doing anything` and **exits 0**, so a scheduled job looks healthy while never running the pipeline (see Troubleshooting §3)
-- The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `sources.yaml` (disabled by default since 2026-05-14)
+- The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `editions/agents/sources.yaml` (disabled by default since 2026-05-14)
 
 The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. The only macOS-only feature is `watchdog.sh`, which uses `osascript` for desktop notifications (gracefully no-ops on non-macOS).
 
@@ -186,7 +192,7 @@ You can fork this repo and run your own personal newsletter with minimal changes
 
 5. **Install the scheduler** via `./launchd/install.sh` (edit the plists first — see the ⚠️ warning in the Setup section).
 
-6. **Optionally customize `sources.yaml`** to add, remove, or override feed sources for your interests.
+6. **Optionally customize `editions/agents/sources.yaml`** to add, remove, or override feed sources for your interests.
 
 No additional secrets or environment variables are required in the GitHub Actions workflow — the deploy is a pure Astro build from the committed Markdown.
 

@@ -11,11 +11,11 @@ a temp DB (only the LLM call, ``rank.invoke_ranker``, is mocked).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timezone
 
 import pytest
+from conftest import base_template
 
 FROZEN = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
 FRESH = "2026-07-09T06:00:00Z"
@@ -57,9 +57,8 @@ def wired(tmp_path, monkeypatch):
     db_mod.init_db(db_path)
 
     rubric = tmp_path / "rank.md"
-    rubric.write_text("# Rubric\nScore on relevance.")
+    rubric.write_text(base_template("rank"))
     rubric_hash = tmp_path / ".rubric_hash"
-    rubric_hash.write_text(hashlib.sha256(rubric.read_bytes()).hexdigest())
 
     def connect(*_a, **_kw):
         return db_mod.connect(db_path)
@@ -67,6 +66,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", tmp_path / "candidates.json")
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
     monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash)
+    rubric_hash.write_text(pf_mod._rubric_hash())
     monkeypatch.setattr(pf_mod, "connect", connect)
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)

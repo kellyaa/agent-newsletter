@@ -184,6 +184,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     scoring/status-assignment logic. This ensures threshold changes, burst-cap
     policies, and valid-tag sets stay in sync automatically.
     """
+    import prompts
     import rank as rank_mod
 
     scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
@@ -198,7 +199,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
         })
 
     # Any section with unscored items needs the LLM.
-    rubric = rank_mod.PROMPT_PATH.read_text()
+    rubric = prompts.render("rank", rank_mod.EDITION, template_path=rank_mod.PROMPT_PATH)
     for section in ("papers", "news", "blogs"):
         items = candidates.get(section, [])
         if not items:
@@ -229,6 +230,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
 
 def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     """Pin write.py's logic to target_date and write the issue file."""
+    import prompts
     import write as write_mod
 
     issues_dir = write_mod.ISSUES_DIR
@@ -260,7 +262,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     payload = write_mod.build_writer_input(
         target_date, featured, appendix_by_section, metadata, prev,
     )
-    rubric = write_mod.PROMPT_PATH.read_text()
+    rubric = prompts.render("write", write_mod.EDITION, template_path=write_mod.PROMPT_PATH)
     prompt = (
         "You are writing today's AI Agents newsletter prose. The input JSON "
         "is below; the rubric and output schema follow.\n\n"

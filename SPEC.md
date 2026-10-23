@@ -83,9 +83,9 @@ Pure Python, no LLM calls. Pulls from:
 
 **Removed / not yet implemented sources:**
 - **Semantic Scholar** REST API (citation-count backfill for arXiv hits) — designed but never implemented; no adapter in `fetch.py`.
-- **HF Daily** HTML scrape (removed 2026-10-15 / issue #96) — was configured in `sources.yaml` but no adapter existed.
+- **HF Daily** HTML scrape (removed 2026-10-15 / issue #96) — was configured in `editions/agents/sources.yaml` but no adapter existed.
 
-Feed list lives in `sources.yaml` — easy to edit without touching code.
+Feed list lives in `editions/agents/sources.yaml` — easy to edit without touching code.
 
 **Output:** rows inserted into `state.db` table `items`:
 ```
@@ -101,7 +101,7 @@ Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 Rules (all configurable in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
-- **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `sources.yaml`); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
+- **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `editions/agents/sources.yaml`); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
 - **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` or `status = 'appendix'` (with `appearances < limit`) are eligible to re-enter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
@@ -194,7 +194,7 @@ Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY
 | `hn:*`, `reddit:*` | `news` |
 | `rss:*` | `blogs` |
 
-**Per-source override.** Any entry in `sources.yaml` may add a `section:` field that overrides the family default for items emitted by that source. Allowed values: `papers` | `news` | `blogs`. Invalid values are logged and ignored, falling back to the family default. The override is stamped onto each item by `fetch.py` and persisted as `items.section_override` in `state.db`; `prefilter.py` prefers the override over the family default when present.
+**Per-source override.** Any entry in `editions/agents/sources.yaml` may add a `section:` field that overrides the family default for items emitted by that source. Allowed values: `papers` | `news` | `blogs`. Invalid values are logged and ignored, falling back to the family default. The override is stamped onto each item by `fetch.py` and persisted as `items.section_override` in `state.db`; `prefilter.py` prefers the override over the family default when present.
 
 Use the override when a source's content is consistently shaped differently from its family (e.g., a vendor RSS feed that publishes only release notes → `section: news`, or a Substack of practitioner deep-dives whose family-default would land it in `news` → `section: blogs`).
 
@@ -247,7 +247,7 @@ arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the
 - Papers with `score >= featured_min` that *lose the featured cap* on a heavy day stay at `status = 'candidate'` to re-compete the next day. Today (pre-issue-16) those papers get sealed to `appendix` and never reappear, even if they scored 9 or 10 — on a 30-paper day, the bottom 25 of the would-be-featured set are wasted. The pool flips this: a strong paper appears in the issue at most once, on whichever day it actually wins a featured slot, and is held back from the appendix until then.
 - Mid-band papers (`appendix_min <= score < featured_min`) still go to `appendix` (terminal). They're not strong enough to ever win featured, so leaving them in the pool would just bloat it without ever surfacing them. Papers with `score < appendix_min` go to `dropped` (same as today).
 - A per-row `times_competed` counter (incremented on each run where a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them.
-- The cached score is only valid against the rubric it was scored under. When `prompts/rank.md` changes, prefilter detects the new file hash and bulk-resets `score = NULL` for all papers candidates so they get re-scored on the next run. The previous hash is persisted in `.rubric_hash`.
+- The cached score is only valid against the rubric it was scored under. When the rendered rank prompt changes (the base `prompts/rank.md` or any `editions/<slug>/prompts/rank.*.md` fragment), prefilter detects the new hash and bulk-resets `score = NULL` for all papers candidates so they get re-scored on the next run. The previous hash is persisted in `.rubric_hash`.
 - Cost impact: papers ranking only runs on days with new arrivals, and only against those new arrivals (typically 5–30 abstracts on weekdays, 0 on weekends — the LLM call is skipped entirely on weekends). News and blogs are unchanged.
 
 **Tests:** a small suite that replays a fixture day twice and asserts idempotency.
@@ -311,10 +311,14 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 ├── README.md
 ├── run.sh                     ← entry point (pipeline); sets up content worktree
 ├── watchdog.sh                ← stale-commit checker (separate launchd job)
-├── sources.yaml               ← feed list, tunable
+├── editions/
+│   └── agents/                ← the "AI Agents Daily" edition (config only, no code)
+│       ├── edition.yaml       ← name, reader profile, keyword gate, tags, per-section thresholds/caps
+│       ├── sources.yaml       ← feed list, tunable
+│       └── prompts/           ← fragments filled into the base prompts (<stage>.<slot>.md)
 ├── prompts/
-│   ├── rank.md                ← ranker rubric + JSON output schema
-│   └── write.md               ← writer voice/style + JSON output schema
+│   ├── rank.md                ← ranker base template ({{slots}} for edition wording) + JSON output schema
+│   └── write.md               ← writer base template ({{slots}} for edition wording) + JSON output schema
 ├── scripts/
 │   ├── fetch.py               ← collectors (no LLM)
 │   ├── prefilter.py           ← recency + keyword + dedup gates
@@ -336,7 +340,7 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 ├── .github/workflows/
 │   ├── deploy.yml             ← Astro build + Pages deploy (triggers on main or content push)
 │   └── tests.yml              ← pytest CI
-├── .rubric_hash               ← sha256 of prompts/rank.md; prefilter.py uses this to detect rubric changes and bulk-reset cached paper scores (gitignored)
+├── .rubric_hash               ← sha256 of the rendered rank prompt (prompts/rank.md + the edition's fragments); prefilter.py uses this to detect rubric changes and bulk-reset cached paper scores (gitignored)
 ├── candidates.json            ← debug artifact: candidate pool snapshot written by prefilter.py each run (gitignored)
 ├── ranked.json                ← debug artifact: raw LLM ranker output written by rank.py each run (gitignored)
 ├── launchd/                   ← macOS plists + install.sh
@@ -402,7 +406,7 @@ Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. 
 - **Cost cap:** not enforced in v1, but scaffolded — per-run token usage recorded in `runs` (`cost_usd` itself is not populated), `BUDGET_USD` env var defined for future enforcement.
 - **Repo:** public on GitHub. Enables free GitHub Pages hosting for the published newsletter.
 
-## Initial Source List (`sources.yaml` seed)
+## Initial Source List (`editions/agents/sources.yaml` seed)
 
 The operator-supplied seed list, to be fleshed out with concrete feed URLs during implementation. Sources marked **(needs investigation)** don't have an obvious RSS endpoint — `fetch.py` will need either a custom adapter or we drop them.
 

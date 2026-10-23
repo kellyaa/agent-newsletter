@@ -11,11 +11,12 @@ from pathlib import Path
 
 import pytest
 
+import prompts
 from rank import SECTION_RULES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPEC = (REPO_ROOT / "SPEC.md").read_text()
-RANK_PROMPT = (REPO_ROOT / "prompts" / "rank.md").read_text()
+RANK_PROMPT = prompts.render("rank")  # as the ranker sees it: template + edition fragments
 
 SECTIONS = ("papers", "news", "blogs")
 

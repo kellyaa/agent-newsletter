@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
+from conftest import base_template
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +35,7 @@ def db_path(tmp_path):
 @pytest.fixture()
 def prompt_path(tmp_path):
     p = tmp_path / "rank.md"
-    p.write_text("# Rank rubric\nScore papers by relevance.")
+    p.write_text(base_template("rank"))
     return p
 
 

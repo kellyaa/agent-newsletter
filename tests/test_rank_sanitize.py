@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from conftest import base_template
 
 import rank
 
@@ -98,7 +99,7 @@ def test_main_ghost_id_does_not_displace_real_items(tmp_path, monkeypatch):
     conn.commit()
     conn.close()
     prompt = tmp_path / "rank.md"
-    prompt.write_text("rubric")
+    prompt.write_text(base_template("rank"))
     monkeypatch.setattr(rank, "PROMPT_PATH", prompt)
     monkeypatch.setattr(rank, "RANKED_PATH", tmp_path / "ranked.json")
     monkeypatch.setattr(rank, "connect", lambda: db_mod.connect(db_path))

@@ -20,6 +20,7 @@ import feedparser
 import httpx
 import yaml
 
+import edition
 from db import REPO_ROOT, canonicalize_url, connect, init_db, is_allowed_url, url_id
 
 logging.basicConfig(
@@ -28,7 +29,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("fetch")
 
-SOURCES_PATH = REPO_ROOT / "sources.yaml"
+SOURCES_PATH = edition.current().paths().sources
 USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
 HTTP_TIMEOUT = 20.0
 
