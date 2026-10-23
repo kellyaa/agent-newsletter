@@ -29,6 +29,8 @@ class Status(StrEnum):
     FEATURED = "featured"
     APPENDIX = "appendix"
     DROPPED = "dropped"
+    # Papers that aged out of the pool without ever reaching the ranker (issue #289).
+    EXPIRED_UNJUDGED = "expired_unjudged"
     PUBLISHED = "published"
 
 
