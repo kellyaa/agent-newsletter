@@ -96,10 +96,10 @@ def test_pool_over_cap_does_not_mark_unscored_stale_papers_dropped(wired):
     import rank as rank_mod
     from unittest.mock import patch
 
-    assert pf_mod.PAPER_PRERANK_CAP == 50
+    assert pf_mod.PAPER_PRERANK_CAP == 100
 
     conn = db_mod.connect(wired)
-    for i in range(50):
+    for i in range(pf_mod.PAPER_PRERANK_CAP):
         _insert_paper(conn, f"fresh{i:02d}", FRESH,
                       "LLM agent tool use planning", "agent workflow evaluation")
     # Older and keyword-poor => the three lowest _prerank_score values, so the
@@ -117,7 +117,7 @@ def test_pool_over_cap_does_not_mark_unscored_stale_papers_dropped(wired):
         assert rank_mod.main() == 0
 
     # The cap really did truncate the pool, and the stale papers were what it cut.
-    assert len(sent) == 50
+    assert len(sent) == pf_mod.PAPER_PRERANK_CAP
     assert not set(stale_ids) & set(sent)
 
     conn = db_mod.connect(wired)

@@ -106,11 +106,13 @@ APPENDIX_MAX_APPEARANCES = 2
 # for one of the 5 featured slots. PAPER_POOL_MAX_COMPETES caps how many
 # competitions a single paper can lose before being aged out — independent of
 # wall-clock age, so a paper that lands during a quiet week still gets a fair
-# number of attempts. PAPER_PRERANK_CAP bounds the LLM input size on the
-# rare burst day where >50 unscored papers land at once.
+# number of attempts. PAPER_PRERANK_CAP bounds the LLM input size as a guard
+# against a degenerate burst. Post-prefilter inflow runs ~63-95 papers/day, so
+# 100 should almost never bind; at 50 it bound on nearly every weekday and
+# starved ~20-45 papers/day until they expired unjudged (see issue #295).
 PAPER_POOL_MAX_COMPETES = 7
 PAPER_POOL_MAX_AGE_DAYS = 7
-PAPER_PRERANK_CAP = 50
+PAPER_PRERANK_CAP = 100
 
 # Age-out for the papers candidate pool. Shared with backfill.py so the two
 # can't drift. Papers leave the pool when they hit the competition cap or when
