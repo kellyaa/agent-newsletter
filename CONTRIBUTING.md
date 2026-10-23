@@ -11,10 +11,11 @@ Thank you for contributing. This document covers development setup, the test sui
 3. [Running the test suite](#running-the-test-suite)
 4. [Repository layout and branch model](#repository-layout-and-branch-model)
 5. [Adding or removing a feed source](#adding-or-removing-a-feed-source)
-6. [PR workflow and naming](#pr-workflow-and-naming)
-7. [The `hold` label](#the-hold-label)
-8. [Code style](#code-style)
-9. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
+6. [Adding an edition](#adding-an-edition)
+7. [PR workflow and naming](#pr-workflow-and-naming)
+8. [The `hold` label](#the-hold-label)
+9. [Code style](#code-style)
+10. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
 
 ---
 
@@ -150,6 +151,37 @@ Feed sources are declared in `editions/agents/sources.yaml`. Each source has an 
 **To remove a source:**
 1. Delete the entry from `editions/agents/sources.yaml`.
 2. Items already in `state.db` from that source are not deleted; they will age out naturally.
+
+---
+
+## Adding an edition
+
+An edition is one newsletter subject: a folder of editorial config under `editions/<slug>/` (identity, reader profile, keyword gate, tag vocabulary, thresholds, sources and prompt fragments). The pipeline code is shared. See `editions/_template/` for a commented starting point and `editions/agents/` for a finished one.
+
+```bash
+# Draft it (needs LLM credentials; uses WRITER_MODEL)
+uv run scripts/new_edition.py my-slug --name "My Edition" \
+    --describe "One paragraph: subject, audience, what matters, what doesn't." \
+    --seed-source https://example.com/feed.xml
+
+# Or copy the bare template and fill the TODOs in by hand
+uv run scripts/new_edition.py my-slug --name "My Edition" --no-llm
+```
+
+The slug is lowercase letters, digits and hyphens, and it is **permanent once live** (it ends up in URLs). The new edition always starts as `status: draft` with an `order` after the existing editions.
+
+`new_edition.py` does not trust the LLM. Every RSS URL is fetched and parsed, every arXiv query must return a result, every subreddit's `.json` must respond, every regex must compile, and tags are lower-cased and de-duplicated. Sources that fail are commented out in `sources.yaml` with the reason rather than silently dropped. It then writes `editions/<slug>/REVIEW.md`, the checklist you work through before going live, and runs `check_edition.py`.
+
+`uv run scripts/check_edition.py <slug>` can be re-run after any edit. It does two things, neither of which calls the LLM:
+
+1. **Lint:** the edition config validates, both prompts render with no unfilled slot, `sources.yaml` is well-formed, and no template `TODO` is left (a warning for a draft, an error for a `live` edition).
+2. **Dry run:** every source is fetched into a throwaway database under `/tmp` and the cheap prefilter gates are applied. It prints per-source counts, *fetched → recency → keyword gate → section*, which is what you tune the keyword gate against.
+
+**Going live**
+
+1. Merge the edition folder with `status: draft`. Drafts run daily and send failure notifications, and are hidden from the site unless `SHOW_DRAFTS=1`.
+2. Let it run for about a week. Tune keywords, sources and prompt fragments, previewing with `SHOW_DRAFTS=1 pnpm dev` in `site/`.
+3. Delete `REVIEW.md` and open a one-line PR changing `status: draft` to `status: live`.
 
 ---
 

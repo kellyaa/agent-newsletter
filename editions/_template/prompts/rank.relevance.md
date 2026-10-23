@@ -1,0 +1,1 @@
+- **Relevance to the "TODO" beat (0–4).** TODO: what directly helps this reader, so it scores high; what scores zero.
