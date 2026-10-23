@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -181,7 +182,7 @@ def invoke_writer(prompt: str) -> dict:
         label="writer",
         max_tokens=WRITER_MAX_TOKENS,
     )
-    if "items" not in out:
+    if not isinstance(out, dict) or "items" not in out:
         debug_path = REPO_ROOT / "logs/writer-output.json"
         debug_path.parent.mkdir(exist_ok=True)
         debug_path.write_text(json.dumps(out, indent=2))
@@ -190,6 +191,9 @@ def invoke_writer(prompt: str) -> dict:
 
 
 # ---------- Frontmatter assembly ----------
+
+_YAML_CTRL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]")
+
 
 # Minimal YAML escaping for our shape. We only ever emit strings, ints, nulls,
 # and arrays of those. Strings always use double-quote with backslash escaping.
@@ -201,6 +205,10 @@ def _yaml_str(s: str | None) -> str:
     # one paragraph with no embedded newlines.
     s = s.replace("\\", "\\\\").replace('"', '\\"')
     s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    # Remaining control chars (and NEL / LS / PS line breaks) are not valid
+    # inside a YAML scalar; emit them as \\uXXXX escapes, which are valid in
+    # double-quoted scalars.
+    s = _YAML_CTRL_RE.sub(lambda m: f"\\u{ord(m.group()):04x}", s)
     return f'"{s}"'
 
 
@@ -254,6 +262,37 @@ def emit_yaml_frontmatter(data: dict) -> str:
 
 # ---------- Issue assembly ----------
 
+def _opt_str(v) -> str | None:
+    return v if isinstance(v, str) else None
+
+
+def sanitize_writer_output(out) -> dict:
+    """Return a well-formed writer output, dropping anything malformed.
+
+    The writer schema is only enforced when the provider honours
+    response_format=json_schema (LLM_RESPONSE_FORMAT=json_object|none does
+    not), so `items` may be null/not a list, entries may be null or lack a
+    string `id`, and prose fields may be non-strings. Non-string prose fields
+    become None (summary falls back to the title in assemble_issue); entries
+    that are not dicts or have a non-string id are skipped.
+    """
+    if not isinstance(out, dict):
+        out = {}
+    raw_items = out.get("items")
+    items: list[dict] = []
+    if isinstance(raw_items, list):
+        for e in raw_items:
+            if not isinstance(e, dict) or not isinstance(e.get("id"), str):
+                continue
+            items.append({
+                "id": e["id"],
+                "summary": _opt_str(e.get("summary")),
+                "takeaway": _opt_str(e.get("takeaway")),
+                "open_question": _opt_str(e.get("open_question")),
+            })
+    return {"theme": _opt_str(out.get("theme")), "items": items}
+
+
 def assemble_issue(
     today: str,
     featured: list[dict],
@@ -267,11 +306,11 @@ def assemble_issue(
     template renders the structured fields around it. This split keeps URLs
     out of the LLM's hands entirely.
     """
+    writer_output = sanitize_writer_output(writer_output)
     # Map writer-output items by id for splicing.
     writer_items: dict[str, dict] = {}
     for entry in writer_output.get("items", []):
-        if "id" in entry:
-            writer_items[entry["id"]] = entry
+        writer_items[entry["id"]] = entry
 
     featured_for_fm: list[dict] = []
     missing_summaries: list[str] = []

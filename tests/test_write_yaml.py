@@ -291,3 +291,74 @@ class TestAssembleIssue:
                                self._make_metadata(), self._make_writer_output(f))
         fm = self._parse_frontmatter(issue)
         assert isinstance(fm["featured"][0]["score"], int)
+
+
+# ---------------------------------------------------------------------------
+# Malformed writer output (issue #293)
+# ---------------------------------------------------------------------------
+
+from write import sanitize_writer_output  # noqa: E402
+
+_FEATURED = [{
+    "id": "a1", "section": "papers", "source": "arxiv:cs",
+    "url": "https://arxiv.org/abs/a1", "title": "Title A",
+    "author": "Au", "score": 8, "tags": ["agents"],
+}]
+_APPENDIX = {"papers": [], "news": [], "blogs": []}
+_META = {
+    "items_considered": 1, "items_featured_total": 1,
+    "items_featured_papers": 1, "items_featured_news": 0,
+    "items_featured_blogs": 0, "items_appendix": 0,
+}
+
+
+def _assemble(writer_output):
+    return assemble_issue("2026-06-01", _FEATURED, _APPENDIX, _META, writer_output)
+
+
+def _frontmatter(md: str) -> dict:
+    return yaml.safe_load(md.split("---\n")[1])
+
+
+class TestMalformedWriterOutput:
+    @pytest.mark.parametrize("bad", [
+        {"theme": 5, "items": [{"id": "a1", "summary": "ok"}]},
+        {"theme": "t", "items": [{"id": "a1", "summary": 5}]},
+        {"theme": "t", "items": None},
+        {"theme": "t", "items": "nope"},
+        {"theme": "t", "items": [None, {"id": "a1", "summary": "ok"}]},
+        {"theme": "t", "items": [{"id": ["x"], "summary": "ok"}]},
+        {"theme": "t", "items": [{"id": "a1", "summary": "ok",
+                                  "takeaway": 3, "open_question": 4}]},
+        ["not", "a", "dict"],
+        None,
+    ])
+    def test_does_not_crash_and_yields_valid_yaml(self, bad):
+        fm = _frontmatter(_assemble(bad))
+        feat = fm["featured"][0]
+        assert isinstance(feat["summary"], str) and feat["summary"]
+        assert feat["takeaway"] is None or isinstance(feat["takeaway"], str)
+        assert feat["open_question"] is None or isinstance(feat["open_question"], str)
+        assert fm["theme"] is None or isinstance(fm["theme"], str)
+
+    def test_non_string_summary_falls_back_to_title(self):
+        fm = _frontmatter(_assemble({"theme": "t", "items": [{"id": "a1", "summary": 5}]}))
+        assert fm["featured"][0]["summary"] == "Title A"
+        assert fm["featured"][0]["takeaway"] is None
+
+    def test_valid_entries_kept(self):
+        out = sanitize_writer_output({
+            "theme": "T",
+            "items": [None, {"id": "a1", "summary": "S", "takeaway": "K"}],
+        })
+        assert out == {"theme": "T", "items": [
+            {"id": "a1", "summary": "S", "takeaway": "K", "open_question": None},
+        ]}
+
+    @pytest.mark.parametrize("ch", ["\x00", "\x07", "\x1b", "\x7f", "\x85", " ", " "])
+    def test_control_chars_round_trip(self, ch):
+        text = f"before{ch}after"
+        md = _assemble({"theme": text, "items": [{"id": "a1", "summary": text}]})
+        fm = _frontmatter(md)
+        assert fm["theme"] == text
+        assert fm["featured"][0]["summary"] == text
