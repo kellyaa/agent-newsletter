@@ -1,8 +1,10 @@
-"""Regression test for issue #285.
+"""Regression tests for issues #285 and #289.
 
 Papers that the ``PAPER_PRERANK_CAP`` keeps out of every ranker call must not
 age out of the pool as ``dropped`` with ``score IS NULL``: a never-judged expiry
-is indistinguishable from an editorial rejection.
+is indistinguishable from an editorial rejection (#285). They do still leave the
+pool once stale, with the distinct status ``expired_unjudged``, so the pool
+can't grow without bound (#289).
 
 Runs the real ``prefilter.main()`` followed by the real ``rank.main()`` against
 a temp DB (only the LLM call, ``rank.invoke_ranker``, is mocked).
@@ -88,7 +90,7 @@ def _fake_ranker(sent):
     return invoke
 
 
-def test_pool_over_cap_does_not_drop_unscored_stale_papers(wired):
+def test_pool_over_cap_does_not_mark_unscored_stale_papers_dropped(wired):
     import db as db_mod
     import prefilter as pf_mod
     import rank as rank_mod
@@ -130,7 +132,33 @@ def test_pool_over_cap_does_not_drop_unscored_stale_papers(wired):
     conn.close()
 
     assert [r["id"] for r in unjudged_dropped] == []
-    assert all(r["status"] == "candidate" and r["score"] is None for r in stale_rows)
+    assert all(r["status"] == "expired_unjudged" and r["score"] is None for r in stale_rows)
+
+    # The fresh papers were judged, not expired.
+    conn = db_mod.connect(wired)
+    fresh_expired = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE id LIKE 'fresh%' AND status='expired_unjudged'"
+    ).fetchone()[0]
+    conn.close()
+    assert fresh_expired == 0
+
+
+def test_fresh_unscored_paper_stays_in_pool(wired):
+    """Never-competed papers inside the recency window are untouched."""
+    import db as db_mod
+    import prefilter as pf_mod
+
+    conn = db_mod.connect(wired)
+    _insert_paper(conn, "fresh-unscored", FRESH, "Agent paper", "agent")
+    conn.commit()
+    conn.close()
+
+    pf_mod.main()
+
+    conn = db_mod.connect(wired)
+    row = conn.execute("SELECT status FROM items WHERE id='fresh-unscored'").fetchone()
+    conn.close()
+    assert row["status"] == "candidate"
 
 
 def test_stale_paper_that_has_competed_still_ages_out(wired):
