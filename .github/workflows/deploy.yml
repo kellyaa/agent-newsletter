@@ -17,36 +17,61 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Cap runaway jobs (pnpm install stalls, Astro build hangs) to protect
+    # the free-tier minutes budget. Typical build is ~35–55s; 10 min is
+    # generous for a cold pnpm cache. Refs bead 8274fcf3-c6f.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: site
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: content
           path: _content
 
+      # Multi-edition layout (#301): editions/<slug>/issues/ on content is
+      # staged as site/src/content/issues/<slug>/. Until migrate_layout.py has
+      # run, content still has the flat legacy layout; stage that flat (it is
+      # the agents edition), which both the old `*.md` and the new `*/*.md`
+      # collection globs accept. The fallback is removed in multi-edition 3/5.
       - name: Stage content from content branch
         working-directory: ${{ github.workspace }}
         run: |
           mkdir -p site/src/content/issues
-          cp -r _content/site/src/content/issues/. site/src/content/issues/
+          staged=0
+          for dir in _content/editions/*/issues; do
+            [ -d "$dir" ] || continue
+            slug=$(basename "$(dirname "$dir")")
+            [ "$slug" = "_template" ] && continue
+            mkdir -p "site/src/content/issues/$slug"
+            cp -r "$dir/." "site/src/content/issues/$slug/"
+            staged=1
+          done
+          if [ "$staged" = 0 ] && [ -d _content/site/src/content/issues ]; then
+            cp -r _content/site/src/content/issues/. site/src/content/issues/
+          fi
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: site/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
+
+      # Must run before the build: steps.pages outputs only exist for later steps.
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v6
 
       - name: Build with Astro
         env:
@@ -55,20 +80,20 @@ jobs:
           SITE_BASE: /${{ github.event.repository.name }}/
         run: pnpm build
 
-      - name: Configure Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site/dist
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # actions/deploy-pages@v5 usually completes in ~30–60s; a 5-minute
+    # cap catches Pages-infra hangs without risking legitimate deploys.
+    # Refs bead 8274fcf3-c6f and flaky-deploy bead 21af9c2d-34a.
+    timeout-minutes: 5
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
