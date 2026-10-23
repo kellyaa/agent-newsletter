@@ -131,7 +131,7 @@ test("month archive page formats dates, counts, top-3 featured, and tag dedup/sl
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
 
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     // Four featured items, scores out of order, to exercise the top-3 sort

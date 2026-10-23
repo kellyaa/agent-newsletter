@@ -106,7 +106,6 @@ class RuntimePaths:
     """Where one edition's mutable pipeline files live."""
     state_db: Path
     issues_dir: Path
-    rubric_hash: Path
     candidates: Path
     ranked: Path
 
@@ -125,21 +124,25 @@ def selected_slug() -> str:
 def runtime_paths(content_root: Path, slug: str | None = None) -> RuntimePaths:
     """Resolve an edition's state DB, issue folder and debug artifacts.
 
-    This is the single place that decides where those live. Today every edition
-    still uses the legacy single-edition layout (``state.db`` and
-    ``site/src/content/issues/`` at the content root; debug artifacts at the repo
-    root), so *slug* is validated but does not yet affect the result. The
-    content-layout migration (#301) changes only this function.
+    This is the single place that decides where those live (multi-edition
+    layout, #301)::
+
+        <content_root>/editions/<slug>/state.db
+        <content_root>/editions/<slug>/issues/YYYY-MM-DD.md
+        <LOGS_ROOT>/<slug>/candidates.json, ranked.json     (debug artifacts)
+
+    The cached rubric hash lives in the edition's ``meta`` table, not in a file.
     """
     slug = slug or selected_slug()
     if not _SLUG_RE.fullmatch(slug):
         raise EditionError(f"invalid edition slug {slug!r}")
+    root = content_root / "editions" / slug
+    logs = LOGS_ROOT / slug
     return RuntimePaths(
-        state_db=content_root / "state.db",
-        issues_dir=content_root / "site" / "src" / "content" / "issues",
-        rubric_hash=REPO_ROOT / ".rubric_hash",
-        candidates=REPO_ROOT / "candidates.json",
-        ranked=REPO_ROOT / "ranked.json",
+        state_db=root / "state.db",
+        issues_dir=root / "issues",
+        candidates=logs / "candidates.json",
+        ranked=logs / "ranked.json",
     )
 
 
@@ -275,3 +278,64 @@ def current() -> Edition:
     Raises :class:`EditionError` when it is unset or empty. There is no default.
     """
     return _load_cached(selected_slug())
+
+
+def discover(editions_dir: Path | None = None) -> list[tuple[str, Edition | None, str | None]]:
+    """Every edition folder as ``(slug, edition, error)``, in run order.
+
+    ``_template`` and other underscore/dot folders are skipped. A folder whose
+    config is invalid is still listed (``edition`` None, ``error`` set) so the
+    orchestrator can run it, fail it, notify, and carry on with the others,
+    instead of one bad edition hiding the rest. Run order is ``order``, then
+    ``agents`` first, then slug; invalid editions sort last.
+    """
+    base = editions_dir if editions_dir is not None else EDITIONS_DIR
+    found: list[tuple[str, Edition | None, str | None]] = []
+    for d in sorted(base.iterdir()) if base.is_dir() else []:
+        if not d.is_dir() or d.name.startswith(("_", ".")):
+            continue
+        try:
+            found.append((d.name, load(d.name, base), None))
+        except EditionError as e:
+            found.append((d.name, None, str(e)))
+
+    def key(row):
+        slug, ed, _ = row
+        return (ed is None, ed.order if ed else 0, slug != "agents", slug)
+
+    return sorted(found, key=key)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Small CLI for the shell scripts.
+
+    ``edition.py name``  display name of the edition selected by ``EDITION``;
+        run_edition.sh calls it so a bad config stops that edition before any
+        stage does real work.
+    ``edition.py list``  one tab-separated line per edition folder, in run
+        order: ``slug<TAB>status<TAB>name``. A folder whose config is invalid
+        has status ``invalid`` (and its slug as name), so the orchestrator still
+        runs it, fails it loudly, and carries on with the others.
+    """
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
+    if args == ["name"]:
+        try:
+            print(current().name)
+        except EditionError as e:
+            print(f"edition error: {e}", file=sys.stderr)
+            return 1
+        return 0
+    if args == ["list"]:
+        for slug, ed, _err in discover():
+            print(f"{slug}\t{ed.status if ed else 'invalid'}\t{ed.name if ed else slug}")
+        return 0
+    print("usage: edition.py name|list", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

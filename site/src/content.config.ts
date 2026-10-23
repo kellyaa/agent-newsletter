@@ -43,7 +43,12 @@ const appendixItem = z.object({
 });
 
 const issues = defineCollection({
-  loader: glob({ pattern: "*.md", base: "./src/content/issues" }),
+  // Issues live at issues/<edition>/YYYY-MM-DD.md (multi-edition layout, #301).
+  // The flat issues/YYYY-MM-DD.md form is still accepted so the site keeps
+  // building from a content branch that has not been migrated yet; the edition
+  // is the first path segment of the entry id, and URLs are built from
+  // `data.date`, never from the id, so both layouts produce the same URLs.
+  loader: glob({ pattern: ["*/*.md", "*.md"], base: "./src/content/issues" }),
   schema: z.object({
     /** YYYY-MM-DD; also the slug. */
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

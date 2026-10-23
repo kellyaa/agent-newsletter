@@ -58,15 +58,15 @@ def wired(tmp_path, monkeypatch):
 
     rubric = tmp_path / "rank.md"
     rubric.write_text(base_template("rank"))
-    rubric_hash = tmp_path / ".rubric_hash"
 
     def connect(*_a, **_kw):
         return db_mod.connect(db_path)
 
     monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", tmp_path / "candidates.json")
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-    monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash)
-    rubric_hash.write_text(pf_mod._rubric_hash())
+    seed = db_mod.connect(db_path)
+    db_mod.set_meta(seed, pf_mod.RUBRIC_HASH_KEY, pf_mod._rubric_hash())
+    seed.close()
     monkeypatch.setattr(pf_mod, "connect", connect)
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)

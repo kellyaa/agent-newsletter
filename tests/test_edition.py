@@ -50,11 +50,17 @@ def test_paths_point_into_the_edition_folder():
     assert p.prompt_fragments.is_dir()
 
 
-def test_runtime_paths_are_legacy_layout_for_now(tmp_path):
-    rp = edition.runtime_paths(tmp_path, "agents")
-    assert rp.state_db == tmp_path / "state.db"
-    assert rp.issues_dir == tmp_path / "site" / "src" / "content" / "issues"
-    assert rp.candidates.name == "candidates.json"
+def test_runtime_paths_are_per_edition(tmp_path):
+    rp = edition.runtime_paths(tmp_path, "sdlc")
+    assert rp.state_db == tmp_path / "editions" / "sdlc" / "state.db"
+    assert rp.issues_dir == tmp_path / "editions" / "sdlc" / "issues"
+    assert rp.candidates == edition.LOGS_ROOT / "sdlc" / "candidates.json"
+    assert rp.ranked == edition.LOGS_ROOT / "sdlc" / "ranked.json"
+
+
+def test_runtime_paths_follow_env_selection(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDITION", "other")
+    assert edition.runtime_paths(tmp_path).state_db == tmp_path / "editions" / "other" / "state.db"
 
 
 def test_runtime_paths_reject_bad_slug(tmp_path):

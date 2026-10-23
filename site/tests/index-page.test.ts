@@ -101,7 +101,7 @@ test("home page renders the empty state when the issues collection has no entrie
   try {
     // Content-layer glob loader needs the directory to exist, but the
     // empty-state branch requires zero issue files in it.
-    await mkdir(join(fixtureSite, "src", "content", "issues"), { recursive: true });
+    await mkdir(join(fixtureSite, "src", "content", "issues", "agents"), { recursive: true });
 
     runBuild(fixtureSite);
 
@@ -136,7 +136,7 @@ test("home page renders the latest month's MonthView, marked as the current mont
   const { fixtureRoot, fixtureSite } = await buildFixtureSite();
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     // Two issues in different months: groupByMonth's newest bucket (July)

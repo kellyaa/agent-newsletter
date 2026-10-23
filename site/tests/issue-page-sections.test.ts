@@ -166,7 +166,7 @@ test("issue page buckets featured items by section, omits empty sections, and re
   const { fixtureRoot, fixtureSite } = await buildFixtureSite();
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featuredEntries = [
@@ -286,7 +286,7 @@ test("issue page renders the theme paragraph and passes it as BaseLayout's descr
   const { fixtureRoot, fixtureSite } = await buildFixtureSite();
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     await writeFile(

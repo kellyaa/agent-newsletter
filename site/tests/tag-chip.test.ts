@@ -124,7 +124,7 @@ test("TagChip renders the label prop inside a chip span", async () => {
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-tagchip-");
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featured = [
@@ -175,7 +175,7 @@ test("TagChip does not render when an item has no tags", async () => {
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-tagchip-empty-");
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featured = [
@@ -213,7 +213,7 @@ test("TagChip escapes HTML special characters in label", async () => {
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-tagchip-xss-");
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     // Test with tags containing HTML-like content that should be escaped.

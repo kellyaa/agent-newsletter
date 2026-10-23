@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS run_attempts (
   PRIMARY KEY (date, attempt)
 );
 
+-- Small per-edition key/value store. Holds `rubric_hash` (sha256 of the rendered
+-- rank prompt), which used to be an untracked .rubric_hash file at the repo root.
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS topics_covered (
   topic TEXT NOT NULL,
   date TEXT NOT NULL,
@@ -127,6 +134,9 @@ def is_allowed_url(url: str) -> bool:
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    # Each edition's DB sits in its own editions/<slug>/ folder, which does not
+    # exist yet for a brand-new edition.
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -169,6 +179,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("papers_expired_unjudged", "papers_prerank_cut"):
         if col not in run_cols:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {col} INTEGER")
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    conn.commit()
 
 
 def record_stage_stats(

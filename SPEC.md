@@ -67,7 +67,9 @@ A user-level `~/Library/LaunchAgents/com.kelly.agent-newsletter.plist` running `
 
 **Watchdog throttle.** `watchdog.sh` will not re-fire a stale-pipeline notification more than once every 4 hours. The throttle state is stored in `logs/watchdog-last-fire`. To force an immediate re-check: `rm -f logs/watchdog-last-fire && ./watchdog.sh`.
 
-Failure mode: `run.sh` exits nonzero → a macOS notification fires (via `osascript`) and the per-day log at `logs/run-YYYY-MM-DD.log` captures the full output. No silent failures.
+**Multi-edition orchestration.** `run.sh` is an orchestrator: it takes the single-run lock, updates the code and content worktree, runs `scripts/migrate_layout.py` (a no-op once the content branch is migrated), then runs each selected edition in order (`order`, `agents` first) as a child process, `scripts/run_edition.sh` (fetch → prefilter → rank → write → publish → commit and push `editions/<slug>/`). Editions run one after another under the one lock; a failure is recorded and never blocks the rest. Flags: none (every `draft`/`live` edition whose latest attempt today is not `ok`), `--failed` (only editions whose latest attempt today `failed` or is still `started`), `--edition X` (repeatable; paused editions allowed), `--force`, and `--refetch` (requires `--edition`). Run accounting (`run_attempts`, `runs`) lives in each edition's own `state.db`; the cached rubric hash is the `rubric_hash` row of its `meta(key, value)` table.
+
+Failure mode: an edition failing fires a macOS notification (via `osascript`) titled with the edition's name, carrying the stage and the re-run command; `run.sh` finishes the other editions and exits nonzero. The orchestrator summary is `logs/run-YYYY-MM-DD.log` (one line per edition) and each edition's full output is `logs/<slug>/run-YYYY-MM-DD.log`, ending in `DONE` on success. No silent failures.
 
 ### 2. Collectors — `fetch.py`
 
@@ -158,7 +160,7 @@ Writes scores, tags, and section back to `state.db`. Sets `status` to `featured`
 
 ### 5. Summarizer / Writer — `write.py` (OpenAI-compatible LLM)
 
-`write.py` makes one OpenAI-compatible chat-completions call via `scripts/llm.py` and writes the output to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md` (the `content` branch worktree). The model is configured via `WRITER_MODEL` in `.env`.
+`write.py` makes one OpenAI-compatible chat-completions call via `scripts/llm.py` and writes the output to `CONTENT_ROOT/editions/<slug>/issues/YYYY-MM-DD.md` (the `content` branch worktree). The model is configured via `WRITER_MODEL` in `.env`.
 
 The prompt gives the writer:
 - The featured items for the day (id, url, title, abstract, source, tags, one_line_why). Typically 12-17 items across all three sections; up to 22 on heavy arXiv days when the papers burst cap fires (see §Ranking).
@@ -214,9 +216,9 @@ Style guide (embedded in the prompt):
 ### 6. Publisher — `publish.py`
 
 - Marks featured/appendix items `status = 'published'` in DB.
-- Writes the issue file to `CONTENT_ROOT/site/src/content/issues/YYYY-MM-DD.md`. `CONTENT_ROOT` defaults to the `content`-branch worktree at `.worktrees/content` (set by `run.sh`).
+- Writes the issue file to `CONTENT_ROOT/editions/<slug>/issues/YYYY-MM-DD.md`. `CONTENT_ROOT` defaults to the `content`-branch worktree at `.worktrees/content` (set by `run.sh`).
 - Does **not** generate `index.md` or `feed.xml` — Astro's build step handles navigation automatically.
-- `run.sh` then commits `state.db` and `site/src/content/issues/` to the `content` branch (via the worktree) and pushes. `main` is never touched by the daily run.
+- `scripts/run_edition.sh` then commits `editions/<slug>/` (its `state.db` and issues) to the `content` branch (via the worktree) as `newsletter(<slug>): <date> daily run` and pushes. The deploy workflow stages `editions/<slug>/issues/` into the site build as `site/src/content/issues/<slug>/`. `main` is never touched by the daily run.
 - GitHub Actions `deploy.yml` triggers on push to either `main` or `content`, checks out both branches, copies `content`'s issue files into the Astro source tree, builds with Astro 5, and deploys to GitHub Pages. The Astro build is the deploy gate — a malformed issue file fails the build.
 
 ## Dedup Strategy
@@ -337,7 +339,7 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 .                              ← repo root (main branch)
 ├── SPEC.md                    ← this file
 ├── README.md
-├── run.sh                     ← entry point (pipeline); sets up content worktree
+├── run.sh                     ← orchestrator: sets up the content worktree, runs each edition
 ├── watchdog.sh                ← stale-commit checker (separate launchd job)
 ├── editions/
 │   └── agents/                ← the "AI Agents Daily" edition (config only, no code)
@@ -356,6 +358,11 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 │   ├── rank.py                ← per-section LLM ranker (3× calls via llm.py)
 │   ├── write.py               ← LLM writer (1× call via llm.py)
 │   ├── publish.py             ← promote items; record runs row
+│   ├── run_edition.sh         ← one edition's pipeline + commit/push; started per edition by run.sh
+│   ├── watchdog.sh            ← self-heal: re-runs editions whose log lacks DONE; EDITION: lines + worst-of STATUS:
+│   ├── migrate_layout.py      ← one-time, idempotent content-branch move to editions/<slug>/
+│   ├── reset_day.py           ← --force / --refetch reset for one edition
+│   ├── run_attempt.py         ← run_attempts accounting; `latest` = today's outcome
 │   ├── new_edition.py         ← scaffold + LLM-draft + validate a new edition folder (writes REVIEW.md)
 │   ├── check_edition.py       ← lint an edition; no-LLM dry run of fetch + prefilter with per-source counts
 │   ├── llm.py                 ← thin wrapper around OpenAI-compatible chat-completions
@@ -367,20 +374,20 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 │   └── src/content/issues/    ← issue files on the 'content' branch (see below)
 ├── .worktrees/
 │   └── content/               ← orphan-branch worktree; auto-created by run.sh
-│       ├── state.db           ← SQLite pipeline state (content branch only)
-│       └── site/src/content/issues/YYYY-MM-DD.md
+│       └── editions/<slug>/
+│           ├── state.db       ← SQLite pipeline state (content branch only)
+│           └── issues/YYYY-MM-DD.md
 ├── .github/workflows/
 │   ├── deploy.yml             ← Astro build + Pages deploy (triggers on main or content push)
 │   └── tests.yml              ← pytest CI
-├── .rubric_hash               ← sha256 of the rendered rank prompt (prompts/rank.md + the edition's fragments); prefilter.py uses this to detect rubric changes and bulk-reset cached paper scores (gitignored)
-├── candidates.json            ← debug artifact: candidate pool snapshot written by prefilter.py each run (gitignored)
-├── ranked.json                ← debug artifact: raw LLM ranker output written by rank.py each run (gitignored)
+(the sha256 of the rendered rank prompt lives in each edition's `state.db`, table `meta`, key `rubric_hash`; prefilter.py uses it to detect rubric changes and bulk-reset cached paper scores)
 ├── launchd/                   ← macOS plists + install.sh
-├── logs/                      ← per-day run logs (gitignored)
+├── logs/                      ← run logs (gitignored): run-DATE.log (orchestrator), <slug>/run-DATE.log, <slug>/usage-DATE.jsonl,
+│                                 and per-edition debug artifacts (candidates.json, ranked.json, rendered prompts)
 └── tests/                     ← pytest suite
 ```
 
-**Note on branch layout.** `main` holds code and config (everything above). The `content` orphan branch holds only machine-authored artifacts: `state.db` and `site/src/content/issues/*.md`. `run.sh` writes to `content` via the `.worktrees/content` worktree and pushes on every daily run. See README §Repository layout for the full rationale.
+**Note on branch layout.** `main` holds code and config (everything above). The `content` orphan branch holds only machine-authored artifacts: `editions/<slug>/state.db` and `editions/<slug>/issues/*.md`. `run.sh` writes to `content` via the `.worktrees/content` worktree and pushes on every daily run. See README §Repository layout for the full rationale.
 
 ## Failure Modes & Mitigations
 
@@ -400,7 +407,7 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 - `run.sh` wraps the pipeline; on nonzero exit, the wrapper invokes `osascript -e 'display notification ...'` with the failed stage and the path to the day's log.
-- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent successful daily-run commit (`newsletter: <date> daily run`) on the `content` branch — read from the `.worktrees/content` worktree, or from the local / `origin/content` ref when no worktree exists (`REPO_ROOT` is resolved from `watchdog.sh`'s own location). If >36h stale, it fires a notification with "Newsletter pipeline appears stuck". Failure/recovery commits (`attempt N failed at <stage>`, `persist state.db from interrupted …`) are ignored. Only when the content branch has no history at all does it fall back to main's HEAD, printing "skipping check" if that is not a `newsletter:` commit. As a cross-check, `sqlite3 .worktrees/content/state.db "SELECT date FROM runs ORDER BY date DESC LIMIT 1;"`.
+- A separate `watchdog.sh` (its own launchd plist, runs hourly) checks the timestamp of the most recent successful daily-run commit of any edition (`newsletter(<slug>): <date> daily run`, or the pre-migration `newsletter: <date> daily run`) on the `content` branch — read from the `.worktrees/content` worktree, or from the local / `origin/content` ref when no worktree exists (`REPO_ROOT` is resolved from `watchdog.sh`'s own location). If >36h stale, it fires a notification with "Newsletter pipeline appears stuck". Failure/recovery commits (`attempt N failed at <stage>`, `persist state.db from interrupted …`) are ignored. Only when the content branch has no history at all does it fall back to main's HEAD, printing "skipping check" if that is not a `newsletter:` commit. As a cross-check, `sqlite3 .worktrees/content/editions/agents/state.db "SELECT date FROM runs ORDER BY date DESC LIMIT 1;"`.
 - The full output of every run lands in `logs/run-YYYY-MM-DD.log` for postmortem (already wired up via `tee` in `run.sh`).
 - Once the site is deployed to GitHub Pages, the Pages-build-failure email GitHub sends on broken deploys is a free additional signal.
 

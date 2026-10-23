@@ -122,8 +122,8 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     )
     rankings = out.get("rankings")
     if not isinstance(rankings, list):
-        debug_path = REPO_ROOT / f"logs/ranker-output-{label}.json"
-        debug_path.parent.mkdir(exist_ok=True)
+        debug_path = EDITION.paths().logs / f"ranker-output-{label}.json"
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
         debug_path.write_text(json.dumps(out, indent=2))
         raise RuntimeError(f"ranker returned no rankings for {label}; output at {debug_path}")
     return rankings
@@ -375,6 +375,7 @@ def main() -> int:
         scored_by_section[section] = scored
 
     # Save just the rankings (not the full envelopes — too noisy) for debugging.
+    RANKED_PATH.parent.mkdir(parents=True, exist_ok=True)
     RANKED_PATH.write_text(json.dumps(scored_by_section, indent=2, ensure_ascii=False))
 
     # Build id → section map from input candidates for fallback handling.

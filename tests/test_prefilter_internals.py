@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from conftest import base_template
+from db import get_meta, set_meta
 
 from prefilter import (
     _prerank_score,
@@ -206,11 +207,9 @@ class TestMaybeInvalidatePapersScores:
 
         rubric = tmp_path / "rank.md"
         rubric.write_text(base_template("rank"))
-        hash_file = tmp_path / ".rubric_hash"
-        hash_file.write_text(_expected_hash(rubric))
+        set_meta(conn, pf_mod.RUBRIC_HASH_KEY, _expected_hash(rubric))
 
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
 
         count = _maybe_invalidate_papers_scores(conn)
         assert count == 0
@@ -225,11 +224,9 @@ class TestMaybeInvalidatePapersScores:
 
         rubric = tmp_path / "rank.md"
         rubric.write_text(base_template("rank"))
-        hash_file = tmp_path / ".rubric_hash"
-        hash_file.write_text("old_hash_value")  # stale hash
+        set_meta(conn, pf_mod.RUBRIC_HASH_KEY, "old_hash_value")  # stale hash
 
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
 
         count = _maybe_invalidate_papers_scores(conn)
         assert count == 1
@@ -245,16 +242,14 @@ class TestMaybeInvalidatePapersScores:
 
         rubric = tmp_path / "rank.md"
         rubric.write_text(base_template("rank"))
-        hash_file = tmp_path / ".rubric_hash"
-        hash_file.write_text("stale")
+        set_meta(conn, pf_mod.RUBRIC_HASH_KEY, "stale")
 
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
 
         _maybe_invalidate_papers_scores(conn)
 
         expected = _expected_hash(rubric)
-        assert hash_file.read_text().strip() == expected
+        assert get_meta(conn, pf_mod.RUBRIC_HASH_KEY) == expected
 
     def test_returns_zero_when_rubric_file_absent(self, db_with_scored_papers, monkeypatch):
         """Returns 0 without DB changes when rank.md is absent (line 197: if not current)."""
@@ -263,9 +258,7 @@ class TestMaybeInvalidatePapersScores:
 
         # Point to a non-existent rubric file
         rubric = tmp_path / "missing_rank.md"
-        hash_file = tmp_path / ".rubric_hash"
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
 
         count = _maybe_invalidate_papers_scores(conn)
         assert count == 0
@@ -288,22 +281,15 @@ class TestMaybeInvalidatePapersScores:
 
         rubric = tmp_path / "rank.md"
         rubric.write_text(base_template("rank"))
-        hash_file = tmp_path / ".rubric_hash"
-        # Ensure no existing hash file
-        if hash_file.exists():
-            hash_file.unlink()
-
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
-        monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
 
         try:
             count = _maybe_invalidate_papers_scores(conn_fresh)
             # No papers to invalidate → returns 0
             assert count == 0
 
-            # Hash file should now exist with current rubric hash
-            assert hash_file.exists()
+            # The hash is now recorded in the DB's meta table
             expected = _expected_hash(rubric)
-            assert hash_file.read_text().strip() == expected
+            assert get_meta(conn_fresh, pf_mod.RUBRIC_HASH_KEY) == expected
         finally:
             conn_fresh.close()

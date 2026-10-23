@@ -178,8 +178,8 @@ def invoke_writer(prompt: str) -> dict:
         max_tokens=WRITER_MAX_TOKENS,
     )
     if not isinstance(out, dict) or "items" not in out:
-        debug_path = REPO_ROOT / "logs/writer-output.json"
-        debug_path.parent.mkdir(exist_ok=True)
+        debug_path = EDITION.paths().logs / "writer-output.json"
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
         debug_path.write_text(json.dumps(out, indent=2))
         raise RuntimeError(f"writer returned no items; output at {debug_path}")
     return out

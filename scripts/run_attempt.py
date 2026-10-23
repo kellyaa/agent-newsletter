@@ -4,6 +4,10 @@ run.sh calls this twice per run:
 
   run_attempt.py start                     → inserts a row, prints its attempt number
   run_attempt.py finish ATTEMPT ok|failed [--stage S] [--exit-code N]
+  run_attempt.py latest                    → outcome of today's latest attempt for
+                                             this edition: ok | failed | started | none
+                                             (the orchestrator uses it to skip finished
+                                             editions and to pick the ones to re-run)
 
 The `runs` table only gets a row when publish succeeds, and `--force` deletes
 it, so failed attempts and re-runs leave no trace there. This table keeps one
@@ -24,7 +28,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from db import REPO_ROOT, connect, init_db
+from db import DB_PATH, REPO_ROOT, connect, init_db
 from publish import usage_totals
 
 logging.basicConfig(
@@ -83,10 +87,18 @@ def finish(conn, date: str, attempt: int, outcome: str, stage: str | None,
         log.warning("no run_attempts row for %s attempt %d; nothing updated", date, attempt)
 
 
+def latest_outcome(conn, date: str) -> str:
+    row = conn.execute(
+        "SELECT outcome FROM run_attempts WHERE date = ? ORDER BY attempt DESC LIMIT 1", (date,)
+    ).fetchone()
+    return row[0] if row else "none"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("start")
+    sub.add_parser("latest")
     f = sub.add_parser("finish")
     f.add_argument("attempt", type=int)
     f.add_argument("outcome", choices=["ok", "failed"])
@@ -95,6 +107,17 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     date = os.environ.get("RUN_DATE") or datetime.now().date().isoformat()
+    if args.cmd == "latest":
+        # Read-only: never create an edition's DB just to ask about it.
+        if not DB_PATH.exists():
+            print("none")
+            return 0
+        conn = connect()
+        try:
+            print(latest_outcome(conn, date))
+        finally:
+            conn.close()
+        return 0
     init_db()
     conn = connect()
     try:

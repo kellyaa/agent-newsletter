@@ -2,11 +2,11 @@
 that was committed before that day's run was supposed to fire.
 
 Usage:
-  uv run python scripts/backfill.py --date 2026-06-10
+  EDITION=agents uv run python scripts/backfill.py --date 2026-06-10
 
 What it does, end-to-end:
-  1. Finds the last `newsletter: <date> daily run` commit dated < --date and
-     extracts its state.db into a sandbox under /tmp/backfill-<date>/.
+  1. Finds the last `newsletter(<slug>): <date> daily run` commit (EDITION)
+     dated < --date and extracts the edition's state.db into a sandbox under /tmp/backfill-<date>/.
   2. Re-binds db.connect/db.init_db to the sandbox so the real state.db is
      never touched.
   3. Re-applies prefilter's age-out rule using --date as the synthetic 'now'
@@ -16,7 +16,7 @@ What it does, end-to-end:
   5. Runs the ranker — usually with no LLM call, since on a missed-day
      backfill all candidates are typically prescored from prior runs.
   6. Calls the writer pinned to --date and writes
-     site/src/content/issues/<date>.md.
+     editions/<slug>/issues/<date>.md (under CONTENT_ROOT).
 
 Limitations, all forced by the missing fetch:
   - Papers only. News and blogs items don't survive across days in the
@@ -59,11 +59,31 @@ logging.basicConfig(
 log = logging.getLogger("backfill")
 
 
-def find_pre_run_commit(target_date: str) -> str:
-    """Return the SHA of the last newsletter commit dated strictly before
-    target_date. That commit's state.db is the snapshot the missed run
-    would have started from.
+# Before the multi-edition layout (#301) there was one edition, its commits read
+# "newsletter: <date> ..." and its state.db sat at the content root.
+LEGACY_EDITION = "agents"
+LEGACY_DB_PATH = "state.db"
+
+
+def _edition_slug() -> str:
+    import edition
+
+    return edition.selected_slug()
+
+
+def edition_db_path(slug: str) -> str:
+    return f"editions/{slug}/state.db"
+
+
+def find_pre_run_commit(target_date: str, slug: str | None = None) -> str:
+    """Return the SHA of the last newsletter commit for the edition dated
+    strictly before target_date. That commit's state.db is the snapshot the
+    missed run would have started from.
+
+    Commit subjects are ``newsletter(<slug>): <date> ...``; pre-migration
+    commits (``newsletter: <date> ...``) count for the legacy edition only.
     """
+    slug = slug or _edition_slug()
     out = subprocess.run(
         ["git", "log", "--format=%H %s", "--all"],
         cwd=REPO, capture_output=True, text=True, check=True,
@@ -71,15 +91,20 @@ def find_pre_run_commit(target_date: str) -> str:
     # Parse the oneline log; pick newsletter commits dated < target.
     for line in out.splitlines():
         sha, _, subject = line.partition(" ")
-        # Match exactly the run.sh commit message format: "newsletter: YYYY-MM-DD daily run"
-        if not subject.startswith("newsletter: "):
+        # Match the run commit formats: "newsletter(<slug>): YYYY-MM-DD daily run",
+        # or the legacy "newsletter: YYYY-MM-DD daily run" for the legacy edition.
+        prefixes = [f"newsletter({slug}): "]
+        if slug == LEGACY_EDITION:
+            prefixes.append("newsletter: ")
+        prefix = next((p for p in prefixes if subject.startswith(p)), None)
+        if prefix is None:
             continue
-        rest = subject[len("newsletter: "):]
+        rest = subject[len(prefix):]
         date_str = rest.split(" ", 1)[0]
         if date_str < target_date:
             return sha
     raise RuntimeError(
-        f"no `newsletter: <date> daily run` commit dated before {target_date}"
+        f"no `newsletter({slug}): <date> daily run` commit dated before {target_date}"
     )
 
 
@@ -91,15 +116,30 @@ def setup_sandbox(target_date: str) -> Path:
         shutil.rmtree(sandbox)
     sandbox.mkdir(parents=True)
 
-    sha = find_pre_run_commit(target_date)
-    log.info("using pre-run snapshot from commit %s", sha[:12])
+    slug = _edition_slug()
+    sha = find_pre_run_commit(target_date, slug)
+    log.info("using pre-run snapshot from commit %s (edition %s)", sha[:12], slug)
     db_path = sandbox / "state.db"
-    with db_path.open("wb") as f:
-        subprocess.run(
-            ["git", "show", f"{sha}:state.db"],
-            cwd=REPO, check=True, stdout=f,
-        )
-    return sandbox
+    # Commits from before the layout migration keep state.db at the content
+    # root; that fallback is for the legacy edition only.
+    candidates = [edition_db_path(slug)]
+    if slug == LEGACY_EDITION:
+        candidates.append(LEGACY_DB_PATH)
+    for i, path in enumerate(candidates):
+        with db_path.open("wb") as f:
+            proc = subprocess.run(
+                ["git", "show", f"{sha}:{path}"], cwd=REPO, stdout=f,
+                stderr=subprocess.PIPE,
+            )
+        if proc.returncode == 0:
+            return sandbox
+        if i == len(candidates) - 1:
+            raise RuntimeError(
+                f"commit {sha[:12]} has no state.db for edition {slug!r} "
+                f"(tried {', '.join(candidates)}): {proc.stderr.decode().strip()}"
+            )
+        log.info("no %s in %s; trying legacy path", path, sha[:12])
+    return sandbox  # pragma: no cover  (loop always returns or raises)
 
 
 # Keep references to the unpatched connect/init_db so --apply-published can
@@ -294,7 +334,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--force", action="store_true",
-        help="Overwrite an existing issue file at site/src/content/issues/<date>.md.",
+        help="Overwrite an existing issue file at editions/<slug>/issues/<date>.md.",
     )
     p.add_argument(
         "--apply-published", action="store_true",

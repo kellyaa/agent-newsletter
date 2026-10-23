@@ -61,7 +61,7 @@ async function setupFixture(fixtureRoot: string, featuredUrl: string) {
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
 
-  const issueDirectory = join(fixtureSite, "src", "content", "issues");
+  const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
   await mkdir(issueDirectory, { recursive: true });
   await writeFile(
     join(issueDirectory, "2026-06-01.md"),

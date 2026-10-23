@@ -26,7 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prompts  # noqa: E402
-from db import REPO_ROOT, connect, init_db  # noqa: E402
+from db import connect, init_db  # noqa: E402
 from write import (  # noqa: E402
     EDITION,
     ISSUES_DIR,
@@ -180,8 +180,8 @@ def main() -> int:
 
     writer_output = invoke_writer(prompt)
 
-    out_path = REPO_ROOT / "logs" / f"theme-replay-{date}.json"
-    out_path.parent.mkdir(exist_ok=True)
+    out_path = EDITION.paths().logs / f"theme-replay-{date}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
         "date": date,
         "theme": writer_output.get("theme"),

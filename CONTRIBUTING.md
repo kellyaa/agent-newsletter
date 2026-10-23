@@ -47,7 +47,7 @@ cp .env.template .env
 $EDITOR .env          # fill in LLM_BASE_URL, LLM_API_KEY, RANKER_MODEL, WRITER_MODEL
 
 # 5. (Optional) Set up the content worktree for local Astro dev
-#    The content branch holds state.db and issued YYYY-MM-DD.md files.
+#    The content branch holds each edition's state.db and issue YYYY-MM-DD.md files.
 git worktree add .worktrees/content content
 ```
 
@@ -55,8 +55,10 @@ git worktree add .worktrees/content content
 
 ```bash
 ./run.sh              # idempotent; skips completed stages
+./run.sh --failed     # re-run only the editions that failed today
+./run.sh --edition X  # run one edition (repeatable; paused editions allowed)
 ./run.sh --force      # reset today's post-fetch state and re-run
-./run.sh --refetch    # also re-fetch (use sparingly; arXiv rate-limits)
+./run.sh --refetch --edition X   # also re-fetch (needs --edition; use sparingly, arXiv rate-limits)
 ```
 
 > ⚠️ **Before running `./launchd/install.sh`:** the plist files under `launchd/` contain
@@ -126,11 +128,11 @@ The repo uses two long-lived branches:
 | Branch | Holds | Who writes |
 |--------|-------|-----------|
 | `main` | Scripts, tests, prompts, site scaffold, deploy config | Humans (PRs) |
-| `content` | `state.db`, `site/src/content/issues/*.md` | Daily pipeline (automated) |
+| `content` | `editions/<slug>/state.db`, `editions/<slug>/issues/*.md` | Daily pipeline (automated) |
 
 The two branches never merge. `run.sh` writes to `content` via a git worktree at `.worktrees/content`. Human contributors work on `main` exclusively — you should never need to commit to `content` manually.
 
-`CONTENT_ROOT` is an environment variable set by `run.sh` to point at the content worktree. Scripts that need `state.db` or the issues directory read this variable; they fall back to `cwd` if it is not set (useful for tests).
+`CONTENT_ROOT` is an environment variable set by `run.sh` to point at the content worktree. Scripts that need an edition's `state.db` or issues directory read this variable (plus `EDITION`; see `edition.runtime_paths()`); they fall back to `cwd` if it is not set (useful for tests).
 
 ---
 

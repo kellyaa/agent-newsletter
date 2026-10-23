@@ -95,7 +95,7 @@ test("issue page sanitizes markdown fields and escapes tags, allowing only safe 
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
 
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featured = [

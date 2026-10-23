@@ -65,7 +65,7 @@ async function buildFixtureSite() {
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
   // The content collection loader needs the directory to exist, but search
   // page rendering needs no issue files in it.
-  await mkdir(join(fixtureSite, "src", "content", "issues"), { recursive: true });
+  await mkdir(join(fixtureSite, "src", "content", "issues", "agents"), { recursive: true });
 
   return { fixtureRoot, fixtureSite };
 }

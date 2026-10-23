@@ -22,6 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import edition
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, load_stage_stats
 from models import Status
 
@@ -31,7 +32,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("publish")
 
-ISSUES_DIR = CONTENT_ROOT / "site" / "src" / "content" / "issues"
+ISSUES_DIR = edition.runtime_paths(CONTENT_ROOT).issues_dir
 
 MIN_FEATURED_FOR_PUBLISH = 1  # tunable; lower = more permissive
 MIN_FILE_SIZE_BYTES = 400     # frontmatter+body should comfortably exceed this
