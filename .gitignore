@@ -16,3 +16,10 @@
 !/.github/workflows
 /.github/workflows/*
 !/.github/workflows/deploy.yml
+# Multi-edition layout (#301): track each edition's state.db and issues.
+!/editions
+/editions/*
+!/editions/*/
+/editions/*/*
+!/editions/*/state.db
+!/editions/*/issues
