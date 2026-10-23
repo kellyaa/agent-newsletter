@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/pages/issues/[...slug].astro's section bucketing
 // (sectionGroups/itemsBySection: group featured items by section, render a
@@ -150,6 +151,7 @@ async function buildFixtureSite() {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   return { fixtureRoot, fixtureSite };
 }
@@ -198,7 +200,7 @@ test("issue page buckets featured items by section, omits empty sections, and re
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
@@ -252,8 +254,8 @@ test("issue page buckets featured items by section, omits empty sections, and re
     assert.ok(html.includes(">0/10<"));
 
     // Multiple tags each render as their own chip (not merged/truncated).
-    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/tags/evals/">evals</a>'));
-    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/tags/safety/">safety</a>'));
+    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/agents/tags/evals/">evals</a>'));
+    assert.ok(html.includes('<a class="chip chip--link" href="/newsletter/agents/tags/safety/">safety</a>'));
 
     // Author renders as "— Name" when present...
     assert.ok(
@@ -322,11 +324,11 @@ test("issue page renders the theme paragraph and passes it as BaseLayout's descr
     runBuild(fixtureSite);
 
     const withTheme = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
     const withoutTheme = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-02", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-02", "index.html"),
       "utf8",
     );
 

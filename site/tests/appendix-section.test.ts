@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/components/AppendixSection.astro end to end via a real Astro
 // build, since the component isn't exported for unit testing in isolation.
@@ -126,6 +127,7 @@ async function buildFixtureSite() {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   return { fixtureRoot, fixtureSite };
 }
@@ -183,7 +185,7 @@ test("appendix section renders grouped items with escaped titles/sources when no
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
@@ -259,7 +261,7 @@ test("appendix section does not render at all when every section is empty", asyn
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-02", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-02", "index.html"),
       "utf8",
     );
 

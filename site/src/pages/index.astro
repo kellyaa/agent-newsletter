@@ -1,18 +1,97 @@
 ---
 import { getCollection } from "astro:content";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import MonthView from "../components/MonthView.astro";
-import { groupByMonth, buildMonthList } from "../scripts/months";
+import { loadRegistry, issuesFor, UMBRELLA_NAME, UMBRELLA_DESCRIPTION } from "../scripts/editions";
 
-const issues = await getCollection("issues");
-const buckets = groupByMonth(issues);
-const months = buildMonthList(buckets);
-const latest = buckets[0];
+const registry = loadRegistry();
+const allIssues = await getCollection("issues");
+const baseUrl = import.meta.env.BASE_URL || "/";
+const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+
+const cards = registry.listed.map((edition) => {
+  const issues = issuesFor(allIssues, edition.slug).sort((a, b) =>
+    a.data.date < b.data.date ? 1 : -1,
+  );
+  return { edition, count: issues.length, latest: issues[0] };
+});
 ---
-<BaseLayout title="AI Agents Daily">
-  {latest === undefined ? (
-    <p class="empty-state">No issues yet. The first run lands tomorrow.</p>
-  ) : (
-    <MonthView issues={latest.issues} months={months} currentMonth={latest.key} />
-  )}
+<BaseLayout title={UMBRELLA_NAME} description={UMBRELLA_DESCRIPTION}>
+  <div data-pagefind-ignore>
+    <header class="issue-header">
+      <h1 class="issue-header__title">{UMBRELLA_NAME}</h1>
+      <p class="issue-header__theme">{UMBRELLA_DESCRIPTION}</p>
+    </header>
+
+    {cards.length === 0 ? (
+      <p class="empty-state">No editions yet.</p>
+    ) : (
+      <ul class="edition-cards">
+        {cards.map(({ edition, count, latest }) => (
+          <li class="edition-card" data-edition={edition.slug}>
+            <h2 class="edition-card__name">
+              <a href={`${base}/${edition.slug}/`}>{edition.name}</a>
+              {edition.status === "paused" && <span class="edition-card__status">paused</span>}
+              {edition.status === "draft" && <span class="edition-card__status">draft</span>}
+            </h2>
+            <p class="edition-card__tagline">{edition.tagline}</p>
+            {latest === undefined ? (
+              <p class="edition-card__empty">First issue coming soon</p>
+            ) : (
+              <div class="edition-card__latest">
+                <a class="edition-card__date" href={`${base}/${edition.slug}/issues/${latest.data.date}/`}>{latest.data.date}</a>
+                {latest.data.theme && <p class="edition-card__theme">{latest.data.theme}</p>}
+              </div>
+            )}
+            <p class="edition-card__links">
+              <span class="edition-card__count">{count} {count === 1 ? "issue" : "issues"}</span>
+              <a href={`${base}/${edition.slug}/`}>Archive</a>
+              <a href={`${base}/${edition.slug}/rss.xml`}>RSS</a>
+            </p>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
 </BaseLayout>
+
+<style>
+  .edition-cards {
+    list-style: none;
+    padding: 0;
+    margin: var(--s-6) 0 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--s-4);
+  }
+  .edition-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--s-5);
+    background: var(--bg-elevated);
+  }
+  .edition-card__name { font-size: var(--fs-xl); margin: 0 0 var(--s-2) 0; }
+  .edition-card__name a { color: var(--fg); text-decoration: none; }
+  .edition-card__name a:hover { color: var(--accent); text-decoration: underline; }
+  .edition-card__status {
+    margin-left: var(--s-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: 400;
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0 var(--s-2);
+  }
+  .edition-card__tagline { color: var(--fg-muted); margin: 0 0 var(--s-4) 0; }
+  .edition-card__date { font-family: var(--font-mono); font-size: var(--fs-sm); }
+  .edition-card__theme { margin: var(--s-2) 0 0 0; }
+  .edition-card__empty { color: var(--fg-muted); font-style: italic; }
+  .edition-card__links {
+    display: flex;
+    gap: var(--s-4);
+    margin: var(--s-4) 0 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+  }
+  .edition-card__count { color: var(--fg-muted); }
+</style>

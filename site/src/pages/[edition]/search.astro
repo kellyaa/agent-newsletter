@@ -1,0 +1,21 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Search from "../../components/Search.astro";
+import { loadRegistry } from "../../scripts/editions";
+
+export function getStaticPaths() {
+  return loadRegistry().listed.map((edition) => ({
+    params: { edition: edition.slug },
+    props: { edition },
+  }));
+}
+
+const { edition } = Astro.props;
+---
+<BaseLayout title={`Search — ${edition.name}`} description={`Search past issues of ${edition.name}.`} edition={edition}>
+  <header class="issue-header">
+    <h1 class="issue-header__title">Search</h1>
+    <p class="issue-header__theme">Find past coverage by keyword. Results include featured items, summaries, and appendix mentions across every issue of {edition.name}.</p>
+  </header>
+  <Search edition={edition.slug} />
+</BaseLayout>

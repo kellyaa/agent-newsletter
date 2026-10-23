@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -127,6 +128,7 @@ test("RSS renders newest issues, links, optional fields, and escaped content", a
       await readFile(join(siteRoot, "tsconfig.json")),
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+    await seedEditions(fixtureRoot);
 
     const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
@@ -165,14 +167,14 @@ test("RSS renders newest issues, links, optional fields, and escaped content", a
       stdio: "pipe",
     });
 
-    const feed = await readFile(join(fixtureSite, "dist", "rss.xml"), "utf8");
+    const feed = await readFile(join(fixtureSite, "dist", "agents", "rss.xml"), "utf8");
     const newestIndex = feed.indexOf("2026-05-02");
     const olderIndex = feed.indexOf("2026-05-01");
     assert.notEqual(newestIndex, -1);
     assert.notEqual(olderIndex, -1);
     assert.ok(newestIndex < olderIndex, "newest issue should appear first");
-    assert.ok(feed.includes("https://example.test/newsletter/issues/2026-05-02/"));
-    assert.ok(feed.includes("https://example.test/newsletter/issues/2026-05-01/"));
+    assert.ok(feed.includes("https://example.test/newsletter/agents/issues/2026-05-02/"));
+    assert.ok(feed.includes("https://example.test/newsletter/agents/issues/2026-05-01/"));
     assert.ok(feed.indexOf("Title &amp;lt;em") < feed.indexOf("Optional fields"));
     assert.ok(feed.includes("Issue 2026-05-01"), "theme-less issue should use its fallback title");
     assert.ok(
@@ -265,6 +267,7 @@ test("RSS orders a single issue's featured items by score (not authored order) a
       await readFile(join(siteRoot, "tsconfig.json")),
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+    await seedEditions(fixtureRoot);
 
     const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
@@ -301,7 +304,7 @@ test("RSS orders a single issue's featured items by score (not authored order) a
       stdio: "pipe",
     });
 
-    const feed = await readFile(join(fixtureSite, "dist", "rss.xml"), "utf8");
+    const feed = await readFile(join(fixtureSite, "dist", "agents", "rss.xml"), "utf8");
 
     // Title truncates at the first sentence boundary: the date-prefixed
     // <title> must contain "First sentence stays" but not the second

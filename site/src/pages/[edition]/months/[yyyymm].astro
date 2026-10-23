@@ -1,0 +1,38 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import MonthView from "../../../components/MonthView.astro";
+import { groupByMonth, buildMonthList } from "../../../scripts/months";
+import { loadRegistry, issuesFor } from "../../../scripts/editions";
+
+export async function getStaticPaths() {
+  const all = await getCollection("issues");
+  const paths = [];
+  for (const edition of loadRegistry().listed) {
+    const buckets = groupByMonth(issuesFor(all, edition.slug));
+    // The newest month is the edition front page; only older months get a page.
+    if (buckets.length <= 1) continue;
+    const months = buildMonthList(buckets, edition.slug);
+    for (const b of buckets.slice(1)) {
+      paths.push({
+        params: { edition: edition.slug, yyyymm: b.key },
+        props: { edition, issues: b.issues, months, currentMonth: b.key },
+      });
+    }
+  }
+  return paths;
+}
+
+interface Props {
+  edition: { slug: string; name: string; tagline: string };
+  issues: any[];
+  months: any[];
+  currentMonth: string;
+}
+
+const { edition, issues, months, currentMonth } = Astro.props;
+const monthLabel = months.find((m) => m.key === currentMonth)?.label ?? currentMonth;
+---
+<BaseLayout title={`${edition.name} — ${monthLabel}`} edition={edition}>
+  <MonthView issues={issues} months={months} currentMonth={currentMonth} edition={edition.slug} />
+</BaseLayout>

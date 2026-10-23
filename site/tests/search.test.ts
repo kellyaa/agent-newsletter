@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/components/Search.astro end to end via a real Astro build.
 // Search.astro had zero direct test coverage: no existing test asserts on
@@ -57,6 +58,7 @@ async function buildFixtureSite(prefix: string) {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
   // The content collection loader needs the directory to exist, but the
   // search page needs no issue files in it.
   await mkdir(join(fixtureSite, "src", "content", "issues", "agents"), { recursive: true });
@@ -78,7 +80,7 @@ test("Search renders the #search mount node, a base-aware pagefind stylesheet li
   try {
     runBuild(fixtureSite, { SITE_BASE: "/newsletter/", SITE_URL: "https://example.test" });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     // The mount node pagefind's loader script attaches its UI to.
     assert.ok(
@@ -114,7 +116,7 @@ test("Search's pagefind stylesheet and loader script append a single slash when 
     // slash must be appended, not doubled or omitted.
     runBuild(fixtureSite, { SITE_BASE: "/newsletter", SITE_URL: "https://example.test" });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     assert.ok(
       html.includes('<link rel="stylesheet" href="/newsletter/pagefind/pagefind-ui.css">'),
@@ -140,7 +142,7 @@ test("Search falls back to the root pagefind path when no SITE_BASE/SITE_URL env
     // `import.meta.env.BASE_URL || "/"` fallback.
     runBuild(fixtureSite, { SITE_BASE: undefined, SITE_URL: undefined });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     assert.ok(
       html.includes('<link rel="stylesheet" href="/pagefind/pagefind-ui.css">'),

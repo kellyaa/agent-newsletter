@@ -1,6 +1,6 @@
 ---
 /**
- * Tag chip. Renders as a link to /tags/<label>/ by default; pass
+ * Tag chip. Renders as a link to /<edition>/tags/<label>/ by default; pass
  * `static` to render as a plain span (useful when the chip is already
  * inside a larger clickable region).
  */
@@ -9,13 +9,15 @@ import { isTagSlug } from "../scripts/tag-slug";
 interface Props {
   label: string;
   static?: boolean;
+  /** Edition slug the tag page lives under. Without it the chip is a span. */
+  edition?: string;
 }
-const { label, static: isStatic = false } = Astro.props;
+const { label, static: isStatic = false, edition } = Astro.props;
 const baseUrl = import.meta.env.BASE_URL || "/";
 const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-const href = `${trimmedBase}/tags/${label}/`;
+const href = `${trimmedBase}/${edition}/tags/${label}/`;
 ---
-{isStatic || !isTagSlug(label) ? (
+{isStatic || !edition || !isTagSlug(label) ? (
   <span class="chip">{label}</span>
 ) : (
   <a class="chip chip--link" href={href}>{label}</a>

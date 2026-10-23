@@ -53,3 +53,12 @@ test("buildMonthList labels and counts months and links latest to home", () => {
 test("buildMonthList handles no months", () => {
   assert.deepEqual(buildMonthList([]), []);
 });
+
+test("buildMonthList prefixes hrefs with the edition slug when given one", () => {
+  const buckets = groupByMonth([issue("2026-01-15", "jan"), issue("2026-03-08", "mar")]);
+
+  assert.deepEqual(buildMonthList(buckets, "sdlc"), [
+    { key: "2026-03", label: "Mar 2026", count: 1, href: "/sdlc/" },
+    { key: "2026-01", label: "Jan 2026", count: 1, href: "/sdlc/months/2026-01/" },
+  ]);
+});

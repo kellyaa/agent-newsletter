@@ -1,5 +1,8 @@
 import { defineCollection, z } from "astro:content";
 import { glob } from "astro/loaders";
+import { existsSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { loadRegistry, unknownContentEntries } from "./scripts/editions";
 
 const SECTIONS = ["papers", "news", "blogs"] as const;
 
@@ -42,13 +45,33 @@ const appendixItem = z.object({
   title: z.string(),
 });
 
+// Multi-edition layout (#291): issues live at issues/<edition>/YYYY-MM-DD.md,
+// staged there from the content branch's editions/<slug>/issues/. The edition
+// is the first path segment of the entry id. The registry (editions/*/edition.yaml
+// on main) decides which editions exist: content for a folder no edition owns,
+// or a stray flat issues/YYYY-MM-DD.md from the pre-migration layout, fails the
+// build instead of being silently skipped. Draft editions are known (so their
+// staged content is not an error) but are only globbed when SHOW_DRAFTS=1.
+const registry = loadRegistry();
+const issuesRoot = resolve(process.cwd(), "src/content/issues");
+const stray = unknownContentEntries(
+  existsSync(issuesRoot) ? readdirSync(issuesRoot) : [],
+  registry.all,
+);
+if (stray.length > 0) {
+  throw new Error(
+    `src/content/issues contains ${stray.map((s) => JSON.stringify(s)).join(", ")}, ` +
+      "which is not an edition in editions/*/edition.yaml " +
+      "(issues must live at issues/<edition>/YYYY-MM-DD.md)",
+  );
+}
+
 const issues = defineCollection({
-  // Issues live at issues/<edition>/YYYY-MM-DD.md (multi-edition layout, #301).
-  // The flat issues/YYYY-MM-DD.md form is still accepted so the site keeps
-  // building from a content branch that has not been migrated yet; the edition
-  // is the first path segment of the entry id, and URLs are built from
-  // `data.date`, never from the id, so both layouts produce the same URLs.
-  loader: glob({ pattern: ["*/*.md", "*.md"], base: "./src/content/issues" }),
+  // With no listed edition the pattern must still match nothing, not everything.
+  loader: glob({
+    pattern: registry.listed.length > 0 ? registry.listed.map((e) => `${e.slug}/*.md`) : ["!**"],
+    base: "./src/content/issues",
+  }),
   schema: z.object({
     /** YYYY-MM-DD; also the slug. */
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/pages/index.astro end to end via a real Astro build.
 // index.astro has its own branch — `latest === undefined ? <empty-state> :
@@ -83,6 +84,7 @@ async function buildFixtureSite() {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   return { fixtureRoot, fixtureSite };
 }
@@ -105,7 +107,7 @@ test("home page renders the empty state when the issues collection has no entrie
 
     runBuild(fixtureSite);
 
-    const html = await readFile(join(fixtureSite, "dist", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "index.html"), "utf8");
 
     assert.ok(
       html.includes('<p class="empty-state">No issues yet. The first run lands tomorrow.</p>'),
@@ -153,7 +155,7 @@ test("home page renders the latest month's MonthView, marked as the current mont
 
     runBuild(fixtureSite);
 
-    const html = await readFile(join(fixtureSite, "dist", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "index.html"), "utf8");
 
     assert.ok(
       !html.includes("empty-state"),
@@ -184,12 +186,12 @@ test("home page renders the latest month's MonthView, marked as the current mont
     // The latest month's nav entry links to the site root (per
     // buildMonthList), not to a /months/2026-07/ page.
     assert.ok(
-      html.includes('href="/newsletter/"') ,
-      "the latest month's nav link should point at the site root",
+      html.includes('href="/newsletter/agents/"') ,
+      "the latest month's nav link should point at the edition front page",
     );
     // The older month's nav entry should link to its dedicated page.
     assert.ok(
-      html.includes('href="/newsletter/months/2026-06/"'),
+      html.includes('href="/newsletter/agents/months/2026-06/"'),
       "an older month's nav link should point at its dedicated /months/ page",
     );
   } finally {

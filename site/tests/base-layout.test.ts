@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/layouts/BaseLayout.astro end to end via a real Astro build.
 // BaseLayout had zero direct test coverage: every other site test exercises
@@ -63,6 +64,7 @@ async function buildFixtureSite() {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
   // The content collection loader needs the directory to exist, but search
   // page rendering needs no issue files in it.
   await mkdir(join(fixtureSite, "src", "content", "issues", "agents"), { recursive: true });
@@ -84,7 +86,7 @@ test("BaseLayout renders CSP, title/description, and base-aware search/RSS/brand
   try {
     runBuild(fixtureSite, { SITE_BASE: "/newsletter/", SITE_URL: "https://example.test" });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     // Title and description (both passed explicitly by search.astro).
     assert.ok(html.includes("<title>Search — AI Agents Daily</title>"));
@@ -109,22 +111,22 @@ test("BaseLayout renders CSP, title/description, and base-aware search/RSS/brand
     // inserted (the `: baseUrl + "/search/"` branch is for the no-trailing-
     // slash case; this is the other branch).
     assert.ok(
-      html.includes('<a class="site-header__search" href="/newsletter/search/">Search</a>'),
+      html.includes('<a class="site-header__search" href="/newsletter/agents/search/">Search</a>'),
       "search link should not double a trailing slash when base already ends with one",
     );
     assert.ok(
-      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/newsletter/rss.xml">'),
+      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/newsletter/agents/rss.xml">'),
       "RSS alternate link should not double a trailing slash when base already ends with one",
     );
     assert.ok(
-      html.includes('<a href="/newsletter/rss.xml">RSS</a>'),
+      html.includes('<a href="/newsletter/agents/rss.xml">RSS</a>'),
       "footer RSS link should use the same rssUrl construction",
     );
 
     // Brand link uses baseUrl directly (no searchUrl/rssUrl-style branching).
     assert.ok(
-      html.includes('<a class="site-header__brand" href="/newsletter/">AI Agents Daily</a>'),
-      "brand link should point at the site base",
+      html.includes('<a class="site-header__brand" href="/newsletter/agents/">AI Agents Daily</a>'),
+      "brand link should point at the edition front page",
     );
 
     // Static footer copy renders verbatim.
@@ -149,24 +151,24 @@ test("BaseLayout's search/RSS links append a single slash when base has none, an
     // or omitted.
     runBuild(fixtureSite, { SITE_BASE: "/newsletter", SITE_URL: "https://example.test" });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     // Brand link uses baseUrl directly with no slash-handling at all, so a
     // base with no trailing slash renders with none added.
     assert.ok(
-      html.includes('<a class="site-header__brand" href="/newsletter">AI Agents Daily</a>'),
-      "brand link should render the base exactly as configured, with no slash inserted",
+      html.includes('<a class="site-header__brand" href="/newsletter/agents/">AI Agents Daily</a>'),
+      "brand link should join the base and the edition slug with a single slash",
     );
     // searchUrl/rssUrl must append exactly one slash (not zero, not two).
     assert.ok(
-      html.includes('<a class="site-header__search" href="/newsletter/search/">Search</a>'),
+      html.includes('<a class="site-header__search" href="/newsletter/agents/search/">Search</a>'),
       "search link should append a single slash when base has none",
     );
     assert.ok(
-      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/newsletter/rss.xml">'),
+      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/newsletter/agents/rss.xml">'),
       "RSS alternate link should append a single slash when base has none",
     );
-    assert.ok(html.includes('<a href="/newsletter/rss.xml">RSS</a>'));
+    assert.ok(html.includes('<a href="/newsletter/agents/rss.xml">RSS</a>'));
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
@@ -183,17 +185,17 @@ test("BaseLayout falls back to root-relative links when no SITE_BASE/SITE_URL en
     // branch, at the root rather than a sub-path).
     runBuild(fixtureSite, { SITE_BASE: undefined, SITE_URL: undefined });
 
-    const html = await readFile(join(fixtureSite, "dist", "search", "index.html"), "utf8");
+    const html = await readFile(join(fixtureSite, "dist", "agents", "search", "index.html"), "utf8");
 
     assert.ok(
-      html.includes('<a class="site-header__brand" href="/">AI Agents Daily</a>'),
-      "brand link should fall back to root when no base is configured",
+      html.includes('<a class="site-header__brand" href="/agents/">AI Agents Daily</a>'),
+      "brand link should fall back to /<edition>/ when no base is configured",
     );
     assert.ok(
-      html.includes('<a class="site-header__search" href="/search/">Search</a>'),
+      html.includes('<a class="site-header__search" href="/agents/search/">Search</a>'),
     );
     assert.ok(
-      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/rss.xml">'),
+      html.includes('<link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href="/agents/rss.xml">'),
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });

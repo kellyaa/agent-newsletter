@@ -22,6 +22,7 @@ site/.astro/
 # Machine-authored deploy artifacts (now on the 'content' orphan branch)
 state.db
 site/src/content/issues/*.md
+site/src/content/issues/*/
 # Content worktree
 .worktrees/
 # Advisory run locks (run.sh, scripts/watchdog.sh)

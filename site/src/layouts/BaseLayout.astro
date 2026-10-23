@@ -1,14 +1,23 @@
 ---
 import "../styles/global.css";
+import { UMBRELLA_NAME, UMBRELLA_DESCRIPTION } from "../scripts/editions";
 
 interface Props {
   title: string;
   description?: string;
+  /** The edition this page belongs to. Omit on umbrella pages (the homepage). */
+  edition?: { slug: string; name: string; tagline: string };
 }
-const { title, description = "A daily, opinionated digest on building and running AI agents." } = Astro.props;
+const { title, edition } = Astro.props;
+const description = Astro.props.description ?? edition?.tagline ?? UMBRELLA_DESCRIPTION;
 const baseUrl = import.meta.env.BASE_URL || "/";
-const searchUrl = baseUrl.endsWith("/") ? `${baseUrl}search/` : `${baseUrl}/search/`;
-const rssUrl = baseUrl.endsWith("/") ? `${baseUrl}rss.xml` : `${baseUrl}/rss.xml`;
+const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+const brandName = edition?.name ?? UMBRELLA_NAME;
+// Umbrella pages link to the site root exactly as the base was configured;
+// edition pages link to the edition front page.
+const brandHref = edition ? `${trimmedBase}/${edition.slug}/` : baseUrl;
+const searchUrl = edition ? `${trimmedBase}/${edition.slug}/search/` : undefined;
+const rssUrl = edition ? `${trimmedBase}/${edition.slug}/rss.xml` : undefined;
 ---
 <!doctype html>
 <html lang="en">
@@ -32,15 +41,15 @@ const rssUrl = baseUrl.endsWith("/") ? `${baseUrl}rss.xml` : `${baseUrl}/rss.xml
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" />
-    <link rel="alternate" type="application/rss+xml" title="AI Agents Daily" href={rssUrl} />
+    {rssUrl && <link rel="alternate" type="application/rss+xml" title={brandName} href={rssUrl} />}
     <title>{title}</title>
   </head>
   <body>
     <header class="site-header">
       <div class="site-header__inner">
-        <a class="site-header__brand" href={baseUrl}>AI Agents Daily</a>
-        <span class="site-header__tagline">for engineers who build and run agents</span>
-        <a class="site-header__search" href={searchUrl}>Search</a>
+        <a class="site-header__brand" href={brandHref}>{brandName}</a>
+        <span class="site-header__tagline">{edition?.tagline}</span>
+        {searchUrl && <a class="site-header__search" href={searchUrl}>Search</a>}
       </div>
     </header>
     <main class="container">
@@ -48,8 +57,11 @@ const rssUrl = baseUrl.endsWith("/") ? `${baseUrl}rss.xml` : `${baseUrl}/rss.xml
     </main>
     <footer class="site-footer">
       <div class="site-footer__inner">
-        <span>AI Agents Daily — automated digest, opinions sharpened by Claude</span>
-        <span>updated daily ~07:00 PT · <a href={rssUrl}>RSS</a></span>
+        <span>{brandName} — automated digest, opinions sharpened by Claude</span>
+        <span>
+          updated daily ~07:00 PT
+          {rssUrl && <> · <a href={rssUrl}>RSS</a></>}
+        </span>
       </div>
     </footer>
   </body>

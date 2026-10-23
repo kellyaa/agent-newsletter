@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/components/TagChip.astro end to end via a real Astro build.
 //
@@ -108,6 +109,7 @@ async function buildFixtureSite(prefix: string) {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   return { fixtureRoot, fixtureSite };
 }
@@ -143,26 +145,26 @@ test("TagChip renders the label prop inside a chip span", async () => {
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
     // Each tag should render as a chip span.
     assert.ok(
       html.includes(
-        '<a class="chip chip--link" href="/newsletter/tags/machine-learning/">machine-learning</a>',
+        '<a class="chip chip--link" href="/newsletter/agents/tags/machine-learning/">machine-learning</a>',
       ),
       "machine-learning tag should render as a link chip to its tag page",
     );
     assert.ok(
       html.includes(
-        '<a class="chip chip--link" href="/newsletter/tags/safety/">safety</a>',
+        '<a class="chip chip--link" href="/newsletter/agents/tags/safety/">safety</a>',
       ),
       "safety tag should render as a link chip to its tag page",
     );
     assert.ok(
       html.includes(
-        '<a class="chip chip--link" href="/newsletter/tags/scaling/">scaling</a>',
+        '<a class="chip chip--link" href="/newsletter/agents/tags/scaling/">scaling</a>',
       ),
       "scaling tag should render as a link chip to its tag page",
     );
@@ -194,7 +196,7 @@ test("TagChip does not render when an item has no tags", async () => {
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
@@ -233,7 +235,7 @@ test("TagChip escapes HTML special characters in label", async () => {
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
