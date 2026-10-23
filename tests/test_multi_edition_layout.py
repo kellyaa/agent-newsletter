@@ -196,6 +196,8 @@ class TestMigrateGitignore:
         root = tmp_path / "c"
         root.mkdir()
         _git(root, "init", "-q")
+        _git(root, "config", "user.name", "T")
+        _git(root, "config", "user.email", "t@example.com")
         assert ml.ensure_gitignore(root) is True
         assert (root / ".gitignore").read_text().startswith(ml.GITIGNORE_MARKER)
         (root / ".gitignore").write_text("/*")
