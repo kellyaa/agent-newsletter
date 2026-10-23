@@ -202,7 +202,7 @@ The DB contains only a cache of public RSS/HN/arXiv/GitHub items plus the ranker
 
 Four tables:
 
-- **`items`** — every fetched item, with status (`new` / `candidate` / `featured` / `appendix` / `published` / `dropped`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count). (Note: `ranked` is never written as a status; `rank.py` transitions directly from `candidate` to `featured`/`appendix`/`dropped`.)
+- **`items`** — every fetched item, with status (`new` / `candidate` / `featured` / `appendix` / `published` / `dropped` / `expired_unjudged`), assigned section, ranker score, tags, and dedup metadata (canonical URL, first/last-seen dates, appearance count). (Note: `ranked` is never written as a status; `rank.py` transitions directly from `candidate` to `featured`/`appendix`/`dropped`.)
 - **`runs`** — one row per published issue: item counts by section, wall-clock duration of the publishing attempt, and `tokens_in` / `tokens_out` summed over every attempt that day (#13; filled when the LLM endpoint reports usage). Models and per-model tokens are in `notes`. `cost_usd` stays empty: cost is priced downstream from the per-model tokens.
 - **`run_attempts`** — one row per `run.sh` invocation, failed ones included (`scripts/run_attempt.py`): start and finish time, `ok` / `failed` (or `started` if the run died mid-way), the failed stage and exit code, the code commit it ran, and that attempt's tokens and models. After a failure, `run.sh` commits and pushes `state.db` alone to `content`, so failures are visible off the pod. Nothing in the pipeline reads this table.
 - **`topics_covered`** — reserved for cross-day topic dedup (see #4); tracks which topic slugs the ranker has already featured.
