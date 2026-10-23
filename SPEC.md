@@ -291,7 +291,9 @@ CREATE TABLE runs (
   tokens_in INTEGER,              -- scaffold for cost tracking
   tokens_out INTEGER,
   cost_usd REAL,
-  notes TEXT
+  notes TEXT,
+  papers_expired_unjudged INTEGER, -- papers this run's age-out moved to expired_unjudged (#297)
+  papers_prerank_cut INTEGER       -- unscored papers PAPER_PRERANK_CAP left out of this run's ranker call (#297)
 );
 
 CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup; not yet written to (see #4)

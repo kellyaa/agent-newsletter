@@ -36,6 +36,7 @@ def load_candidates_from_db(
     prerank_cap: int | None = None,
     prerank_scorer: Any | None = None,
     now: datetime | None = None,
+    stats: dict[str, int] | None = None,
 ) -> dict[str, list[dict]]:
     """Load the current candidate pool from state.db, grouped by section.
 
@@ -54,6 +55,9 @@ def load_candidates_from_db(
         papers when prerank_cap is applied. Higher scores sort first.
     now : datetime, optional
         The reference time for the prerank scorer. Defaults to UTC now.
+    stats : dict, optional
+        If given, ``stats["prerank_cut"]`` is set to the number of unscored
+        papers the cap left out of this call (only when the cap truncated).
     """
     close_conn = False
     if conn is None:
@@ -61,13 +65,13 @@ def load_candidates_from_db(
         close_conn = True
 
     try:
-        return _load(conn, prerank_cap, prerank_scorer, now)
+        return _load(conn, prerank_cap, prerank_scorer, now, stats)
     finally:
         if close_conn:
             conn.close()
 
 
-def _load(conn, prerank_cap, prerank_scorer, now) -> dict[str, list[dict]]:
+def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]]:
     """Internal: query and group candidates."""
     grouped: dict[str, list[dict]] = {
         "papers": [],
@@ -126,5 +130,7 @@ def _load(conn, prerank_cap, prerank_scorer, now) -> dict[str, list[dict]]:
                 "papers pre-rank cap: %d unscored → %d",
                 before, len(grouped["papers"]),
             )
+            if stats is not None:
+                stats["prerank_cut"] = before - len(grouped["papers"])
 
     return grouped

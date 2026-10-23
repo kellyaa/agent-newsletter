@@ -114,7 +114,7 @@ class TestConnLifecycle:
 
         monkeypatch.setattr(candidates, "connect", tracking_connect)
 
-        def boom(conn, prerank_cap, prerank_scorer, now):
+        def boom(conn, prerank_cap, prerank_scorer, now, stats):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(candidates, "_load", boom)

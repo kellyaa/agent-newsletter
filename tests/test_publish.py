@@ -257,6 +257,35 @@ class TestMainNormalPublish:
         conn.close()
         assert row is not None
         assert row["items_papers"] == 1
+        assert row["papers_expired_unjudged"] is None
+        assert row["papers_prerank_cut"] is None
+
+    def test_copies_staged_prefilter_counts_onto_runs_row(self, db_path, tmp_path, monkeypatch):
+        from publish import main as publish_main, MIN_FILE_SIZE_BYTES
+        import publish as publish_mod
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        db_mod.record_stage_stats(conn, "2026-06-01", expired_unjudged=3, prerank_cut=12)
+        conn.close()
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
+        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+
+        with patch("publish.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
+            publish_main()
+
+        conn = db_mod.connect(db_path)
+        row = conn.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
+        conn.close()
+        assert row["papers_expired_unjudged"] == 3
+        assert row["papers_prerank_cut"] == 12
 
 
 # ---------------------------------------------------------------------------
