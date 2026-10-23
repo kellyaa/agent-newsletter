@@ -8,6 +8,7 @@ silently discarded (or the docs lie), with no error anywhere.
 import re
 from pathlib import Path
 
+import prompts
 from rank import VALID_TAGS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +35,7 @@ def test_valid_tags_has_thirteen_kebab_case_entries():
 
 
 def test_rank_prompt_lists_exactly_valid_tags():
-    prompt = (REPO_ROOT / "prompts" / "rank.md").read_text()
+    prompt = prompts.render("rank")
     assert _backticked_tags(prompt, "Closed-vocabulary tags") == VALID_TAGS
 
 
@@ -44,7 +45,7 @@ def test_spec_lists_exactly_valid_tags():
 
 
 def test_writer_prompt_example_tags_are_valid():
-    prompt = (REPO_ROOT / "prompts" / "write.md").read_text()
+    prompt = prompts.render("write")
     example = re.findall(r'"tags":\s*\[([^\]]*)\]', prompt)
     assert example, "write.md no longer shows a tags example"
     for group in example:

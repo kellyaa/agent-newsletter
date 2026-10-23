@@ -16,7 +16,9 @@ import os
 import sys
 
 from candidates import load_candidates_from_db
-from db import REPO_ROOT, connect, init_db
+import edition
+import prompts
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem
 from prefilter import PAPER_PRERANK_CAP, _prerank_score
@@ -27,8 +29,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("rank")
 
+EDITION = edition.current()
+# Base template; main() renders it with the edition's fragments.
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
-RANKED_PATH = REPO_ROOT / "ranked.json"  # debug artifact: raw LLM scores
+RANKED_PATH = edition.runtime_paths(CONTENT_ROOT).ranked  # debug artifact: raw LLM scores
 
 RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
 # Per-section call timeout. Per-call output is bounded by section size, so this
@@ -39,22 +43,12 @@ RANKER_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
 # repetition loops.
 RANKER_MAX_TOKENS = int(os.environ.get("RANKER_MAX_TOKENS", "32000"))
 
-# Per-section thresholds and caps. See SPEC.md "Ranking rubric".
+# Per-section thresholds and caps come from editions/<slug>/edition.yaml
+# (`sections:`). See SPEC.md "Ranking rubric".
 # Papers also has burst_cap/burst_trigger_score/burst_trigger_count for the
 # adaptive cap policy: when today's count of papers at score >= burst_trigger_score
 # reaches burst_trigger_count, the cap rises from `cap` to `burst_cap`.
-SECTION_RULES = {
-    "papers": {
-        "featured_min": 7,
-        "appendix_min": 5,
-        "cap": 5,
-        "burst_cap": 10,
-        "burst_trigger_score": 10,
-        "burst_trigger_count": 10,
-    },
-    "news":   {"featured_min": 6, "appendix_min": 4, "cap": 6},
-    "blogs":  {"featured_min": 6, "appendix_min": 4, "cap": 6},
-}
+SECTION_RULES = EDITION.section_rules()
 
 
 def effective_cap(section: str, items: list[dict]) -> int:
@@ -78,11 +72,7 @@ def effective_cap(section: str, items: list[dict]) -> int:
         return rules["burst_cap"]
     return rules["cap"]
 
-VALID_TAGS = {
-    "frameworks", "tool-use", "memory", "planning", "evals",
-    "code-agents", "devops-agents", "observability", "safety",
-    "research", "infra", "multi-agent", "cost-latency",
-}
+VALID_TAGS = EDITION.valid_tags()
 
 RANKER_OUTPUT_SCHEMA = {
     "type": "object",
@@ -312,7 +302,7 @@ def main() -> int:
         log.error("missing %s", PROMPT_PATH)
         return 2
 
-    rubric = PROMPT_PATH.read_text()
+    rubric = prompts.render_and_log("rank", EDITION, template_path=PROMPT_PATH)
 
     # Load candidates directly from the DB. This is the same function
     # prefilter.py uses to write its debug artifact, ensuring consistency.

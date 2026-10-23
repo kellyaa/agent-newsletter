@@ -17,6 +17,7 @@ SCRIPTS = REPO_ROOT / "scripts"
 # operator in .env, so they intentionally do not appear in the template.
 INTERNAL_VARS = {
     "CONTENT_ROOT",
+    "EDITION",
     "LLM_USAGE_LOG",
     "RUN_ATTEMPT",
     "RUN_DATE",

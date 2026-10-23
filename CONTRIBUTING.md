@@ -135,7 +135,7 @@ The two branches never merge. `run.sh` writes to `content` via a git worktree at
 
 ## Adding or removing a feed source
 
-Feed sources are declared in `sources.yaml`. Each source has an `id`, `url`, and optional overrides:
+Feed sources are declared in `editions/agents/sources.yaml`. Each source has an `id`, `url`, and optional overrides:
 
 - `section: papers | news | blogs` — override the family-default section assignment
 - `keyword_gate_bypass: true` — skip the prefilter keyword gate (use only for low-volume, hand-curated practitioner blogs)
@@ -143,12 +143,12 @@ Feed sources are declared in `sources.yaml`. Each source has an `id`, `url`, and
 - `weight: <float>` — **reserved stub; currently a no-op** (not read by pipeline code). Present on all existing entries. Do not change weight values expecting any behavioral effect.
 
 **To add a source:**
-1. Add an entry under the correct family key (`rss:`, `arxiv:`, `hn:`, etc.) in `sources.yaml`.
+1. Add an entry under the correct family key (`rss:`, `arxiv:`, `hn:`, etc.) in `editions/agents/sources.yaml`.
 2. Run `./run.sh --refetch` to pull from the new source and verify it produces items.
 3. Check the prefilter log to confirm items pass or are gated as expected.
 
 **To remove a source:**
-1. Delete the entry from `sources.yaml`.
+1. Delete the entry from `editions/agents/sources.yaml`.
 2. Items already in `state.db` from that source are not deleted; they will age out naturally.
 
 ---

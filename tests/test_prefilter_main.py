@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from conftest import base_template
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ def candidates_out(tmp_path):
 def rubric_file(tmp_path):
     """Return a tmp path for a minimal rank.md rubric."""
     p = tmp_path / "rank.md"
-    p.write_text("# Rubric\nScore on relevance.")
+    p.write_text(base_template("rank"))
     return p
 
 
@@ -88,7 +89,6 @@ def _insert_item(
 
 def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     """Run prefilter.main() with patched filesystem paths."""
-    import hashlib
     import prefilter as pf_mod
     import db as db_mod
 
@@ -96,11 +96,9 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     # Without this, _maybe_invalidate_papers_scores() sees a "new" hash and wipes
     # any cached scores we set up for the test.
     rubric_hash_path = candidates_out.parent / ".rubric_hash"
-    rubric_hash = hashlib.sha256(rubric_file.read_bytes()).hexdigest()
-    rubric_hash_path.write_text(rubric_hash)
-
     monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
+    rubric_hash_path.write_text(pf_mod._rubric_hash())
     monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash_path)
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))

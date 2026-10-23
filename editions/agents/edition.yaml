@@ -1,0 +1,69 @@
+# AI Agents Daily — the original edition.
+#
+# Values here were extracted verbatim from the constants that used to live in
+# scripts/prefilter.py (KEYWORDS), scripts/rank.py (SECTION_RULES, VALID_TAGS)
+# and scripts/write.py (READER_PROFILE). Prompt wording lives in prompts/*.md.
+slug: agents
+name: AI Agents Daily
+tagline: A daily, opinionated digest on building and running AI agents.
+status: live
+order: 10
+
+reader_profile: >-
+  Senior engineer / staff+ / architect who already knows what an LLM is,
+  writes production code, and cares about: building agents (frameworks, tool
+  use, memory, planning, evals, cost/latency); agents for software work
+  (codegen, review, devops, incident response, SRE); running agents in
+  production (observability, safety, failure modes, guardrails, deployment);
+  state-of-the-art papers with concrete techniques; and agents for
+  non-software tech work (managing servers, k8s, fleets). Down-weighted:
+  consumer AI hype, funding/VC takes, prompt-engineering tips, generic ML
+  news, model benchmarks without methodological interest.
+
+keywords:   # prefilter keyword gate (regex, case-insensitive)
+  - '\bagent(s|ic|s'')?\b'
+  - '\btool[- ]use\b'
+  - '\btool[- ]calling\b'
+  - '\bllm\b'
+  - '\blanguage model\b'
+  - '\bmcp\b'
+  - '\bmodel context protocol\b'
+  - '\brag\b'
+  - '\bretrieval[- ]augmented\b'
+  - '\beval(s|uation)?\b'
+  - '\bmulti[- ]agent\b'
+  - '\bcode generation\b'
+  - '\bcopilot\b'
+  - '\bchain[- ]of[- ]thought\b'
+  - '\bplanning\b'
+  - '\bworkflow\b'
+  - '\bautonomous\b'
+  - '\bclaude code\b'
+  - '\bgpt[- ]?\d?\b'
+  - '\bclaude\b'
+  - '\bgemini\b'
+  - '\bdspy\b'
+  - '\blanggraph\b'
+  - '\blangchain\b'
+  - '\bautogen\b'
+  - '\bcrewai\b'
+
+tags:       # closed vocabulary for the ranker
+  - frameworks
+  - tool-use
+  - memory
+  - planning
+  - evals
+  - code-agents
+  - devops-agents
+  - observability
+  - safety
+  - research
+  - infra
+  - multi-agent
+  - cost-latency
+
+sections:   # thresholds and caps; the only per-edition numeric overrides
+  papers: { featured_min: 7, appendix_min: 5, cap: 5, burst_cap: 10, burst_trigger_score: 10, burst_trigger_count: 10 }
+  news: { featured_min: 6, appendix_min: 4, cap: 6 }
+  blogs: { featured_min: 6, appendix_min: 4, cap: 6 }

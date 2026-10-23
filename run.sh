@@ -25,6 +25,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+# Which edition this run is for (editions/<slug>/). The scripts have no default
+# edition and refuse to start without EDITION, so it is exported explicitly.
+# Only `agents` exists today; multi-edition orchestration is a later change.
+export EDITION=agents
+
 FORCE=false
 REFETCH=false
 for arg in "$@"; do

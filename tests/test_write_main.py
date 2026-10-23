@@ -6,6 +6,7 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
+from conftest import base_template
 
 
 @pytest.fixture()
@@ -26,7 +27,7 @@ def issues_dir(tmp_path):
 @pytest.fixture()
 def prompt_file(tmp_path):
     p = tmp_path / "write.md"
-    p.write_text("# Write rubric\nWrite good prose.")
+    p.write_text(base_template("write"))
     return p
 
 

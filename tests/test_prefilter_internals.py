@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from conftest import base_template
 
 from prefilter import (
     _prerank_score,
@@ -129,6 +130,15 @@ class TestPrerankScore:
 # _rubric_hash
 # ---------------------------------------------------------------------------
 
+def _expected_hash(rubric_path):
+    """sha256 of the rank prompt as the ranker sees it: base template + fragments."""
+    import hashlib
+    import edition
+    import prompts
+    rendered = prompts.render("rank", edition.current(), template_path=rubric_path)
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
 class TestRubricHash:
     def test_returns_empty_string_when_file_absent(self, tmp_path, monkeypatch):
         import prefilter as pf_mod
@@ -138,19 +148,28 @@ class TestRubricHash:
     def test_returns_sha256_hex_string(self, tmp_path, monkeypatch):
         import prefilter as pf_mod
         rubric = tmp_path / "rank.md"
-        rubric.write_text("score by novelty")
+        rubric.write_text(base_template("rank"))
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
         h = _rubric_hash()
         assert len(h) == 64
         assert all(c in "0123456789abcdef" for c in h)
 
-    def test_hash_changes_when_content_changes(self, tmp_path, monkeypatch):
+    def test_hash_is_of_the_rendered_prompt_not_the_template(self, tmp_path, monkeypatch):
+        import hashlib
         import prefilter as pf_mod
         rubric = tmp_path / "rank.md"
-        rubric.write_text("v1 content")
+        rubric.write_text(base_template("rank"))
+        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
+        assert _rubric_hash() == _expected_hash(rubric)
+        assert _rubric_hash() != hashlib.sha256(rubric.read_bytes()).hexdigest()
+
+    def test_hash_changes_when_template_changes(self, tmp_path, monkeypatch):
+        import prefilter as pf_mod
+        rubric = tmp_path / "rank.md"
+        rubric.write_text(base_template("rank") + "\nv1\n")
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
         h1 = _rubric_hash()
-        rubric.write_text("v2 content")
+        rubric.write_text(base_template("rank") + "\nv2\n")
         h2 = _rubric_hash()
         assert h1 != h2
 
@@ -186,11 +205,9 @@ class TestMaybeInvalidatePapersScores:
         import prefilter as pf_mod
 
         rubric = tmp_path / "rank.md"
-        rubric.write_text("fixed rubric")
+        rubric.write_text(base_template("rank"))
         hash_file = tmp_path / ".rubric_hash"
-        import hashlib
-        h = hashlib.sha256(b"fixed rubric").hexdigest()
-        hash_file.write_text(h)
+        hash_file.write_text(_expected_hash(rubric))
 
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
         monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", hash_file)
@@ -207,7 +224,7 @@ class TestMaybeInvalidatePapersScores:
         import prefilter as pf_mod
 
         rubric = tmp_path / "rank.md"
-        rubric.write_text("new rubric content")
+        rubric.write_text(base_template("rank"))
         hash_file = tmp_path / ".rubric_hash"
         hash_file.write_text("old_hash_value")  # stale hash
 
@@ -227,7 +244,7 @@ class TestMaybeInvalidatePapersScores:
         import hashlib
 
         rubric = tmp_path / "rank.md"
-        rubric.write_text("rubric v2")
+        rubric.write_text(base_template("rank"))
         hash_file = tmp_path / ".rubric_hash"
         hash_file.write_text("stale")
 
@@ -236,7 +253,7 @@ class TestMaybeInvalidatePapersScores:
 
         _maybe_invalidate_papers_scores(conn)
 
-        expected = hashlib.sha256(b"rubric v2").hexdigest()
+        expected = _expected_hash(rubric)
         assert hash_file.read_text().strip() == expected
 
     def test_returns_zero_when_rubric_file_absent(self, db_with_scored_papers, monkeypatch):
@@ -270,7 +287,7 @@ class TestMaybeInvalidatePapersScores:
         conn_fresh = db_mod.connect(fresh_db)
 
         rubric = tmp_path / "rank.md"
-        rubric.write_text("rubric first run")
+        rubric.write_text(base_template("rank"))
         hash_file = tmp_path / ".rubric_hash"
         # Ensure no existing hash file
         if hash_file.exists():
@@ -286,7 +303,7 @@ class TestMaybeInvalidatePapersScores:
 
             # Hash file should now exist with current rubric hash
             assert hash_file.exists()
-            expected = hashlib.sha256(b"rubric first run").hexdigest()
+            expected = _expected_hash(rubric)
             assert hash_file.read_text().strip() == expected
         finally:
             conn_fresh.close()
