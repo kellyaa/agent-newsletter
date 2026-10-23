@@ -92,14 +92,15 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     import prefilter as pf_mod
     import db as db_mod
 
-    # Pre-populate the rubric hash file to prevent score invalidation during tests.
+    # Pre-populate the rubric hash in the DB's meta table to prevent score invalidation during tests.
     # Without this, _maybe_invalidate_papers_scores() sees a "new" hash and wipes
     # any cached scores we set up for the test.
-    rubric_hash_path = candidates_out.parent / ".rubric_hash"
     monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
-    rubric_hash_path.write_text(pf_mod._rubric_hash())
-    monkeypatch.setattr(pf_mod, "RUBRIC_HASH_PATH", rubric_hash_path)
+    db_mod.init_db(db_path)
+    seed = db_mod.connect(db_path)
+    db_mod.set_meta(seed, pf_mod.RUBRIC_HASH_KEY, pf_mod._rubric_hash())
+    seed.close()
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
 

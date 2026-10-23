@@ -50,7 +50,7 @@ export async function GET(context) {
         : `Issue ${issue.data.date}`,
       description: issue.data.theme || `AI Agents Daily — ${issue.data.date}`,
       pubDate: new Date(`${issue.data.date}T12:00:00Z`),
-      link: `${base}/issues/${issue.id}/`,
+      link: `${base}/issues/${issue.data.date}/`,
       content: renderItemContent(issue),
     })),
     customData: `<language>en-us</language>`,

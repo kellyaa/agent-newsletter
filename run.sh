@@ -1,49 +1,71 @@
 #!/usr/bin/env bash
 #
-# Daily orchestrator for the AI-Agents newsletter pipeline.
+# Daily orchestrator for the newsletter pipeline: runs every edition in turn.
 #
-# Stages: fetch → prefilter → rank → write → publish → git push
+# Each edition (editions/<slug>/) runs in its own child process,
+# scripts/run_edition.sh (fetch → prefilter → rank → write → publish → commit and
+# push editions/<slug>/). One edition failing never blocks the others; the
+# orchestrator carries on, then exits non-zero if any edition failed.
 #
-# Each stage is idempotent. A re-run picks up where a prior failure left off:
-#   - fetch skips if today's items are already in the DB
-#   - prefilter is a no-op if there's nothing new to gate
-#   - rank skips items that already have a status past 'candidate'
-#   - write skips if today's issue file exists
-#   - publish skips if today's runs row exists and items are published
+# Every stage is idempotent, so a re-run picks up where a failure left off.
 #
 # Usage:
-#   ./run.sh             — normal daily run; idempotent
-#   ./run.sh --force     — reset today's post-fetch state and re-run everything
-#                          downstream of fetch (preserves fetched data; arXiv is
-#                          rate-limited so we don't redo network pulls)
-#   ./run.sh --refetch   — also delete today's fetched items so fetch runs again
-#                          from scratch. Implies --force. Use sparingly: arXiv
-#                          may 429 if you re-pull too often.
+#   ./run.sh                  — every draft + live edition, in `order`. Skips an
+#                               edition whose latest attempt today is ok, so a
+#                               plain re-run is cheap and safe.
+#   ./run.sh --failed         — only editions whose latest attempt today failed
+#                               or died mid-run ("started"). "nothing to re-run"
+#                               and exit 0 if there are none.
+#   ./run.sh --edition X      — only edition X (repeatable). Paused editions are
+#                               allowed here, for manual runs.
+#   ./run.sh --force          — per selected edition: reset today's post-fetch
+#                               state and re-run everything downstream of fetch
+#                               (preserves fetched data; arXiv is rate-limited)
+#   ./run.sh --refetch        — also delete today's fetched items so fetch runs
+#                               again. Implies --force and REQUIRES --edition, so
+#                               it can't re-pull arXiv for every edition at once.
+#
+# Logs: logs/run-DATE.log is the orchestrator summary (one line per edition);
+# logs/<slug>/run-DATE.log is the full per-edition output, ending in DONE.
 #
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-# Which edition this run is for (editions/<slug>/). The scripts have no default
-# edition and refuse to start without EDITION, so it is exported explicitly.
-# Only `agents` exists today; multi-edition orchestration is a later change.
-export EDITION=agents
-
 FORCE=false
 REFETCH=false
-for arg in "$@"; do
-  case "$arg" in
+FAILED_ONLY=false
+EDITIONS_WANTED=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --force) FORCE=true ;;
     --refetch) REFETCH=true; FORCE=true ;;
+    --failed) FAILED_ONLY=true ;;
+    --edition)
+      if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+        printf -- '--edition needs a value\n' >&2; exit 2
+      fi
+      EDITIONS_WANTED+=("$2"); shift ;;
+    --edition=*) EDITIONS_WANTED+=("${1#--edition=}") ;;
     -h|--help)
       # Print the header comment (stops output from going to the run log).
-      sed -n '3,21p' "$0"
+      sed -n '3,30p' "$0"
       exit 0
       ;;
-    *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
+    *) printf 'unknown arg: %s\n' "$1" >&2; exit 2 ;;
   esac
+  shift
 done
+
+if [ "$REFETCH" = true ] && [ "${#EDITIONS_WANTED[@]}" -eq 0 ]; then
+  printf -- '--refetch requires --edition <slug> (it re-pulls arXiv; do it one edition at a time)\n' >&2
+  exit 2
+fi
+if [ "$FAILED_ONLY" = true ] && [ "${#EDITIONS_WANTED[@]}" -gt 0 ]; then
+  printf -- '--failed and --edition cannot be combined\n' >&2
+  exit 2
+fi
 
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR"
@@ -56,16 +78,11 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
-# Run accounting (#13). llm.py appends one line per LLM call, tagged with
-# RUN_ATTEMPT; the file is per day and never truncated, so publish.py's runs
-# row counts every attempt's spend, and run_attempt.py counts this attempt's.
-export LLM_USAGE_LOG="$LOG_DIR/usage-$DATE_TODAY.jsonl"
-export RUN_STARTED_AT="$(ts)"
 export RUN_DATE="$DATE_TODAY"
-RUN_ATTEMPT=""
 
 # ─── Single-run lock ───────────────────────────────────────────────────────
-# Hold an advisory lock for the life of this run. scripts/watchdog.sh probes
+# Hold an advisory lock for the life of this run (editions run one after
+# another under it; children inherit the descriptor). scripts/watchdog.sh probes
 # this same lock to tell "died mid-run" apart from "still running", so it never
 # starts a second pipeline on top of a live one. Released when the shell exits.
 LOCK_FILE="$REPO_ROOT/.watchdog.lock"
@@ -85,35 +102,16 @@ notify() {
   fi
 }
 
-# On any error before DONE, fire a notification and exit nonzero.
+# A failure of the orchestrator itself (before or between editions). Edition
+# failures are handled in run_edition.sh and are never fatal here.
 fail_handler() {
   local rc=$?
-  local stage="${CURRENT_STAGE:-unknown}"
-  log "FAILED at stage=$stage rc=$rc — see $LOG_FILE"
-  notify "Newsletter pipeline failed" "stage=$stage  rc=$rc — see logs/$(basename "$LOG_FILE")"
-  record_failed_attempt "$stage" "$rc"
+  log "FAILED in orchestrator at stage=${CURRENT_STAGE:-unknown} rc=$rc — see $LOG_FILE"
+  notify "Newsletter pipeline failed" \
+    "orchestrator stage=${CURRENT_STAGE:-unknown} rc=$rc — see logs/$(basename "$LOG_FILE")"
   exit "$rc"
 }
-
-# Mark this attempt failed in state.db's run_attempts table and push state.db
-# (never the issue file) to content, so the failure is visible off the pod and
-# the next attempt starts from this one's state. Best effort: every step may
-# fail without masking the original error. A no-op until the attempt row
-# exists, i.e. for failures before the content worktree is ready.
-record_failed_attempt() {
-  [ -n "$RUN_ATTEMPT" ] || return 0
-  set +e
-  "${PY_RUN[@]}" scripts/run_attempt.py finish "$RUN_ATTEMPT" failed \
-    --stage "$1" --exit-code "$2"
-  # `commit -- state.db` commits that path only, even if the issue file was
-  # already staged by the commit step below.
-  git -C "$CONTENT_WORKTREE" add state.db \
-    && git -C "$CONTENT_WORKTREE" commit -qm \
-      "newsletter: $DATE_TODAY attempt $RUN_ATTEMPT failed at $1" -- state.db \
-    && git -C "$CONTENT_WORKTREE" push --quiet \
-    && log "git: pushed failed attempt $RUN_ATTEMPT to content"
-  set -e
-}
+CURRENT_STAGE="startup"
 trap fail_handler ERR
 
 # ─── Python runner ─────────────────────────────────────────────────────────
@@ -126,8 +124,12 @@ trap fail_handler ERR
 # points at are both under $HOME and survive restarts, so fall back to calling
 # that python directly rather than letting a broken tool installer sink the run.
 # The probe is cheap and self-correcting: once uv works again, uv is used again.
+# NEWSLETTER_PYTHON overrides the probe (tests, unusual setups).
 PY_RUN=()
-if timeout 45 uv --version >/dev/null 2>&1; then
+if [ -n "${NEWSLETTER_PYTHON:-}" ]; then
+  read -r -a PY_RUN <<< "$NEWSLETTER_PYTHON"
+  log "── python runner ── $NEWSLETTER_PYTHON (NEWSLETTER_PYTHON)"
+elif timeout 45 uv --version >/dev/null 2>&1; then
   PY_RUN=(uv run python)
   log "── python runner ── uv run python"
 elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
@@ -137,6 +139,7 @@ else
   log "── python runner ── none usable: uv is broken and .venv/bin/python is missing"
   exit 1
 fi
+export NEWSLETTER_PYTHON="${PY_RUN[*]}"
 
 # ─── Environment loading ───────────────────────────────────────────────────
 # Load LLM credentials and other config. Sourced in order, so the *last* file
@@ -156,15 +159,17 @@ done
 # this is a no-op catchup on main. For a human running ./run.sh from a
 # feature branch, it updates that branch. --ff-only lets git's native error
 # surface if the working tree is dirty or the pull isn't fast-forward.
+CURRENT_STAGE="self-update"
 log "── self-update ── pulling current branch"
 git pull --ff-only
 
 # ─── Content worktree ──────────────────────────────────────────────────────
 # The 'content' orphan branch holds machine-authored deploy artifacts
-# (state.db, site/src/content/issues/*). Pipeline scripts write into this
-# worktree via the CONTENT_ROOT env var. The worktree is created on first
-# run and reused thereafter; the pull catches up any commits pushed from
-# another machine or a manual edit.
+# (editions/<slug>/state.db and editions/<slug>/issues/*). Pipeline scripts
+# write into this worktree via the CONTENT_ROOT env var. The worktree is
+# created on first run and reused thereafter; the pull catches up any commits
+# pushed from another machine or a manual edit.
+CURRENT_STAGE="content-worktree"
 CONTENT_WORKTREE="$REPO_ROOT/.worktrees/content"
 
 if ! git worktree list --porcelain | grep -q "$CONTENT_WORKTREE\$"; then
@@ -175,149 +180,112 @@ log "── content worktree ── pulling"
 git -C "$CONTENT_WORKTREE" pull --ff-only
 
 export CONTENT_ROOT="$CONTENT_WORKTREE"
+export CONTENT_WORKTREE
 
-# ─── Run attempt ───────────────────────────────────────────────────────────
-# One run_attempts row per invocation (scripts/run_attempt.py). Written only
-# now: a modified state.db before the pull above would stop it fast-forwarding.
-# Accounting must not sink the run, so a failure here just skips the row.
-RUN_ATTEMPT="$("${PY_RUN[@]}" scripts/run_attempt.py start)" || RUN_ATTEMPT=""
-[[ "$RUN_ATTEMPT" =~ ^[0-9]+$ ]] || RUN_ATTEMPT=""
-export RUN_ATTEMPT
-log "── run attempt ── ${RUN_ATTEMPT:-not recorded}"
+# ─── Layout migration ──────────────────────────────────────────────────────
+# One-time, idempotent: moves the single-edition layout (state.db and
+# site/src/content/issues/ at the content root) under editions/agents/. A no-op
+# once done. It refuses (exit 3) while the deploy workflow cannot yet stage the
+# new layout; running on would write a fresh agents DB at the new path and
+# strand the history, so stop here, loudly.
+CURRENT_STAGE="migrate-layout"
+log "── migrate layout ──"
+"${PY_RUN[@]}" scripts/migrate_layout.py --content-root "$CONTENT_WORKTREE" --push
 
-# ─── Refetch: delete today's fetched items so fetch runs again ─────────────
-# This must run BEFORE the --force block, since --force resets statuses based
-# on rows that we're about to delete here.
-if [ "$REFETCH" = true ]; then
-  log "REFETCH: deleting today's fetched items so fetch runs again"
-  "${PY_RUN[@]}" - <<'PY'
-import sqlite3
-from datetime import datetime
-from pathlib import Path
+# ─── Select editions ───────────────────────────────────────────────────────
+CURRENT_STAGE="select-editions"
+# `edition.py list` prints "slug<TAB>status<TAB>name" per edition folder, in run
+# order. A folder with a broken config shows as "invalid": it still runs (and
+# fails loudly, with a notification) instead of silently vanishing.
+declare -A STATUS_OF=()
+ALL_SLUGS=()
+while IFS=$'\t' read -r slug status _name; do
+  [ -n "$slug" ] || continue
+  STATUS_OF["$slug"]="$status"
+  ALL_SLUGS+=("$slug")
+done < <("${PY_RUN[@]}" scripts/edition.py list)
 
-import os
-
-content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
-db = content_root / "state.db"
-today = datetime.now().date().isoformat()
-
-if not db.exists():
-    print(f"no state.db at {db}; nothing to delete")
-else:
-    conn = sqlite3.connect(db)
-    cur = conn.execute(
-        "DELETE FROM items WHERE first_seen_date = ?", (today,)
-    )
-    conn.commit()
-    print(f"deleted {cur.rowcount} items first seen on {today}")
-    conn.close()
-PY
-fi
-
-# ─── Force: reset today's post-fetch state ─────────────────────────────────
-if [ "$FORCE" = true ]; then
-  log "FORCE: resetting today's post-fetch state"
-  "${PY_RUN[@]}" - <<'PY'
-import sqlite3
-from datetime import datetime
-from pathlib import Path
-
-import os
-
-content_root = Path(os.environ.get("CONTENT_ROOT", Path.cwd()))
-db = content_root / "state.db"
-today = datetime.now().date().isoformat()
-
-conn = sqlite3.connect(db)
-# Send today's processed items back to 'candidate' so rank/write can re-run.
-# Leave 'new' alone (prefilter handles those naturally) and leave 'dropped'
-# alone (those are deliberate negatives we don't want to re-evaluate).
-# Match by first_seen_date — last_seen_date matches any prior-day published
-# item that today's feeds re-surfaced (fetch bumps last_seen_date on conflict),
-# which would re-promote already-published items into today's issue.
-conn.execute(
-    "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL "
-    "WHERE status IN ('featured', 'appendix', 'published') AND first_seen_date = ?",
-    (today,),
-)
-conn.execute("DELETE FROM runs WHERE date = ?", (today,))
-conn.commit()
-conn.close()
-
-# Drop today's issue file so write.py runs.
-issue = content_root / "site" / "src" / "content" / "issues" / f"{today}.md"
-if issue.exists():
-    issue.unlink()
-    print(f"removed {issue}")
-PY
-fi
-
-# ─── Stages ────────────────────────────────────────────────────────────────
-run_stage() {
-  local label="$1"; shift
-  CURRENT_STAGE="$label"
-  log "── $label ── start"
-  if "$@"; then
-    log "── $label ── ok"
-  else
-    local rc=$?
-    log "── $label ── FAILED (exit $rc)"
-    return "$rc"
-  fi
+# Latest attempt today for an edition: ok | failed | started | none.
+latest_attempt() {
+  EDITION="$1" "${PY_RUN[@]}" scripts/run_attempt.py latest 2>/dev/null || echo none
 }
 
-run_stage "fetch"     "${PY_RUN[@]}" scripts/fetch.py
-run_stage "prefilter" "${PY_RUN[@]}" scripts/prefilter.py
-run_stage "rank"      "${PY_RUN[@]}" scripts/rank.py
-run_stage "write"     "${PY_RUN[@]}" scripts/write.py
-run_stage "publish"   "${PY_RUN[@]}" scripts/publish.py
-
-# Mark the attempt ok before committing, so the commit below carries the row.
-# A git add/commit error re-marks it failed at stage=git. A failed push does
-# not: the issue is committed locally and goes out with the next push.
-CURRENT_STAGE="git"
-if [ -n "$RUN_ATTEMPT" ]; then
-  "${PY_RUN[@]}" scripts/run_attempt.py finish "$RUN_ATTEMPT" ok \
-    || log "run attempt: could not mark $RUN_ATTEMPT ok"
+SELECTED=()
+if [ "${#EDITIONS_WANTED[@]}" -gt 0 ]; then
+  for slug in "${EDITIONS_WANTED[@]}"; do
+    if [ -z "${STATUS_OF[$slug]+x}" ]; then
+      log "unknown edition '$slug' (known: ${ALL_SLUGS[*]:-none})"
+      exit 2
+    fi
+    SELECTED+=("$slug")
+  done
+else
+  for slug in "${ALL_SLUGS[@]}"; do
+    status="${STATUS_OF[$slug]}"
+    [ "$status" = paused ] && continue
+    latest="$(latest_attempt "$slug")"
+    if [ "$FAILED_ONLY" = true ]; then
+      # An invalid config never records an attempt; it has not succeeded either.
+      case "$latest" in failed|started) ;; *) [ "$status" = invalid ] || continue ;; esac
+    elif [ "$FORCE" != true ] && [ "$latest" = ok ]; then
+      log "── $slug ── already ok today; skipping"
+      continue
+    fi
+    SELECTED+=("$slug")
+  done
 fi
 
-# ─── Git commit/push (content branch) ──────────────────────────────────────
-# Commit and push generated artifacts to the 'content' branch via the
-# worktree. All git ops run with -C "$CONTENT_WORKTREE" so we don't touch
-# the main working tree's index.
-git_paths=(
-  "site/src/content/issues"
-  "state.db"
-)
+if [ "${#SELECTED[@]}" -eq 0 ]; then
+  if [ "$FAILED_ONLY" = true ]; then
+    log "nothing to re-run: no edition failed today"
+  else
+    log "nothing to run: every edition is already ok today (use --force to re-run)"
+  fi
+  log "DONE"
+  exit 0
+fi
+log "── editions ── ${SELECTED[*]}"
 
-existing_paths=()
-for p in "${git_paths[@]}"; do
-  [ -e "$CONTENT_WORKTREE/$p" ] && existing_paths+=("$p")
+# ─── Run each edition in its own child process ─────────────────────────────
+# A failure is recorded and the loop carries on. The child sends its own
+# notification and pushes its own failed-attempt row.
+child_args=()
+[ "$REFETCH" = true ] && child_args+=(--refetch)
+[ "$REFETCH" != true ] && [ "$FORCE" = true ] && child_args+=(--force)
+
+OK_SLUGS=()
+FAILED_SLUGS=()
+SUMMARY=()
+CURRENT_STAGE="editions"
+for slug in "${SELECTED[@]}"; do
+  log "── $slug ── start (logs/$slug/run-$DATE_TODAY.log)"
+  # `if` (not `set +e`): the ERR trap fires on a failing command even with -e
+  # off, but never for a command tested by `if`.
+  if EDITION="$slug" bash "$REPO_ROOT/scripts/run_edition.sh" ${child_args[@]+"${child_args[@]}"}; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [ "$rc" -eq 0 ]; then
+    OK_SLUGS+=("$slug")
+    SUMMARY+=("$slug: ok")
+    log "── $slug ── ok"
+  else
+    stage="$(grep -oE 'FAILED at stage=[a-z-]+' "$REPO_ROOT/logs/$slug/run-$DATE_TODAY.log" 2>/dev/null \
+      | tail -1 | cut -d= -f2 || true)"
+    FAILED_SLUGS+=("$slug")
+    SUMMARY+=("$slug: FAILED at stage=${stage:-unknown} rc=$rc")
+    log "── $slug ── FAILED at stage=${stage:-unknown} rc=$rc — re-run: ./run.sh --edition $slug"
+  fi
 done
 
-if [ "${#existing_paths[@]}" -eq 0 ]; then
-  log "git: nothing to commit (no tracked artifacts in content worktree)"
-  exit 0
-fi
+log "── summary ── ok=${#OK_SLUGS[@]} failed=${#FAILED_SLUGS[@]}"
+for line in "${SUMMARY[@]}"; do log "  $line"; done
 
-git -C "$CONTENT_WORKTREE" add "${existing_paths[@]}"
-if git -C "$CONTENT_WORKTREE" diff --cached --quiet; then
-  log "git: nothing to commit"
-  exit 0
-fi
-
-git -C "$CONTENT_WORKTREE" commit -m "newsletter: $DATE_TODAY daily run" >/dev/null
-log "git: committed $DATE_TODAY daily run (content)"
-
-if git -C "$CONTENT_WORKTREE" remote get-url origin >/dev/null 2>&1; then
-  if git -C "$CONTENT_WORKTREE" push --quiet; then
-    log "git: pushed to content"
-  else
-    log "git: push failed (will retry on next run)"
-    exit 1
-  fi
-else
-  log "git: no remote configured; skipping push"
+if [ "${#FAILED_SLUGS[@]}" -gt 0 ]; then
+  log "FAILED editions: ${FAILED_SLUGS[*]} — re-run with ./run.sh --failed"
+  trap - ERR
+  exit 1
 fi
 
 log "DONE"

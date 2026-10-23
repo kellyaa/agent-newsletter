@@ -209,3 +209,34 @@ def test_content_branch_read_from_remote_tracking_ref(tmp_path):
     result = _run_watchdog(repo)
 
     assert "watchdog: ok" in result.stdout
+
+
+def test_per_edition_daily_run_commit_counts_as_fresh(tmp_path):
+    repo = _repo_with_main_edit(tmp_path)
+    _content_commit(repo, "newsletter(sdlc): 2026-10-23 daily run")
+
+    result = _run_watchdog(repo)
+
+    assert "watchdog: ok" in result.stdout
+    assert not (repo / "logs" / "watchdog-last-fire").exists()
+
+
+def test_per_edition_failed_attempt_commit_does_not_reset_the_clock(tmp_path):
+    repo = _repo_with_main_edit(tmp_path)
+    _content_commit(repo, "newsletter(agents): 2000-01-01 daily run",
+                    date=_old_commit_date())
+    _content_commit(repo, "newsletter(sdlc): 2026-10-23 attempt 1 failed at rank")
+
+    result = _run_watchdog(repo)
+
+    assert "watchdog: STALE" in result.stdout
+
+
+def test_main_head_with_per_edition_newsletter_subject_is_a_baseline(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter(agents): 2000-01-01 daily run",
+                          commit_date=_old_commit_date())
+
+    result = _run_watchdog(repo)
+
+    assert "not a newsletter commit" not in result.stdout
+    assert "watchdog: STALE" in result.stdout

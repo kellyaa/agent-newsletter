@@ -47,17 +47,14 @@ class TestInvokeRanker:
 
     def test_debug_file_written_on_error(self, tmp_path):
         from rank import invoke_ranker
-        import rank as rank_mod
-        orig = rank_mod.REPO_ROOT
-        rank_mod.REPO_ROOT = tmp_path
+        import edition
         bad_response = {"unexpected": "format", "rankings": 99}
-        try:
-            with patch("rank.call_llm", return_value=bad_response):
-                with pytest.raises(RuntimeError):
-                    invoke_ranker("prompt", label="test-section")
-        finally:
-            rank_mod.REPO_ROOT = orig
-        debug_files = list((tmp_path / "logs").glob("ranker-output-*.json"))
+        with patch("rank.call_llm", return_value=bad_response):
+            with pytest.raises(RuntimeError):
+                invoke_ranker("prompt", label="test-section")
+        # conftest points LOGS_ROOT at a tmp dir; artifacts go under <slug>/.
+        logs = edition.LOGS_ROOT / "agents"
+        debug_files = list(logs.glob("ranker-output-*.json"))
         assert len(debug_files) == 1
         assert json.loads(debug_files[0].read_text()) == bad_response
 

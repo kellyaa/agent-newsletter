@@ -4,8 +4,9 @@
 #
 # Triggered hourly by ~/Library/LaunchAgents/com.kelly.agent-newsletter-watchdog.plist.
 # Definition of "stuck": the newest successful daily-run commit
-# ("newsletter: <date> daily run") on the `content` branch is older than
-# STALE_HOURS hours. Failure/recovery commits on that branch do not count.
+# ("newsletter(<slug>): <date> daily run", or the pre-multi-edition
+# "newsletter: <date> daily run") of ANY edition on the `content` branch is older
+# than STALE_HOURS hours. Per-edition health is scripts/watchdog.sh's job. Failure/recovery commits on that branch do not count.
 # If there is no content branch yet, fall back to main's HEAD, and only when it
 # is a `newsletter:` commit (so hand-editing code never false-fires).
 #
@@ -33,11 +34,12 @@ notify() {
 # the "not a newsletter commit" skip and could never fire.
 CONTENT_WORKTREE="${CONTENT_WORKTREE:-$REPO_ROOT/.worktrees/content}"
 
-# A successful daily run is committed as "newsletter: <date> daily run". Other
-# `newsletter:` subjects (e.g. "... attempt N failed at <stage>", "persist
+# A successful daily run is committed as "newsletter(<slug>): <date> daily run"
+# (before the multi-edition layout: "newsletter: <date> daily run"). Other
+# `newsletter` subjects (e.g. "... attempt N failed at <stage>", "persist
 # state.db from interrupted ... run") are written when a run FAILS, so they must
 # not reset the staleness clock.
-DAILY_RUN_PATTERN='^newsletter:.* daily run$'
+DAILY_RUN_PATTERN='^newsletter(\([a-z0-9-]+\))?:.* daily run$'
 
 # Newest daily-run commit on the content branch (epoch seconds, 0 if none).
 # Prefer the live worktree; otherwise look at the local and remote-tracking
@@ -76,7 +78,7 @@ else
 
   # If the last commit isn't a daily-run commit, we don't have a meaningful
   # baseline (operator may have been editing code). Skip.
-  if [[ "$last_commit_subject" != newsletter:* ]]; then
+  if [[ "$last_commit_subject" != newsletter:* && "$last_commit_subject" != newsletter\(* ]]; then
     echo "watchdog: HEAD is not a newsletter commit ($last_commit_subject) — skipping check"
     exit 0
   fi

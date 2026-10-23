@@ -94,7 +94,7 @@ test("isTagSlug accepts vocabulary tags and rejects unsafe ones", () => {
 test("tag pages: index counts, per-tag listing order, chip links", async () => {
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-tagpages-");
   try {
-    const dir = join(fixtureSite, "src", "content", "issues");
+    const dir = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, "2026-06-01.md"),

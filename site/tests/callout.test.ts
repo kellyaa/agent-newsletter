@@ -101,7 +101,7 @@ test("Callout renders the takeaway variant's class and label, and the question v
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-callout-");
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featured = [
@@ -182,7 +182,7 @@ test("Callout does not render at all for an item with neither takeaway nor open_
   const { fixtureRoot, fixtureSite } = await buildFixtureSite("newsletter-callout-none-");
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     const featured = [

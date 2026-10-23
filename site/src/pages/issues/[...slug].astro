@@ -7,7 +7,7 @@ import AppendixSection from "../../components/AppendixSection.astro";
 export async function getStaticPaths() {
   const issues = await getCollection("issues");
   return issues.map((issue) => ({
-    params: { slug: issue.id },
+    params: { slug: issue.data.date },
     props: { issue },
   }));
 }

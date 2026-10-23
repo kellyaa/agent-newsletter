@@ -62,7 +62,7 @@ def test_db_path_uses_content_root_env(monkeypatch, tmp_path):
     import importlib
     import db
     importlib.reload(db)
-    assert db.DB_PATH == tmp_path / "state.db"
+    assert db.DB_PATH == tmp_path / "editions" / "agents" / "state.db"
 
 
 def test_db_path_defaults_to_repo_root(monkeypatch):
@@ -71,7 +71,7 @@ def test_db_path_defaults_to_repo_root(monkeypatch):
     import importlib
     import db
     importlib.reload(db)
-    assert db.DB_PATH == db.REPO_ROOT / "state.db"
+    assert db.DB_PATH == db.REPO_ROOT / "editions" / "agents" / "state.db"
 
 
 # ---------------------------------------------------------------------------

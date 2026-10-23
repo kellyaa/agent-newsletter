@@ -194,4 +194,4 @@ def test_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
     importlib.reload(db)
     import write
     importlib.reload(write)
-    assert write.ISSUES_DIR == tmp_path / "site" / "src" / "content" / "issues"
+    assert write.ISSUES_DIR == tmp_path / "editions" / "agents" / "issues"

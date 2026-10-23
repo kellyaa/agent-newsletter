@@ -16,7 +16,9 @@ from pathlib import Path
 from candidates import load_candidates_from_db
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, record_stage_stats
+from db import (
+    CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, set_meta,
+)
 from models import CandidateItem, PrefilterItem
 
 logging.basicConfig(
@@ -118,7 +120,7 @@ PAPER_AGE_OUT_SQL = """
 # become stale (they were assigned under a different rubric), so we wipe them
 # and let rank.py re-score from scratch on the next run.
 RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
-RUBRIC_HASH_PATH = _RUNTIME.rubric_hash
+RUBRIC_HASH_KEY = "rubric_hash"  # key in the edition's state.db `meta` table
 
 
 def _source_family(source: str) -> str:
@@ -210,7 +212,7 @@ def _maybe_invalidate_papers_scores(conn) -> int:
     current = _rubric_hash()
     if not current:
         return 0
-    last = RUBRIC_HASH_PATH.read_text().strip() if RUBRIC_HASH_PATH.exists() else ""
+    last = get_meta(conn, RUBRIC_HASH_KEY) or ""
     if last == current:
         return 0
     cur = conn.execute(
@@ -218,8 +220,7 @@ def _maybe_invalidate_papers_scores(conn) -> int:
         "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
     )
     invalidated = cur.rowcount or 0
-    conn.commit()
-    RUBRIC_HASH_PATH.write_text(current)
+    set_meta(conn, RUBRIC_HASH_KEY, current)  # commits, along with the UPDATE above
     if invalidated:
         log.info(
             "rubric changed (hash %s → %s) — invalidated %d cached papers scores",
@@ -374,6 +375,7 @@ def main() -> int:
 
     # Write candidates.json as a debug/inspection artifact. rank.py does NOT
     # depend on this file — it queries the DB directly via load_candidates_from_db().
+    CANDIDATES_OUT.parent.mkdir(parents=True, exist_ok=True)
     CANDIDATES_OUT.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
     log.info(
         "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",

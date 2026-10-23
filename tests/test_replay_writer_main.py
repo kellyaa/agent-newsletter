@@ -97,7 +97,6 @@ class TestReplayWriterMainNormal:
         monkeypatch.setattr(rw, "PROMPT_PATH", prompt_file)
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
-        monkeypatch.setattr("replay_writer.REPO_ROOT", tmp_path)
         mock_output = {"theme": "Test theme", "items": [{"id": "feat1", "summary": "s"}]}
         with patch("replay_writer.invoke_writer", return_value=mock_output) as mock_writer:
             result = rw.main()
@@ -120,11 +119,11 @@ class TestReplayWriterMainNormal:
         monkeypatch.setattr(rw, "PROMPT_PATH", prompt_file)
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
-        monkeypatch.setattr("replay_writer.REPO_ROOT", tmp_path)
         mock_output = {"theme": "My theme", "items": [{"id": "feat1", "summary": "ok"}]}
         with patch("replay_writer.invoke_writer", return_value=mock_output):
             rw.main()
-        log_path = tmp_path / "logs" / "theme-replay-2026-06-01.json"
+        import edition
+        log_path = edition.LOGS_ROOT / "agents" / "theme-replay-2026-06-01.json"
         assert log_path.exists()
         data = json.loads(log_path.read_text())
         assert data["date"] == "2026-06-01"

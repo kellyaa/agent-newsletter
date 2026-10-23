@@ -495,7 +495,7 @@ class TestRunWriterForDate:
         conn = db_mod.connect(db_path)
 
         # Create the issue file
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         out_path = issues_dir / "2026-07-15.md"
         out_path.write_text("existing content")
@@ -521,7 +521,7 @@ class TestRunWriterForDate:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
@@ -542,7 +542,7 @@ class TestRunWriterForDate:
         self._make_db_with_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
 
@@ -576,7 +576,7 @@ class TestRunWriterForDate:
         self._make_db_with_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         out_path = issues_dir / "2026-07-15.md"
@@ -663,7 +663,7 @@ class TestBackfillMain:
             "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"}
         })
 
-        out_path = tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md"
+        out_path = tmp_path / "editions" / "agents" / "issues" / "2026-07-15.md"
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
         out_path.parent.mkdir(parents=True)
         out_path.write_text("# Issue")
@@ -895,7 +895,7 @@ class TestBackfillMainEdgeCases:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
@@ -941,7 +941,7 @@ class TestRunWriterForDateContentRoot:
         """run_writer_for_date() writes to write_mod.ISSUES_DIR, not REPO/.
 
         This is the core regression test for issue #64.  Before the fix,
-        backfill.py hardcoded `REPO / "site" / "src" / "content" / "issues"`.
+        backfill.py hardcoded `REPO / "editions" / "agents" / "issues"`.
         After the fix it uses `write_mod.ISSUES_DIR`, which means CONTENT_ROOT
         is respected.  We validate this by pointing write_mod.ISSUES_DIR at a
         directory DIFFERENT from `REPO/site/...` and confirming the file lands
@@ -956,7 +956,7 @@ class TestRunWriterForDateContentRoot:
         conn = db_mod.connect(db_path)
 
         # Set write_mod.ISSUES_DIR to a separate directory (simulates CONTENT_ROOT worktree)
-        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues = tmp_path / "content" / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
 
@@ -972,7 +972,7 @@ class TestRunWriterForDateContentRoot:
         conn.close()
 
         expected = content_issues / "2026-07-15.md"
-        old_path = tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md"
+        old_path = tmp_path / "editions" / "agents" / "issues" / "2026-07-15.md"
 
         assert result == expected, (
             f"File should be in write_mod.ISSUES_DIR ({expected}), got {result}"
@@ -1003,7 +1003,7 @@ class TestRunWriterForDateContentRoot:
         self._insert_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        content_issues = content_root / "site" / "src" / "content" / "issues"
+        content_issues = content_root / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
 
         monkeypatch.setattr(bf, "REPO", tmp_path)
@@ -1038,7 +1038,7 @@ class TestRunWriterForDateContentRoot:
         self._insert_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues = tmp_path / "content" / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
         # Pre-create the file in the write_mod location
         (content_issues / "2026-07-15.md").write_text("existing content")
@@ -1066,7 +1066,7 @@ class TestRunWriterForDateContentRoot:
         self._insert_featured(db_path)
         conn = db_mod.connect(db_path)
 
-        content_issues = tmp_path / "content" / "site" / "src" / "content" / "issues"
+        content_issues = tmp_path / "content" / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
         existing = content_issues / "2026-07-15.md"
         existing.write_text("stale content")

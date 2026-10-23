@@ -128,7 +128,7 @@ test("RSS renders newest issues, links, optional fields, and escaped content", a
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
 
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
     const unsafe = {
       url: 'https://example.test/?q="><svg>&x=1',
@@ -266,7 +266,7 @@ test("RSS orders a single issue's featured items by score (not authored order) a
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
 
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     // Authored LOW score first, HIGH score second — the opposite of the

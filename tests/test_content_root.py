@@ -7,7 +7,7 @@ main scripts or the worktree setup don't silently break artifact routing.
 
 Design contract:
   - state.db         → CONTENT_ROOT (set in run.sh from the content worktree)
-  - issue files      → CONTENT_ROOT/site/src/content/issues/
+  - issue files      → CONTENT_ROOT/editions/<slug>/issues/
   - candidates.json  → REPO_ROOT  (intermediate pipeline artifact, NOT content)
   - ranked.json      → REPO_ROOT  (intermediate pipeline artifact, NOT content)
   - prompts/         → REPO_ROOT  (code artifact, NOT content)
@@ -42,7 +42,7 @@ class TestDbContentRoot:
         monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
         import db
         importlib.reload(db)
-        assert db.DB_PATH == tmp_path / "state.db"
+        assert db.DB_PATH == tmp_path / "editions" / "agents" / "state.db"
         assert db.CONTENT_ROOT == tmp_path
 
     def test_db_path_defaults_to_repo_root(self, monkeypatch):
@@ -50,7 +50,7 @@ class TestDbContentRoot:
         monkeypatch.delenv("CONTENT_ROOT", raising=False)
         import db
         importlib.reload(db)
-        assert db.DB_PATH == db.REPO_ROOT / "state.db"
+        assert db.DB_PATH == db.REPO_ROOT / "editions" / "agents" / "state.db"
         assert db.CONTENT_ROOT == db.REPO_ROOT
 
     def test_content_root_distinct_from_repo_root(self, monkeypatch, tmp_path):
@@ -59,7 +59,7 @@ class TestDbContentRoot:
         import db
         importlib.reload(db)
         assert db.CONTENT_ROOT != db.REPO_ROOT
-        assert db.DB_PATH.parent == tmp_path
+        assert db.DB_PATH.parent == tmp_path / "editions" / "agents"
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ class TestWriteContentRoot:
         importlib.reload(db)
         import write
         importlib.reload(write)
-        assert write.ISSUES_DIR == tmp_path / "site" / "src" / "content" / "issues"
+        assert write.ISSUES_DIR == tmp_path / "editions" / "agents" / "issues"
 
     def test_prompt_path_stays_in_repo_root(self, monkeypatch, tmp_path):
         """PROMPT_PATH is always in REPO_ROOT, never in CONTENT_ROOT."""
@@ -96,7 +96,7 @@ class TestWriteContentRoot:
         importlib.reload(write)
 
         # Create an issue file in the content-root issues dir
-        issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
         (issues_dir / "2026-06-01.md").write_text("# Previous issue")
 
@@ -117,7 +117,7 @@ class TestPublishContentRoot:
         importlib.reload(db)
         import publish
         importlib.reload(publish)
-        assert publish.ISSUES_DIR == tmp_path / "site" / "src" / "content" / "issues"
+        assert publish.ISSUES_DIR == tmp_path / "editions" / "agents" / "issues"
 
 
 # ---------------------------------------------------------------------------
@@ -127,25 +127,27 @@ class TestPublishContentRoot:
 class TestIntermediateArtifactsStayInRepoRoot:
     def test_prefilter_candidates_out_not_in_content_root(self, monkeypatch, tmp_path):
         """prefilter.CANDIDATES_OUT is in REPO_ROOT, not CONTENT_ROOT (intermediate artifact)."""
-        monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+        content = tmp_path / "content"
+        monkeypatch.setenv("CONTENT_ROOT", str(content))
         import db
         importlib.reload(db)
         import prefilter
         importlib.reload(prefilter)
-        # candidates.json is an intermediate file, intentionally in REPO_ROOT
-        assert prefilter.CANDIDATES_OUT.is_relative_to(prefilter.REPO_ROOT)
+        # candidates.json is an intermediate file, in the edition's logs folder
+        assert prefilter.CANDIDATES_OUT == prefilter.EDITION.paths().logs / "candidates.json"
         # and NOT in CONTENT_ROOT (which is tmp_path here)
-        assert not str(prefilter.CANDIDATES_OUT).startswith(str(tmp_path))
+        assert not str(prefilter.CANDIDATES_OUT).startswith(str(content))
 
     def test_rank_ranked_path_not_in_content_root(self, monkeypatch, tmp_path):
         """rank.RANKED_PATH (debug artifact) is in REPO_ROOT, not CONTENT_ROOT."""
-        monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+        content = tmp_path / "content"
+        monkeypatch.setenv("CONTENT_ROOT", str(content))
         import db
         importlib.reload(db)
         import rank
         importlib.reload(rank)
-        assert rank.RANKED_PATH.is_relative_to(rank.REPO_ROOT)
-        assert not str(rank.RANKED_PATH).startswith(str(tmp_path))
+        assert rank.RANKED_PATH == rank.EDITION.paths().logs / "ranked.json"
+        assert not str(rank.RANKED_PATH).startswith(str(content))
 
     def test_rank_rubric_prompt_not_in_content_root(self, monkeypatch, tmp_path):
         """rank.PROMPT_PATH (prompts/rank.md) is in REPO_ROOT — code, not content."""
@@ -201,7 +203,7 @@ class TestBackfillContentRoot:
         conn = db_mod.connect(db_path)
 
         # Create issues dir in CONTENT_ROOT (where write.py would write)
-        content_issues = content_root / "site" / "src" / "content" / "issues"
+        content_issues = content_root / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
 
         # Mock invoke_writer to avoid LLM call
@@ -224,7 +226,7 @@ class TestBackfillContentRoot:
             f"but got {result} — backfill.py is writing to REPO_ROOT instead"
         )
         assert expected_path.exists(), "Issue file was not created in CONTENT_ROOT"
-        assert not (tmp_path / "site" / "src" / "content" / "issues" / "2026-07-15.md").exists(), \
+        assert not (tmp_path / "editions" / "agents" / "issues" / "2026-07-15.md").exists(), \
             "Issue file should NOT be written to REPO_ROOT when CONTENT_ROOT is set"
 
     def test_run_writer_for_date_repo_root_when_content_root_unset(self, tmp_path, monkeypatch):
@@ -240,7 +242,7 @@ class TestBackfillContentRoot:
         importlib.reload(db_mod)
         importlib.reload(write_mod)
 
-        db_path = tmp_path / "state.db"
+        db_path = tmp_path / "editions" / "agents" / "state.db"
         db_mod.init_db(db_path)
         conn_raw = sqlite3.connect(db_path)
         conn_raw.execute("""
@@ -261,7 +263,7 @@ class TestBackfillContentRoot:
         # Without CONTENT_ROOT, write_mod.ISSUES_DIR resolves under REPO_ROOT.
         # Point both REPO and write_mod.ISSUES_DIR at tmp_path for this test.
         monkeypatch.setattr(bf, "REPO", tmp_path)
-        expected_issues_dir = tmp_path / "site" / "src" / "content" / "issues"
+        expected_issues_dir = tmp_path / "editions" / "agents" / "issues"
         expected_issues_dir.mkdir(parents=True)
         monkeypatch.setattr(write_mod, "ISSUES_DIR", expected_issues_dir)
 

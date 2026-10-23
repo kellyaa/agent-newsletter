@@ -23,10 +23,12 @@ scripts/
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
   candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
   rank.py               — three LLM calls (OpenAI-compatible), one per section; writes ranked.json as debug artifact
-  write.py              — one LLM call (OpenAI-compatible); emits site/src/content/issues/YYYY-MM-DD.md
+  write.py              — one LLM call (OpenAI-compatible); emits editions/<slug>/issues/YYYY-MM-DD.md (on the content branch)
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   publish.py            — promotes items to 'published'; records runs row
-  run_attempt.py        — records each run.sh invocation in run_attempts (called by run.sh)
+  run_attempt.py        — records each edition run in run_attempts; `latest` reports today's outcome (called by run_edition.sh and run.sh)
+  reset_day.py          — resets one edition's state for `--force` / `--refetch` (called by run_edition.sh)
+  migrate_layout.py     — one-time, idempotent content-branch move to `editions/<slug>/` (called by run.sh)
   edition.py            — load + strictly validate an edition; `current()` reads `$EDITION` (no default)
   prompts.py            — render prompts/{rank,write}.md with an edition's fragments
   new_edition.py        — scaffold `editions/<slug>/` from the template, optionally LLM-drafted and machine-validated; writes `REVIEW.md`
@@ -35,13 +37,14 @@ scripts/
   models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
-run.sh                  — daily orchestrator; idempotent
-scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh` if today's log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
+run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
+scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
+scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh --edition …` for editions whose log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
 watchdog.sh             — fires macOS notification if the `content` branch has no successful `newsletter: <date> daily run` commit in >36h (see §Troubleshooting)
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
-state.db                — SQLite pipeline state (on the 'content' branch; see "Repository layout")
+editions/<slug>/state.db — SQLite pipeline state, one per edition (on the 'content' branch; see "Repository layout")
 ```
 
 ## Editions
@@ -60,7 +63,7 @@ To start another, run `uv run scripts/new_edition.py <slug> --name "…" --descr
 └─────────────┘  └────────────┘  └───────────┘  └───────────┘  └────────────┘
                                                        │
                                                        ▼
-                                          site/src/content/issues/YYYY-MM-DD.md
+                                          editions/<slug>/issues/YYYY-MM-DD.md
                                                        │
                                                        ▼ git push → content branch →
                                                        ▼ deploy.yml (main + content) →
@@ -68,6 +71,17 @@ To start another, run `uv run scripts/new_edition.py <slug> --name "…" --descr
 ```
 
 Every stage is idempotent. Re-running `run.sh` after a transient failure picks up where it left off; nothing pays the LLM cost twice. `run.sh --force` resets today's post-fetch state for a clean re-run.
+
+**Several editions, one job.** `run.sh` runs every `draft` and `live` edition one after another (by `order`, `agents` first), each in its own child process (`scripts/run_edition.sh`). An edition commits and pushes its own `editions/<slug>/` on the `content` branch as soon as it finishes, and a failure never blocks the others: you get one notification per failed edition (including drafts), naming the edition and stage, and `run.sh` exits non-zero at the end.
+
+| Command | Does |
+|---|---|
+| `./run.sh` | all `draft` + `live` editions; skips an edition whose latest attempt today is `ok` |
+| `./run.sh --failed` | only editions whose latest attempt today `failed` or died mid-run; "nothing to re-run" and exit 0 if none |
+| `./run.sh --edition X` (repeatable) | only these editions; paused editions are allowed |
+| `--force` / `--refetch` | per selected edition; `--refetch` requires `--edition` so it can't hit arXiv for every edition at once |
+
+Logs: `logs/run-DATE.log` is the orchestrator summary (one line per edition); `logs/<slug>/run-DATE.log` is that edition's full output and ends in `DONE` on success. Per-edition LLM usage and debug artifacts (`candidates.json`, `ranked.json`, rendered prompts) are under `logs/<slug>/`.
 
 **Self-update:** At the start of every run, `run.sh` does a `git pull --ff-only` on the current branch (and `git pull --ff-only` on the content worktree). This ensures pipeline code, prompts, and site scaffold are current before content is generated. On the launchd daily run this is a catchup on `main`; on a feature branch it updates that branch. If the pull fails (dirty working tree or non-fast-forward), `run.sh` aborts and fires a macOS notification.
 
@@ -283,14 +297,15 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 
 ### Self-heal watchdog (`scripts/watchdog.sh`)
 
-Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier). `scripts/watchdog.sh` checks whether today's `logs/run-YYYY-MM-DD.log` ends in `DONE` and, if not, re-runs `run.sh`. It probes the same lock `run.sh` holds (`.watchdog.lock`, gitignored; the watchdog's own `.watchdog-self.lock` is likewise gitignored) so it never starts a second pipeline on top of a live one. Its last stdout line is a status line:
+Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier). `scripts/watchdog.sh` checks, for every `draft`/`live` edition, whether today's `logs/<slug>/run-YYYY-MM-DD.log` ends in `DONE` and, if not, re-runs just those editions with `run.sh --edition …`. It probes the same lock `run.sh` holds (`.watchdog.lock`, gitignored; the watchdog's own `.watchdog-self.lock` is likewise gitignored) so it never starts a second pipeline on top of a live one. Its last stdout line is a status line:
 
 | Status line | Meaning | Exit |
 |---|---|---|
-| `STATUS: ALREADY_RAN <date>` | today's log exists and ended in `DONE` | 0 |
+| `EDITION: <slug> ALREADY_RAN\|IN_PROGRESS\|HEALED <date>` / `EDITION: <slug> FAILED <date> <stage>` | one line per checked edition, before the final `STATUS:` line | — |
+| `STATUS: ALREADY_RAN <date>` | every edition's log exists and ended in `DONE` | 0 |
 | `STATUS: IN_PROGRESS <date>` | a run is mid-flight; left alone | 0 |
-| `STATUS: HEALED <date>` | log was missing/incomplete; it re-ran the pipeline successfully | 0 |
-| `STATUS: FAILED <date> <stage>` | it ran (or found) a failed run | 1 |
+| `STATUS: HEALED <date>` | an edition's log was missing/incomplete; it re-ran it successfully | 0 |
+| `STATUS: FAILED <date> <slug>:<stage> …` | worst-of: names each edition that failed and its stage | 1 |
 
 ```bash
 ./scripts/watchdog.sh          # check, and run the pipeline if needed

@@ -142,7 +142,7 @@ test("appendix section renders grouped items with escaped titles/sources when no
   const { fixtureRoot, fixtureSite } = await buildFixtureSite();
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     await writeFile(
@@ -243,7 +243,7 @@ test("appendix section does not render at all when every section is empty", asyn
   const { fixtureRoot, fixtureSite } = await buildFixtureSite();
 
   try {
-    const issueDirectory = join(fixtureSite, "src", "content", "issues");
+    const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
 
     await writeFile(
