@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from candidates import load_candidates_from_db
-from db import REPO_ROOT, connect, init_db
+from db import REPO_ROOT, connect, init_db, record_stage_stats
 from models import CandidateItem, PrefilterItem
 
 logging.basicConfig(
@@ -275,6 +275,9 @@ def main() -> int:
     # candidates.json this run. Recency passes `now` explicitly (rather than
     # SQLite's julianday('now')) so tests that freeze the Python clock also
     # freeze this comparison; production `now` is real UTC time.
+    unjudged_before = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE status = 'expired_unjudged'"
+    ).fetchone()[0]
     aged = conn.execute(
         PAPER_AGE_OUT_SQL,
         (
@@ -284,9 +287,18 @@ def main() -> int:
         ),
     )
     aged_out = aged.rowcount or 0
+    # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
+    # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
+    expired_unjudged_now = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE status = 'expired_unjudged'"
+    ).fetchone()[0] - unjudged_before
     conn.commit()
     if aged_out:
         log.info("aged out %d papers candidates (cap or recency)", aged_out)
+    log.info(
+        "papers age-out this run: expired_unjudged=%d dropped=%d",
+        expired_unjudged_now, aged_out - expired_unjudged_now,
+    )
 
     unjudged = conn.execute(
         "SELECT COUNT(*) FROM items "
@@ -355,11 +367,21 @@ def main() -> int:
     # Load the candidate pool from DB using the shared query function.
     # This is the canonical way to get grouped candidates — rank.py uses
     # the same function, eliminating the file-based coupling.
+    cap_stats: dict[str, int] = {}
     grouped = load_candidates_from_db(
         conn,
         prerank_cap=PAPER_PRERANK_CAP,
         prerank_scorer=_prerank_score,
         now=now,
+        stats=cap_stats,
+    )
+    prerank_cut = cap_stats.get("prerank_cut", 0)
+    log.info("papers pre-rank cap cut this run: %d", prerank_cut)
+    record_stage_stats(
+        conn,
+        datetime.now().date().isoformat(),
+        expired_unjudged=expired_unjudged_now,
+        prerank_cut=prerank_cut,
     )
 
     # Write candidates.json as a debug/inspection artifact. rank.py does NOT

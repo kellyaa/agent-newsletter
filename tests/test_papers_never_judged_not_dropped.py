@@ -112,6 +112,12 @@ def test_pool_over_cap_does_not_mark_unscored_stale_papers_dropped(wired):
 
     assert pf_mod.main() == 0
 
+    # #297: prefilter staged this run's counters for publish to copy onto `runs`.
+    conn = db_mod.connect(wired)
+    staged = db_mod.load_stage_stats(conn, "2026-07-09")
+    conn.close()
+    assert staged == {"papers_expired_unjudged": 3, "papers_prerank_cut": 0}
+
     sent: list[str] = []
     with patch("rank.invoke_ranker", side_effect=_fake_ranker(sent)):
         assert rank_mod.main() == 0
@@ -178,3 +184,42 @@ def test_stale_paper_that_has_competed_still_ages_out(wired):
     row = conn.execute("SELECT status FROM items WHERE id='judged'").fetchone()
     conn.close()
     assert row["status"] == "dropped"
+
+
+def test_prerank_cut_and_expired_counts_are_logged_and_staged(wired, caplog):
+    """#297: every run logs both counts and stages them in run_stage_stats."""
+    import logging
+
+    import db as db_mod
+    import prefilter as pf_mod
+
+    conn = db_mod.connect(wired)
+    for i in range(pf_mod.PAPER_PRERANK_CAP + 4):
+        _insert_paper(conn, f"fresh{i:03d}", FRESH, "LLM agent tool use", "agent")
+    _insert_paper(conn, "stale0", STALE, "Agent paper", "agent")
+    conn.commit()
+    conn.close()
+
+    with caplog.at_level(logging.INFO):
+        assert pf_mod.main() == 0
+
+    text = caplog.text
+    assert "papers age-out this run: expired_unjudged=1 dropped=0" in text
+    assert "papers pre-rank cap cut this run: 4" in text
+
+    conn = db_mod.connect(wired)
+    staged = db_mod.load_stage_stats(conn, "2026-07-09")
+    conn.close()
+    assert staged == {"papers_expired_unjudged": 1, "papers_prerank_cut": 4}
+
+
+def test_counts_are_logged_even_when_zero(wired, caplog):
+    import logging
+
+    import prefilter as pf_mod
+
+    with caplog.at_level(logging.INFO):
+        assert pf_mod.main() == 0
+
+    assert "papers age-out this run: expired_unjudged=0 dropped=0" in caplog.text
+    assert "papers pre-rank cap cut this run: 0" in caplog.text

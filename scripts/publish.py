@@ -22,7 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, load_stage_stats
 from models import Status
 
 logging.basicConfig(
@@ -104,6 +104,7 @@ def record_run(
     items_considered: int,
     usage: dict | None = None,
     duration_s: int | None = None,
+    stage_stats: dict | None = None,
 ) -> None:
     notes = f"appendix={appendix_count}"
     if usage is not None:
@@ -113,8 +114,9 @@ def record_run(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
                           items_papers, items_news, items_blogs,
-                          duration_seconds, tokens_in, tokens_out, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          duration_seconds, tokens_in, tokens_out, notes,
+                          papers_expired_unjudged, papers_prerank_cut)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
             items_featured = excluded.items_featured,
@@ -124,7 +126,11 @@ def record_run(
             duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
             tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
             tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
-            notes = excluded.notes
+            notes = excluded.notes,
+            papers_expired_unjudged = COALESCE(
+                excluded.papers_expired_unjudged, runs.papers_expired_unjudged),
+            papers_prerank_cut = COALESCE(
+                excluded.papers_prerank_cut, runs.papers_prerank_cut)
         """,
         (
             today,
@@ -141,6 +147,8 @@ def record_run(
             (usage or {}).get("tokens_in"),
             (usage or {}).get("tokens_out"),
             notes,
+            (stage_stats or {}).get("papers_expired_unjudged"),
+            (stage_stats or {}).get("papers_prerank_cut"),
         ),
     )
     conn.commit()
@@ -216,6 +224,7 @@ def main() -> int:
         conn, today, featured_counts, appendix_count, items_considered,
         usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
         duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
+        stage_stats=load_stage_stats(conn, today),
     )
     conn.close()
 

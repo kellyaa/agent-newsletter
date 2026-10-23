@@ -56,7 +56,18 @@ CREATE TABLE IF NOT EXISTS runs (
   tokens_in INTEGER,
   tokens_out INTEGER,
   cost_usd REAL,
-  notes TEXT
+  notes TEXT,
+  papers_expired_unjudged INTEGER,
+  papers_prerank_cut INTEGER
+);
+
+-- Per-day counters written by prefilter and copied onto the runs row by
+-- publish (#297). Staged here because the runs row only exists once publish
+-- succeeds, and creating it earlier would trip publish's idempotent skip.
+CREATE TABLE IF NOT EXISTS run_stage_stats (
+  date TEXT PRIMARY KEY,
+  papers_expired_unjudged INTEGER NOT NULL DEFAULT 0,
+  papers_prerank_cut INTEGER NOT NULL DEFAULT 0
 );
 
 -- One row per run.sh invocation, failed ones included (scripts/run_attempt.py).
@@ -152,6 +163,54 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE items ADD COLUMN times_competed INTEGER NOT NULL DEFAULT 0"
         )
+    run_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    for col in ("papers_expired_unjudged", "papers_prerank_cut"):
+        if col not in run_cols:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {col} INTEGER")
+
+
+def record_stage_stats(
+    conn: sqlite3.Connection,
+    date: str,
+    *,
+    expired_unjudged: int = 0,
+    prerank_cut: int = 0,
+) -> None:
+    """Stage today's papers pool counters for publish to copy onto `runs` (#297).
+
+    `expired_unjudged` accumulates across the day's attempts (each attempt's
+    age-out is distinct work). `prerank_cut` keeps the day's maximum: a retry
+    re-cuts the same pool, so adding would double count, and a no-op re-run
+    after publish would otherwise overwrite it with zero.
+    """
+    conn.execute(
+        """
+        INSERT INTO run_stage_stats (date, papers_expired_unjudged, papers_prerank_cut)
+        VALUES (?, ?, ?)
+        ON CONFLICT(date) DO UPDATE SET
+            papers_expired_unjudged =
+                run_stage_stats.papers_expired_unjudged + excluded.papers_expired_unjudged,
+            papers_prerank_cut =
+                MAX(run_stage_stats.papers_prerank_cut, excluded.papers_prerank_cut)
+        """,
+        (date, expired_unjudged, prerank_cut),
+    )
+    conn.commit()
+
+
+def load_stage_stats(conn: sqlite3.Connection, date: str) -> dict[str, int] | None:
+    """Return the staged counters for `date`, or None if prefilter never ran."""
+    row = conn.execute(
+        "SELECT papers_expired_unjudged, papers_prerank_cut "
+        "FROM run_stage_stats WHERE date = ?",
+        (date,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "papers_expired_unjudged": row[0],
+        "papers_prerank_cut": row[1],
+    }
 
 
 def canonicalize_url(url: str) -> str:

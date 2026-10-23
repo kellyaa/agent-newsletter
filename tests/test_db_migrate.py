@@ -77,3 +77,35 @@ class TestDbMigrate:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
         conn.close()
         assert "keyword_gate_bypass" in cols
+
+
+class TestRunsStatsColumns:
+    def test_adds_runs_columns_to_old_db(self, tmp_path):
+        import db as db_mod
+        db_path = tmp_path / "old.db"
+        db_mod.init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("ALTER TABLE runs DROP COLUMN papers_expired_unjudged")
+        conn.execute("ALTER TABLE runs DROP COLUMN papers_prerank_cut")
+        conn.commit()
+        conn.close()
+        db_mod.init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
+        conn.close()
+        assert {"papers_expired_unjudged", "papers_prerank_cut"} <= cols
+
+    def test_stage_stats_roundtrip(self, tmp_path):
+        import db as db_mod
+        db_path = tmp_path / "s.db"
+        db_mod.init_db(db_path)
+        conn = db_mod.connect(db_path)
+        assert db_mod.load_stage_stats(conn, "2026-07-09") is None
+        db_mod.record_stage_stats(conn, "2026-07-09", expired_unjudged=2, prerank_cut=5)
+        # A retry: expiries add up, the cap cut keeps the day's maximum.
+        db_mod.record_stage_stats(conn, "2026-07-09", expired_unjudged=1, prerank_cut=0)
+        assert db_mod.load_stage_stats(conn, "2026-07-09") == {
+            "papers_expired_unjudged": 3,
+            "papers_prerank_cut": 5,
+        }
+        conn.close()
