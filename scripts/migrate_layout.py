@@ -14,7 +14,9 @@ After (``agents`` was the only edition that ever existed)::
 
 It also moves the cached rubric hash out of the untracked ``.rubric_hash`` file
 into the ``meta`` table of the migrated DB, so the first run after the move
-does not needlessly re-score the paper pool. Everything is committed as
+does not needlessly re-score the paper pool. It also whitelists ``editions/`` in
+the content branch's ``.gitignore`` (a ``/*`` whitelist that would otherwise reject
+``git add editions/<slug>``). Everything is committed as
 ``content: migrate to multi-edition layout``.
 
 Idempotent: it does nothing if ``editions/agents/state.db`` already exists, or
@@ -40,6 +42,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_EDITION = "agents"
 COMMIT_MESSAGE = "content: migrate to multi-edition layout"
+GITIGNORE_COMMIT_MESSAGE = "content: whitelist editions/ in .gitignore"
+
+# The content branch's .gitignore is a whitelist (``/*`` ignores everything not
+# re-included), so without these entries ``git add editions/<slug>`` is rejected
+# and no new issue or edition could ever be committed. Sidecars (state.db-wal/-shm)
+# stay ignored.
+GITIGNORE_MARKER = "# Multi-edition layout (#301)"
+GITIGNORE_BLOCK = f"""{GITIGNORE_MARKER}: track each edition's state.db and issues.
+!/editions
+/editions/*
+!/editions/*/
+/editions/*/*
+!/editions/*/state.db
+!/editions/*/issues
+"""
 
 log = logging.getLogger("migrate_layout")
 
@@ -77,6 +94,38 @@ def _move(content_root: Path, src: str, dst: str) -> None:
         _git(content_root, "add", "--", dst)
 
 
+def ensure_gitignore(content_root: Path) -> bool:
+    """Whitelist ``editions/`` in the content branch's .gitignore and stage it.
+
+    Idempotent: returns False (touching nothing) when the block is already there.
+    """
+    path = content_root / ".gitignore"
+    current = path.read_text() if path.is_file() else ""
+    if GITIGNORE_MARKER in current:
+        return False
+    if current and not current.endswith("\n"):
+        current += "\n"
+    path.write_text(current + GITIGNORE_BLOCK)
+    _git(content_root, "add", "-f", "--", ".gitignore")
+    return True
+
+
+def sync_gitignore(content_root: Path) -> bool:
+    """Commit the ``editions/`` whitelist on a branch that needs it but lacks it.
+
+    Covers a content branch that has nothing to migrate (fresh, or migrated by
+    hand before this fix). Only touches a whitelist-style ``.gitignore`` (one
+    with a ``/*`` line); returns True when a commit was made.
+    """
+    path = content_root / ".gitignore"
+    if not path.is_file() or "/*" not in path.read_text().splitlines():
+        return False
+    if not ensure_gitignore(content_root):
+        return False
+    _git(content_root, "commit", "-q", "-m", GITIGNORE_COMMIT_MESSAGE, "--", ".gitignore")
+    return True
+
+
 def _seed_meta(db_path: Path, rubric_hash: str) -> None:
     conn = sqlite3.connect(db_path)
     try:
@@ -104,6 +153,8 @@ def migrate(content_root: Path, rubric_hash_file: Path) -> bool:
     if not old_db.exists() and not legacy_files:
         return False
 
+    # First, so the `git add`s below are not rejected by the whitelist.
+    ensure_gitignore(content_root)
     base = f"editions/{LEGACY_EDITION}"
     if old_db.exists():
         # Fold the WAL into the main file before it moves; sidecars don't follow a git mv.
@@ -159,13 +210,17 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     try:
         migrated = migrate(content_root, Path(args.rubric_hash_file))
+        ignore_fixed = sync_gitignore(content_root)
     except (MigrationError, OSError, sqlite3.Error) as e:
         log.error("migration failed: %s", e)
         return 1
-    if not migrated:
+    if ignore_fixed:
+        log.info("whitelisted editions/ in the content branch .gitignore")
+    if not migrated and not ignore_fixed:
         log.info("layout already migrated (or nothing to migrate); nothing to do")
         return 0
-    log.info("migrated %s to the multi-edition layout", content_root)
+    if migrated:
+        log.info("migrated %s to the multi-edition layout", content_root)
     if args.push:
         try:
             _git(content_root, "push", "--quiet")

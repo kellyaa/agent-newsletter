@@ -146,6 +146,88 @@ class TestMigrate:
             ml._git(tmp_path / "not-a-repo", "status")
 
 
+WHITELIST_GITIGNORE = (
+    "/*\n!/state.db\n!/site\n/site/*\n!/site/src\n/site/src/*\n!/site/src/content\n"
+    "/site/src/content/*\n!/site/src/content/issues\n!/.gitignore\n"
+)
+
+
+class TestMigrateGitignore:
+    def _whitelisted(self, tmp_path):
+        root, hash_file = _legacy_content(tmp_path)
+        (root / ".gitignore").write_text(WHITELIST_GITIGNORE)
+        _git(root, "add", "-f", ".gitignore")
+        _git(root, "commit", "-qm", "gitignore")
+        return root, hash_file
+
+    def test_new_files_under_editions_can_be_added_after_migration(self, tmp_path):
+        root, hash_file = self._whitelisted(tmp_path)
+        assert ml.migrate(root, hash_file) is True
+        # The migration commit carries the .gitignore change.
+        assert ".gitignore" in _git(root, "show", "--name-only", "--format=", "HEAD").split()
+        for rel in ("agents/issues/2026-10-03.md", "beta/issues/2026-10-03.md", "beta/state.db"):
+            f = root / "editions" / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x")
+        # Plain `git add` (no -f), exactly as run_edition.sh does.
+        _git(root, "add", "editions/agents")
+        _git(root, "add", "editions/beta")
+        staged = _git(root, "diff", "--cached", "--name-only").split()
+        assert "editions/agents/issues/2026-10-03.md" in staged
+        assert "editions/beta/issues/2026-10-03.md" in staged
+        assert "editions/beta/state.db" in staged
+
+    def test_sidecars_stay_ignored(self, tmp_path):
+        root, hash_file = self._whitelisted(tmp_path)
+        ml.migrate(root, hash_file)
+        (root / "editions" / "agents" / "state.db-wal").write_text("x")
+        assert _git(root, "status", "--porcelain").strip() == ""
+
+    def test_ensure_gitignore_is_idempotent(self, tmp_path):
+        root, _ = self._whitelisted(tmp_path)
+        assert ml.ensure_gitignore(root) is True
+        _git(root, "commit", "-qm", "ignore")
+        content = (root / ".gitignore").read_text()
+        assert ml.ensure_gitignore(root) is False
+        assert (root / ".gitignore").read_text() == content
+        assert content.count(ml.GITIGNORE_MARKER) == 1
+
+    def test_ensure_gitignore_without_existing_file_or_newline(self, tmp_path):
+        root = tmp_path / "c"
+        root.mkdir()
+        _git(root, "init", "-q")
+        assert ml.ensure_gitignore(root) is True
+        assert (root / ".gitignore").read_text().startswith(ml.GITIGNORE_MARKER)
+        (root / ".gitignore").write_text("/*")
+        _git(root, "add", "-f", ".gitignore")
+        _git(root, "commit", "-qm", "x", "--allow-empty")
+        assert ml.ensure_gitignore(root) is True
+        assert (root / ".gitignore").read_text().startswith("/*\n" + ml.GITIGNORE_MARKER)
+
+
+class TestSyncGitignore:
+    def test_fixes_an_already_migrated_branch_once(self, tmp_path):
+        root, hash_file = _legacy_content(tmp_path)
+        ml.migrate(root, hash_file)  # no whitelist yet -> no gitignore at all
+        (root / ".gitignore").write_text(WHITELIST_GITIGNORE)
+        _git(root, "add", "-f", ".gitignore")
+        _git(root, "commit", "-qm", "whitelist")
+        assert ml.sync_gitignore(root) is True
+        assert _git(root, "log", "-1", "--format=%s").strip() == ml.GITIGNORE_COMMIT_MESSAGE
+        head = _git(root, "rev-parse", "HEAD")
+        assert ml.sync_gitignore(root) is False
+        assert _git(root, "rev-parse", "HEAD") == head
+
+    def test_leaves_branch_without_whitelist_alone(self, tmp_path):
+        root = tmp_path / "c"
+        root.mkdir()
+        _git(root, "init", "-q")
+        assert ml.sync_gitignore(root) is False  # no .gitignore
+        (root / ".gitignore").write_text("logs/\n")
+        assert ml.sync_gitignore(root) is False  # not a whitelist
+        assert (root / ".gitignore").read_text() == "logs/\n"
+
+
 class TestMigrateCli:
     def _repo(self, tmp_path, *, deploy_ready: bool):
         repo = tmp_path / "repo"
@@ -170,6 +252,18 @@ class TestMigrateCli:
                       "--rubric-hash-file", str(hash_file), "--skip-deploy-check"])
         assert rc == 0
         assert (root / "editions" / "agents" / "state.db").exists()
+
+    def test_cli_fixes_gitignore_of_an_already_migrated_branch(self, tmp_path, caplog):
+        caplog.set_level("INFO")
+        root, hash_file = _legacy_content(tmp_path)
+        repo = self._repo(tmp_path, deploy_ready=True)
+        ml.migrate(root, hash_file)
+        (root / ".gitignore").write_text(WHITELIST_GITIGNORE)
+        _git(root, "add", "-f", ".gitignore")
+        _git(root, "commit", "-qm", "whitelist")
+        assert ml.main(["--content-root", str(root), "--repo-root", str(repo)]) == 0
+        assert "whitelisted editions/" in caplog.text
+        assert _git(root, "log", "-1", "--format=%s").strip() == ml.GITIGNORE_COMMIT_MESSAGE
 
     def test_migrates_when_deploy_ready_and_is_idempotent(self, tmp_path, caplog):
         caplog.set_level("INFO")

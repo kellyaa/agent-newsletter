@@ -33,6 +33,26 @@ sections:
   blogs: {{featured_min: 6, appendix_min: 4, cap: 6}}
 """
 
+# The real content-branch .gitignore (origin/content): a whitelist that ignores
+# `editions/` until migrate_layout.ensure_gitignore() adds it.
+CONTENT_GITIGNORE = """\
+/*
+!/state.db
+!/site
+/site/*
+!/site/src
+/site/src/*
+!/site/src/content
+/site/src/content/*
+!/site/src/content/issues
+!/.gitignore
+!/.github
+/.github/*
+!/.github/workflows
+/.github/workflows/*
+!/.github/workflows/deploy.yml
+"""
+
 STAGE_STUB = '''\
 import os, sys
 from datetime import datetime
@@ -98,7 +118,8 @@ def fx(tmp_path):
     _git(seed, "checkout", "-q", "--orphan", "content")
     _git(seed, "rm", "-rqf", ".")
     (seed / "README").write_text("content\n")
-    _git(seed, "add", "README")
+    (seed / ".gitignore").write_text(CONTENT_GITIGNORE)
+    _git(seed, "add", "-f", "README", ".gitignore")
     _git(seed, "commit", "-qm", "content init")
     remote = tmp_path / "origin.git"
     subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(remote)], check=True)
