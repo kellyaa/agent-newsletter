@@ -570,6 +570,46 @@ def _already_fetched_today(conn) -> int:
     return int(row[0]) if row else 0
 
 
+def iter_collectors(sources: dict, http_client: httpx.Client):
+    """Yield ``(label, items)`` for every configured source, overrides applied.
+
+    *items* is a lazy generator: nothing is fetched until the caller consumes
+    it, so the caller owns per-source error isolation. Shared by :func:`main`
+    and scripts/check_edition.py so both walk the sources identically.
+    """
+    def with_override(src: dict, gen):
+        sid = src.get("id", "?")
+        section_override = _validate_section(src.get("section"), sid)
+        kgb = _validate_keyword_gate_bypass(src.get("keyword_gate_bypass"), sid)
+        rdo = _validate_recency_days(src.get("recency_days"), sid)
+        return _stamp_overrides(gen, section_override, kgb, rdo)
+
+    for src in sources.get("rss") or []:
+        yield f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client))
+
+    # arXiv asks for >=3 seconds between requests. We have multiple arxiv
+    # collectors; sleep between them to avoid 429s.
+    arxiv_sources = sources.get("arxiv") or []
+    for i, src in enumerate(arxiv_sources):
+        if i > 0:
+            time.sleep(3.0)
+        yield f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client))
+    for src in sources.get("hn") or []:
+        yield f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client))
+    for src in sources.get("reddit") or []:
+        yield f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client))
+    # HTML scraper family (issue #10). Vendor pages that don't offer
+    # RSS (Anthropic /news, etc.) go here.
+    for src in sources.get("html") or []:
+        yield f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client))
+    if sources.get("github_releases"):
+        # GitHub release entries can each carry their own `section:`. Run them
+        # one at a time so per-repo overrides take effect.
+        for entry in sources["github_releases"]:
+            label = f"gh/{entry['owner']}/{entry['repo']}"
+            yield label, with_override(entry, fetch_github_releases([entry]))
+
+
 def main() -> int:
     init_db()
     sources = load_sources()
@@ -601,42 +641,13 @@ def main() -> int:
         total_seen += seen
         total_inserted += inserted
 
-    def with_override(src: dict, gen):
-        sid = src.get("id", "?")
-        section_override = _validate_section(src.get("section"), sid)
-        kgb = _validate_keyword_gate_bypass(src.get("keyword_gate_bypass"), sid)
-        rdo = _validate_recency_days(src.get("recency_days"), sid)
-        return _stamp_overrides(gen, section_override, kgb, rdo)
-
     # Use a single shared HTTP client for all source adapters. This reuses
     # TCP connections across requests to the same host (e.g. multiple RSS
     # feeds on the same domain, or the arXiv API across multiple queries),
     # eliminating redundant TLS handshakes and connection setup.
     with _make_http_client() as http_client:
-        for src in sources.get("rss") or []:
-            run_collector(f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client)))
-
-        # arXiv asks for >=3 seconds between requests. We have multiple arxiv
-        # collectors; sleep between them to avoid 429s.
-        arxiv_sources = sources.get("arxiv") or []
-        for i, src in enumerate(arxiv_sources):
-            if i > 0:
-                time.sleep(3.0)
-            run_collector(f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client)))
-        for src in sources.get("hn") or []:
-            run_collector(f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client)))
-        for src in sources.get("reddit") or []:
-            run_collector(f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client)))
-        # HTML scraper family (issue #10). Vendor pages that don't offer
-        # RSS (Anthropic /news, etc.) go here.
-        for src in sources.get("html") or []:
-            run_collector(f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client)))
-        if sources.get("github_releases"):
-            # GitHub release entries can each carry their own `section:`. Run them
-            # one at a time so per-repo overrides take effect.
-            for entry in sources["github_releases"]:
-                label = f"gh/{entry['owner']}/{entry['repo']}"
-                run_collector(label, with_override(entry, fetch_github_releases([entry])))
+        for label, gen in iter_collectors(sources, http_client):
+            run_collector(label, gen)
 
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
     conn.close()

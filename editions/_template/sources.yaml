@@ -1,0 +1,41 @@
+# Feed list for this edition. Families: rss, arxiv, hn, reddit, html,
+# github_releases. See editions/agents/sources.yaml for a fully worked example
+# and CONTRIBUTING.md ("Adding or removing a feed source") for the per-source
+# overrides (section, keyword_gate_bypass, recency_days).
+#
+# Source ids must be unique within a family. Section defaults: rss -> blogs,
+# arxiv -> papers, hn/reddit/html/gh -> news.
+#
+# Do not guess feed URLs: check each one with
+#   uv run scripts/check_edition.py <slug>
+# which fetches every source and prints how many items survive each prefilter
+# gate.
+
+rss: []
+  # - id: example-blog
+  #   name: "Example Blog"
+  #   url: https://example.com/feed.xml
+  #   keyword_gate_bypass: true   # only for low-volume, hand-curated blogs
+
+arxiv: []
+  # - id: arxiv-example
+  #   name: "arXiv: example"
+  #   query: 'cat:cs.SE AND abs:"example"'
+  #   max_results: 30
+
+hn: []
+  # HN queries are free text, not boolean: one concept per query.
+  # - id: hn-example
+  #   name: "HN: example"
+  #   query: "example"
+  #   hours_back: 48
+  #   min_points: 40
+
+reddit: []
+  # - id: reddit-example
+  #   name: "r/example"
+  #   url: https://www.reddit.com/r/example/top.json?t=day
+  #   min_score: 100
+
+html: []
+github_releases: []

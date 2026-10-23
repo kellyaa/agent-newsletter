@@ -145,11 +145,17 @@ def _passes_recency(item: PrefilterItem, now: datetime) -> bool:
     return (now - dt) <= timedelta(days=window)
 
 
-def _passes_keyword_gate(item: PrefilterItem) -> bool:
+def keyword_gate(item: PrefilterItem, keyword_re: re.Pattern[str]) -> bool:
+    """The keyword gate for an arbitrary compiled pattern (scripts/check_edition.py
+    uses it to evaluate an edition without importing it as the current one)."""
     if item.get("keyword_gate_bypass"):
         return True
     haystack = (item.get("title") or "") + "\n" + (item.get("raw_text") or "")
-    return bool(KEYWORD_RE.search(haystack))
+    return bool(keyword_re.search(haystack))
+
+
+def _passes_keyword_gate(item: PrefilterItem) -> bool:
+    return keyword_gate(item, KEYWORD_RE)
 
 
 def _normalize_title(title: str) -> str:

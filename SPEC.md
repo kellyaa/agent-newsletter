@@ -303,6 +303,34 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 );
 ```
 
+## Editions (multi-edition model)
+
+The pipeline is edition-agnostic. An **edition** is one newsletter subject, defined entirely by a folder of editorial config, `editions/<slug>/`:
+
+| File | Holds |
+|---|---|
+| `edition.yaml` | `slug`, `name`, `tagline`, `status` (`draft` \| `live` \| `paused`), `order`, reader profile, down-weighted list, keyword gate, tag vocabulary, per-section thresholds and caps |
+| `sources.yaml` | the edition's feed list |
+| `prompts/<stage>.<slot>.md` | fragments filled into the `{{slots}}` of the shared `prompts/rank.md` and `prompts/write.md` |
+
+Code never contains subject-specific text. `scripts/edition.py` loads and strictly validates an edition; `EDITION=<slug>` selects it at runtime and there is deliberately **no default**. Constants that are not editorial (`RECENCY_DAYS`, `SOURCE_PRIORITY`, the paper-pool parameters, HN/Reddit floors, `APPENDIX_MAX_APPEARANCES`) stay in code and apply to every edition.
+
+`status` means: `draft` runs daily and sends failure notifications but is hidden from the site unless `SHOW_DRAFTS=1`; `live` is listed; `paused` stays listed, labelled "paused". `order` is the sort key for run order and homepage cards (lower first). The slug is stable forever once live because it is in URLs.
+
+**Spinning up an edition.** `scripts/new_edition.py <slug> --name … --describe … [--seed-source URL …] [--no-llm]`:
+
+1. copies `editions/_template/` to `editions/<slug>/` and sets `status: draft` and the next `order`;
+2. unless `--no-llm`, calls the LLM (`WRITER_MODEL`, structured JSON) with `prompts/draft_edition.md`, the editor's description, any seed sources, and the complete `agents` edition as a worked example. It returns the tagline, reader profile, down-weighted list, keywords, tags, all ten prompt fragments and starter sources;
+3. **validates everything the LLM proposed**, because LLMs invent feed URLs: each RSS URL is fetched and parsed with `feedparser`, each arXiv query must return a result, each subreddit's `.json` must respond, each regex must compile, tags are lower-cased, kebab-cased and de-duplicated. A source that fails is commented out in `sources.yaml` with the reason, not silently dropped; an unusable proposal (missing fragment, no compiling keyword, no tags) aborts before anything is written;
+4. writes `editions/<slug>/REVIEW.md`, the checklist a human works through before going live, including what was dropped and why;
+5. runs `scripts/check_edition.py <slug>`.
+
+`scripts/check_edition.py <slug>` lints the edition (config validates, both prompts render with no unfilled slot, `sources.yaml` is well-formed, template `TODO`s are a warning for a draft and an error for a `live` edition) and then dry-runs fetch and prefilter against a throwaway database in `/tmp` with **no LLM calls**, printing per-source counts: *fetched → passed recency → passed keyword gate → section*. It never touches the real `state.db`.
+
+**Going live:** merge the folder as `draft`; let it run about a week while tuning with `SHOW_DRAFTS=1 pnpm dev`; then flip `status: live` in a one-line PR. See CONTRIBUTING.md, "Adding an edition".
+
+Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator that runs every edition, and the edition-aware site (homepage picker, `/<edition>/…` routes, per-edition RSS and search) are specified in #291 and land separately (#301, #302).
+
 ## Repo Layout
 
 ```
@@ -316,7 +344,9 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 │       ├── edition.yaml       ← name, reader profile, keyword gate, tags, per-section thresholds/caps
 │       ├── sources.yaml       ← feed list, tunable
 │       └── prompts/           ← fragments filled into the base prompts (<stage>.<slot>.md)
+├── editions/_template/        ← commented starting point for new editions (copied by new_edition.py)
 ├── prompts/
+│   ├── draft_edition.md       ← meta-prompt new_edition.py sends to the LLM when drafting an edition
 │   ├── rank.md                ← ranker base template ({{slots}} for edition wording) + JSON output schema
 │   └── write.md               ← writer base template ({{slots}} for edition wording) + JSON output schema
 ├── scripts/
@@ -326,6 +356,8 @@ CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup
 │   ├── rank.py                ← per-section LLM ranker (3× calls via llm.py)
 │   ├── write.py               ← LLM writer (1× call via llm.py)
 │   ├── publish.py             ← promote items; record runs row
+│   ├── new_edition.py         ← scaffold + LLM-draft + validate a new edition folder (writes REVIEW.md)
+│   ├── check_edition.py       ← lint an edition; no-LLM dry run of fetch + prefilter with per-source counts
 │   ├── llm.py                 ← thin wrapper around OpenAI-compatible chat-completions
 │   ├── db.py                  ← schema, URL canonicalization
 │   ├── models.py              ← TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants

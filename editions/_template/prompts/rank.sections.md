@@ -1,0 +1,3 @@
+- **Papers.** TODO: what makes a paper strong or weak for this subject.
+- **News.** TODO: what makes a news item strong or weak for this subject.
+- **Blogs.** TODO: what makes a blog post strong or weak for this subject.

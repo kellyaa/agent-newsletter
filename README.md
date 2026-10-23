@@ -13,9 +13,11 @@ editions/
     edition.yaml        — name, reader profile, keyword gate, tag vocabulary, per-section thresholds/caps
     sources.yaml        — feed list with per-source overrides
     prompts/            — fragments filled into the base prompts (`<stage>.<slot>.md`)
+  _template/            — heavily commented starting point copied by `scripts/new_edition.py` (not a real edition)
 prompts/
   rank.md               — ranker base template (rubric mechanics + `{{slots}}` for edition wording)
   write.md              — writer base template (output schema, theme rules + `{{slots}}`)
+  draft_edition.md      — meta-prompt `scripts/new_edition.py` sends to the LLM to draft a new edition
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
@@ -27,6 +29,8 @@ scripts/
   run_attempt.py        — records each run.sh invocation in run_attempts (called by run.sh)
   edition.py            — load + strictly validate an edition; `current()` reads `$EDITION` (no default)
   prompts.py            — render prompts/{rank,write}.md with an edition's fragments
+  new_edition.py        — scaffold `editions/<slug>/` from the template, optionally LLM-drafted and machine-validated; writes `REVIEW.md`
+  check_edition.py      — lint an edition and dry-run fetch + prefilter against a throwaway DB (no LLM): per-source counts
   db.py                 — schema, URL canonicalization
   models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
@@ -39,6 +43,12 @@ site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
 state.db                — SQLite pipeline state (on the 'content' branch; see "Repository layout")
 ```
+
+## Editions
+
+The pipeline is not tied to one subject. Each newsletter is an **edition**: a folder of editorial config under `editions/<slug>/` (reader profile, keyword gate, tags, thresholds, sources, prompt fragments), with all code shared. `agents` ("AI Agents Daily") is the first. Select one with `EDITION=<slug>`; there is no default.
+
+To start another, run `uv run scripts/new_edition.py <slug> --name "…" --describe "…"` (add `--no-llm` for a bare template). It drafts the config with the LLM, checks every feed, query, subreddit and regex it proposed, writes a `REVIEW.md` checklist, and runs `uv run scripts/check_edition.py <slug>`, which prints per-source fetched → recency → keyword → section counts without calling the LLM. New editions start as `status: draft`; see CONTRIBUTING.md, "Adding an edition", for the draft → tune → `live` procedure.
 
 ## Daily pipeline
 

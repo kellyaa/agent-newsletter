@@ -1,0 +1,69 @@
+# ============================================================================
+# Edition template.
+#
+# `scripts/new_edition.py <slug> --name "…" --describe "…"` copies this folder
+# to editions/<slug>/ and rewrites slug/name/status/order. With an LLM it also
+# fills in everything marked TODO; with --no-llm you fill it in by hand.
+#
+# Everything subject-specific lives in the edition folder; the pipeline code is
+# shared. Validation is strict (scripts/edition.py): unknown keys, regexes that
+# do not compile, non-kebab-case tags and a slug that differs from the folder
+# name are all errors. Run `uv run scripts/check_edition.py <slug>` after every
+# edit.
+#
+# A `live` edition may not contain any TODO placeholder (check_edition.py
+# rejects it).
+# ============================================================================
+
+# Stable forever once live: it is in URLs. Lowercase, digits and hyphens only,
+# and it must equal the folder name.
+slug: your-slug-here
+
+# Display name (site header, <title>, prompts).
+name: Your Edition Name
+
+# One sentence, shown on the homepage card and in the prompts.
+tagline: "TODO: one sentence on what this edition covers and for whom."
+
+# draft  - runs daily and sends failure notifications, hidden on the site unless
+#          SHOW_DRAFTS=1. Use this while tuning (about a week).
+# live   - listed on the homepage.
+# paused - still listed, labelled "paused"; skipped by the default daily run.
+status: draft
+
+# Sort key for homepage cards and for run order (lower runs first). Leave gaps
+# (10, 20, 30) so an edition can be inserted later.
+order: 100
+
+# Who reads this, and what they care about. Fills {{reader_profile}} in the
+# rank and write prompts, so write it as plain prose a model can act on.
+reader_profile: >-
+  TODO: describe the reader (seniority, what they already know) and the five or
+  six topics they care about.
+
+# What the reader does NOT want. Fills {{downweighted}} (comma-separated).
+downweighted:
+  - "TODO: a topic the ranker should score down"
+
+# Prefilter keyword gate: an item must match at least one of these (regex,
+# case-insensitive) in its title or text, unless its source sets
+# `keyword_gate_bypass: true`. Prefer a few broad patterns over many narrow ones
+# and tune them with the per-source counts from check_edition.py.
+keywords:
+  - '\bTODO\b'
+
+# Closed tag vocabulary the ranker must pick from (kebab-case, 8-14 is typical).
+# Fills {{tags}}.
+tags:
+  - todo-replace-me
+
+# Thresholds and caps per section; the only per-edition numeric overrides.
+#   featured_min  minimum ranker score to be featured
+#   appendix_min  minimum score to land in the appendix (<= featured_min)
+#   cap           maximum featured items in the section per issue
+# papers may also set burst_cap, burst_trigger_score and burst_trigger_count
+# together (a higher cap on heavy days). Start from these defaults.
+sections:
+  papers: { featured_min: 7, appendix_min: 5, cap: 5 }
+  news: { featured_min: 6, appendix_min: 4, cap: 6 }
+  blogs: { featured_min: 6, appendix_min: 4, cap: 6 }
