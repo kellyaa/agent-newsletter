@@ -1,0 +1,131 @@
+# Feed list for Breaking Changes. Starter sources from #291 section 10; every
+# URL was fetched by check_edition.py before merge (see REVIEW.md for the
+# results and for sources that did not survive). Families: rss, arxiv, hn,
+# reddit, html, github_releases. See editions/agents/sources.yaml for the
+# fully worked example.
+#
+# Practitioner blogs publish rarely and are hand-picked, so they bypass the
+# keyword gate. Anything high-volume or general (HN, Reddit, broad engineering
+# blogs) keeps the gate.
+
+rss:
+  - id: fowler
+    name: "Martin Fowler"
+    url: https://martinfowler.com/feed.atom
+    keyword_gate_bypass: true
+    recency_days: 30
+
+  - id: pragmatic-engineer
+    name: "The Pragmatic Engineer"
+    url: https://blog.pragmaticengineer.com/rss/
+    keyword_gate_bypass: true
+    recency_days: 30
+
+  - id: addy-osmani
+    name: "Addy Osmani"
+    url: https://addyo.substack.com/feed
+    keyword_gate_bypass: true
+    recency_days: 30
+
+  - id: tidy-first
+    name: "Kent Beck — Tidy First?"
+    url: https://tidyfirst.substack.com/feed
+    keyword_gate_bypass: true
+    recency_days: 60
+
+  - id: charity-majors
+    name: "Charity Majors"
+    url: https://charity.wtf/feed/
+    keyword_gate_bypass: true
+    recency_days: 60
+
+  - id: lucumr
+    name: "Armin Ronacher"
+    url: https://lucumr.pocoo.org/feed.atom
+    keyword_gate_bypass: true
+    recency_days: 60
+
+  - id: simonw
+    name: "Simon Willison's Weblog"
+    url: https://simonwillison.net/atom/everything/
+    # Shared with the agents edition. High volume and broad, so keep the gate.
+
+  - id: github-blog
+    name: "GitHub Blog — Engineering"
+    url: https://github.blog/engineering/feed/
+
+  - id: stackoverflow-blog
+    name: "Stack Overflow Blog"
+    url: https://stackoverflow.blog/feed/
+
+  - id: leaddev
+    name: "LeadDev"
+    url: https://leaddev.com/feed
+
+arxiv:
+  - id: arxiv-se-ai-dev
+    name: "arXiv: cs.SE AI-assisted development"
+    query: 'cat:cs.SE AND (abs:"LLM-assisted" OR abs:"AI-assisted" OR abs:"developer productivity" OR abs:"AI-generated code")'
+    max_results: 30
+
+  - id: arxiv-se-review-test
+    name: "arXiv: cs.SE review and test generation"
+    query: 'cat:cs.SE AND (abs:"code review" OR abs:"test generation") AND (abs:"LLM" OR abs:"language model")'
+    max_results: 30
+
+hn:
+  - id: hn-copilot
+    name: "HN: copilot"
+    query: "copilot"
+    hours_back: 48
+    min_points: 50
+
+  - id: hn-cursor
+    name: "HN: cursor"
+    query: "cursor"
+    hours_back: 48
+    min_points: 50
+
+  - id: hn-claude-code
+    name: "HN: claude code"
+    query: "claude code"
+    hours_back: 48
+    min_points: 40
+
+  - id: hn-ai-coding
+    name: "HN: ai coding"
+    query: "ai coding"
+    hours_back: 48
+    min_points: 40
+
+  - id: hn-vibe-coding
+    name: "HN: vibe coding"
+    query: "vibe coding"
+    hours_back: 48
+    min_points: 40
+
+  - id: hn-code-review
+    name: "HN: code review"
+    query: "code review"
+    hours_back: 48
+    min_points: 40
+
+reddit:
+  # Noisy. The keyword gate stays on and the upvote floor is high.
+  - id: reddit-experienceddevs
+    name: "r/ExperiencedDevs"
+    url: https://www.reddit.com/r/ExperiencedDevs/top.json?t=day
+    min_score: 150
+
+  - id: reddit-programming
+    name: "r/programming"
+    url: https://www.reddit.com/r/programming/top.json?t=day
+    min_score: 200
+
+  - id: reddit-softwareengineering
+    name: "r/softwareengineering"
+    url: https://www.reddit.com/r/softwareengineering/top.json?t=day
+    min_score: 100
+
+html: []
+github_releases: []
