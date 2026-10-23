@@ -391,7 +391,10 @@ def test_python_runner_fallbacks(fx, tmp_path):
     assert "none usable" in r.stdout
     # uv unusable but a committed .venv/bin/python exists → use it.
     (repo / ".venv" / "bin").mkdir(parents=True)
-    (repo / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    # A wrapper, not a symlink: a symlinked venv interpreter loses its site-packages.
+    wrapper = repo / ".venv" / "bin" / "python"
+    wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    wrapper.chmod(0o755)
     r = _run(repo, env, "--edition", "agents")
     assert ".venv/bin/python (uv unavailable" in r.stdout
     assert r.returncode == 0, r.stdout + r.stderr

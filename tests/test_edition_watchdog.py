@@ -220,7 +220,10 @@ def test_python_falls_back_to_venv_then_python3(repo):
     env = {**os.environ}
     env.pop("NEWSLETTER_PYTHON", None)
     (repo / ".venv" / "bin").mkdir(parents=True)
-    (repo / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    # A wrapper, not a symlink: a symlinked venv interpreter loses its site-packages.
+    wrapper = repo / ".venv" / "bin" / "python"
+    wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    wrapper.chmod(0o755)
     p = subprocess.run(["bash", str(repo / "scripts" / "watchdog.sh")], cwd=repo, env=env,
                        capture_output=True, text=True)
     assert p.stdout.strip().splitlines()[-1] == f"STATUS: ALREADY_RAN {d}"
