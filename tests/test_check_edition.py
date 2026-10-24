@@ -83,6 +83,10 @@ def test_sources_file_missing_or_malformed(editions_dir):
     [
         ({"rss": [{"id": "a"}]}, "missing ['url']"),
         ({"rss": [{"id": "a", "url": "u"}, {"id": "a", "url": "v"}]}, "duplicate id 'a'"),
+        ({"rss": [{"id": ["a"], "url": "u"}, {"id": ["a"], "url": "v"}]}, "id must be a non-empty string"),
+        ({"rss": [{"id": {"k": 1}, "url": "u"}]}, "id must be a non-empty string"),
+        ({"rss": [{"id": 1, "url": "u"}]}, "id must be a non-empty string"),
+        ({"rss": [{"id": "", "url": "u"}]}, "id must be a non-empty string"),
         ({"rss": "nope"}, "'rss' must be a list"),
         ({"rss": ["nope"]}, "must be a mapping"),
         ({"bogus": []}, "unknown source families"),
