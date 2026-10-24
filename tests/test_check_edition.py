@@ -99,6 +99,23 @@ def test_source_entry_validation(editions_dir, sources, fragment):
     assert any(fragment in e for e in errors), errors
 
 
+def test_github_releases_entries_have_no_id_and_never_collide(editions_dir):
+    # github_releases is keyed by owner/repo, not id: two id-less entries must
+    # not be reported as duplicates (the `sid is not None` guard), and the same
+    # id may be reused across different families (seen_ids is per family).
+    dest = _clone_agents(editions_dir)
+    (dest / "sources.yaml").write_text(yaml.safe_dump({
+        "github_releases": [
+            {"owner": "o", "repo": "a"},
+            {"owner": "o", "repo": "b"},
+        ],
+        "rss": [{"id": "x", "url": "u"}],
+        "hn": [{"id": "x", "query": "q"}],
+    }))
+    errors = check_edition.lint("demo").errors
+    assert not any("duplicate" in e or "missing" in e for e in errors), errors
+
+
 def test_empty_sources_file_warns_for_draft_and_fails_for_live(editions_dir):
     dest = _clone_agents(editions_dir, status="draft")
     (dest / "sources.yaml").write_text("# nothing yet\n")
