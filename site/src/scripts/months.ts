@@ -38,13 +38,18 @@ export function groupByMonth(issues: any[]): MonthBucket[] {
   return [...buckets.entries()].map(([key, issues]) => ({ key, issues }));
 }
 
-export function buildMonthList(buckets: MonthBucket[]): MonthEntry[] {
+/**
+ * `editionSlug` prefixes every href with `/<slug>`: the latest month links to
+ * the edition front page (`/<slug>/`), older months to `/<slug>/months/<key>/`.
+ */
+export function buildMonthList(buckets: MonthBucket[], editionSlug?: string): MonthEntry[] {
   if (buckets.length === 0) return [];
   const latestKey = buckets[0].key;
+  const prefix = editionSlug ? `/${editionSlug}` : "";
   return buckets.map((b) => ({
     key: b.key,
     label: monthLabel(b.key),
     count: b.issues.length,
-    href: b.key === latestKey ? "/" : `/months/${b.key}/`,
+    href: b.key === latestKey ? `${prefix}/` : `${prefix}/months/${b.key}/`,
   }));
 }

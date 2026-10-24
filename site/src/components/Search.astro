@@ -3,24 +3,35 @@
 // `pagefind --site dist` (see package.json `build` script). It does not exist
 // during `astro dev`, so the search box renders but won't return results
 // locally unless you run `pnpm build && pnpm preview`.
+//
+// Pass `edition` to scope results to one edition. Issue pages carry
+// data-pagefind-filter="edition:<slug>" and the single site-wide index is
+// narrowed with that filter, pre-applied on load.
+interface Props {
+  edition?: string;
+}
+const { edition } = Astro.props;
 const base = import.meta.env.BASE_URL || "/";
 const pagefindBase = base.endsWith("/") ? base : base + "/";
 ---
 <div id="search" class="pagefind-search"></div>
 
 <link rel="stylesheet" href={`${pagefindBase}pagefind/pagefind-ui.css`} />
-<script is:inline define:vars={{ pagefindBase }}>
+<script is:inline define:vars={{ pagefindBase, edition }}>
   // Defer load until DOM is ready so the mount target exists.
   window.addEventListener("DOMContentLoaded", () => {
     const script = document.createElement("script");
     script.src = `${pagefindBase}pagefind/pagefind-ui.js`;
     script.onload = () => {
       // eslint-disable-next-line no-undef
-      new PagefindUI({
+      const ui = new PagefindUI({
         element: "#search",
         showSubResults: true,
         resetStyles: false,
       });
+      // Pre-apply the edition filter. The pagefind search runs a query then
+      // filters, so an empty-term search lists every page of the edition.
+      if (edition) ui.triggerFilters({ edition: [edition] });
     };
     document.head.appendChild(script);
   });

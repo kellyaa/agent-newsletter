@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers content.config.ts's httpUrl schema refinement end to end via a
 // real Astro build (content-collection schema validation can't be unit
@@ -60,6 +61,7 @@ async function setupFixture(fixtureRoot: string, featuredUrl: string) {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
   await mkdir(issueDirectory, { recursive: true });
@@ -145,7 +147,7 @@ test("content schema accepts a plain https: URL in a featured item", async () =>
     const fixtureSite = await setupFixture(fixtureRoot, "https://example.test/item");
     buildFixture(fixtureSite); // must not throw
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
     assert.ok(html.includes('href="https://example.test/item"'));

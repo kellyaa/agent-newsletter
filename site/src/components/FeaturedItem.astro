@@ -17,8 +17,8 @@ interface Item {
   takeaway?: string | null;
   open_question?: string | null;
 }
-interface Props { item: Item; }
-const { item } = Astro.props;
+interface Props { item: Item; edition: string; }
+const { item, edition } = Astro.props;
 
 // Render summary as inline HTML — it may contain inline markdown like `code`,
 // **bold**, or [text](url). We sanitize with DOMPurify before rendering to
@@ -52,7 +52,7 @@ function safeInline(text: string | null | undefined): string {
     <ScoreBar score={item.score} />
     {item.tags.length > 0 && (
       <span class="tag-list">
-        {item.tags.map((t) => <TagChip label={t} />)}
+        {item.tags.map((t) => <TagChip label={t} edition={edition} />)}
       </span>
     )}
   </div>

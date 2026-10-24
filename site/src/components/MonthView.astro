@@ -13,9 +13,11 @@ interface Props {
   issues: any[];
   months: MonthEntry[];
   currentMonth: string;
+  /** Edition slug; issue links are /<edition>/issues/<date>/. */
+  edition: string;
 }
 
-const { issues, months, currentMonth } = Astro.props;
+const { issues, months, currentMonth, edition } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -91,11 +93,11 @@ function countsString(m: {
                   {counts && <span class="timeline__counts">{counts}</span>}
                   {tags.length > 0 && (
                     <div class="tag-list">
-                      {tags.map((t) => <TagChip label={t as string} />)}
+                      {tags.map((t) => <TagChip label={t as string} edition={edition} />)}
                     </div>
                   )}
                 </div>
-                <a class="timeline__more" href={`${base}/issues/${issue.data.date}/`}>Read issue →</a>
+                <a class="timeline__more" href={`${base}/${edition}/issues/${issue.data.date}/`}>Read issue →</a>
               </footer>
             </article>
           </li>

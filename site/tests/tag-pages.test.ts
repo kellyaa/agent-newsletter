@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { isTagSlug } from "../src/scripts/tag-slug.ts";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers /tags/ and /tags/<tag>/ (issue #7) via a real Astro build.
 
@@ -71,6 +72,7 @@ async function buildFixtureSite(prefix: string) {
   );
   await writeFile(join(fixtureSite, "tsconfig.json"), await readFile(join(siteRoot, "tsconfig.json")));
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
   return { fixtureRoot, fixtureSite };
 }
 
@@ -114,26 +116,26 @@ test("tag pages: index counts, per-tag listing order, chip links", async () => {
     runBuild(fixtureSite);
     const dist = join(fixtureSite, "dist");
 
-    const index = await readFile(join(dist, "tags", "index.html"), "utf8");
-    assert.match(index, /href="\/newsletter\/tags\/evals\/"[^>]*>\s*<span class="tag-index__tag"[^>]*>evals<\/span>\s*<span class="tag-index__count"[^>]*>3<\/span>/);
-    assert.ok(index.includes("/newsletter/tags/tool-use/"));
-    assert.ok(index.includes("/newsletter/tags/memory/"));
+    const index = await readFile(join(dist, "agents", "tags", "index.html"), "utf8");
+    assert.match(index, /href="\/newsletter\/agents\/tags\/evals\/"[^>]*>\s*<span class="tag-index__tag"[^>]*>evals<\/span>\s*<span class="tag-index__count"[^>]*>3<\/span>/);
+    assert.ok(index.includes("/newsletter/agents/tags/tool-use/"));
+    assert.ok(index.includes("/newsletter/agents/tags/memory/"));
     assert.ok(!index.includes("bad/tag") && !index.includes("bad%2Ftag"));
 
-    const evals = await readFile(join(dist, "tags", "evals", "index.html"), "utf8");
+    const evals = await readFile(join(dist, "agents", "tags", "evals", "index.html"), "utf8");
     const order = ["Newer high eval", "Newer low eval", "Older eval"].map((t) => evals.indexOf(t));
     assert.ok(order.every((i) => i >= 0), "all evals items listed");
     assert.deepEqual([...order].sort((a, b) => a - b), order, "date desc, then score desc");
     assert.ok(!evals.includes("Memory item"), "other tags excluded");
-    assert.ok(evals.includes('href="/newsletter/issues/2026-06-02/"'));
+    assert.ok(evals.includes('href="/newsletter/agents/issues/2026-06-02/"'));
     assert.ok(evals.includes("Bold link text."), "summary rendered as plain excerpt");
     assert.ok(!evals.includes("**Bold**"));
 
-    assert.ok(existsSync(join(dist, "tags", "tool-use", "index.html")));
-    assert.ok(existsSync(join(dist, "tags", "memory", "index.html")));
+    assert.ok(existsSync(join(dist, "agents", "tags", "tool-use", "index.html")));
+    assert.ok(existsSync(join(dist, "agents", "tags", "memory", "index.html")));
 
-    const issuePage = await readFile(join(dist, "issues", "2026-06-01", "index.html"), "utf8");
-    assert.ok(issuePage.includes('<a class="chip chip--link" href="/newsletter/tags/tool-use/">tool-use</a>'));
+    const issuePage = await readFile(join(dist, "agents", "issues", "2026-06-01", "index.html"), "utf8");
+    assert.ok(issuePage.includes('<a class="chip chip--link" href="/newsletter/agents/tags/tool-use/">tool-use</a>'));
     assert.ok(issuePage.includes('<span class="chip">bad/tag</span>'));
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });

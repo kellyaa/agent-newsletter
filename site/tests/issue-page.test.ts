@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers scripts/components/FeaturedItem.astro's safeInline() sanitization
 // pipeline (marked -> DOMPurify) end to end via a real Astro build, since
@@ -94,6 +95,7 @@ test("issue page sanitizes markdown fields and escapes tags, allowing only safe 
       await readFile(join(siteRoot, "tsconfig.json")),
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+    await seedEditions(fixtureRoot);
 
     const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
@@ -125,7 +127,7 @@ test("issue page sanitizes markdown fields and escapes tags, allowing only safe 
     });
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 

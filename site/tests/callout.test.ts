@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/components/Callout.astro end to end via a real Astro build.
 //
@@ -85,6 +86,7 @@ async function buildFixtureSite(prefix: string) {
     await readFile(join(siteRoot, "tsconfig.json")),
   );
   await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+  await seedEditions(fixtureRoot);
 
   return { fixtureRoot, fixtureSite };
 }
@@ -124,7 +126,7 @@ test("Callout renders the takeaway variant's class and label, and the question v
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 
@@ -203,7 +205,7 @@ test("Callout does not render at all for an item with neither takeaway nor open_
     runBuild(fixtureSite);
 
     const html = await readFile(
-      join(fixtureSite, "dist", "issues", "2026-06-01", "index.html"),
+      join(fixtureSite, "dist", "agents", "issues", "2026-06-01", "index.html"),
       "utf8",
     );
 

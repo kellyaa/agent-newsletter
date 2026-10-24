@@ -1,58 +1,12 @@
-import rss from "@astrojs/rss";
 import { getCollection } from "astro:content";
-import { safeHref } from "../scripts/safe-href";
+import { loadRegistry, issuesFor } from "../scripts/editions";
+import { buildFeed } from "../scripts/feed.js";
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function renderItemContent(issue) {
-  const parts = [];
-  if (issue.data.theme) {
-    parts.push(`<p><em>${escapeHtml(issue.data.theme)}</em></p>`);
-  }
-  const featured = [...issue.data.featured].sort((a, b) => b.score - a.score);
-  if (featured.length > 0) {
-    parts.push("<h2>Featured</h2>");
-    for (const f of featured) {
-      parts.push(
-        `<h3><a href="${escapeHtml(safeHref(f.url))}">${escapeHtml(f.title)}</a></h3>`,
-      );
-      const meta = [f.section, f.author].filter(Boolean).map(escapeHtml).join(" · ");
-      if (meta) parts.push(`<p><small>${meta}</small></p>`);
-      if (f.summary) parts.push(`<p>${escapeHtml(f.summary)}</p>`);
-      if (f.takeaway) parts.push(`<p><strong>Takeaway:</strong> ${escapeHtml(f.takeaway)}</p>`);
-      if (f.open_question) parts.push(`<p><strong>Open question:</strong> ${escapeHtml(f.open_question)}</p>`);
-    }
-  }
-  return parts.join("\n");
-}
-
+// /rss.xml stays valid as a copy of /agents/rss.xml so existing subscribers
+// keep working after the move to per-edition feeds (#291, answer A4).
 export async function GET(context) {
-  const issues = await getCollection("issues");
-  issues.sort((a, b) => (a.data.date < b.data.date ? 1 : -1));
-
-  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-  return rss({
-    title: "AI Agents Daily",
-    description:
-      "A daily, opinionated digest on building and running AI agents.",
-    site: context.site,
-    items: issues.map((issue) => ({
-      title: issue.data.theme
-        ? `${issue.data.date} — ${issue.data.theme.split(/[.!?]/)[0]}`
-        : `Issue ${issue.data.date}`,
-      description: issue.data.theme || `AI Agents Daily — ${issue.data.date}`,
-      pubDate: new Date(`${issue.data.date}T12:00:00Z`),
-      link: `${base}/issues/${issue.data.date}/`,
-      content: renderItemContent(issue),
-    })),
-    customData: `<language>en-us</language>`,
-  });
+  const agents = loadRegistry().listed.find((e) => e.slug === "agents");
+  if (!agents) return new Response("Not found", { status: 404 });
+  const issues = issuesFor(await getCollection("issues"), agents.slug);
+  return buildFeed(context, agents, issues);
 }

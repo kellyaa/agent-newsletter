@@ -1,0 +1,27 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import MonthView from "../../components/MonthView.astro";
+import { groupByMonth, buildMonthList } from "../../scripts/months";
+import { loadRegistry, issuesFor } from "../../scripts/editions";
+
+export function getStaticPaths() {
+  return loadRegistry().listed.map((edition) => ({
+    params: { edition: edition.slug },
+    props: { edition },
+  }));
+}
+
+const { edition } = Astro.props;
+const issues = issuesFor(await getCollection("issues"), edition.slug);
+const buckets = groupByMonth(issues);
+const months = buildMonthList(buckets, edition.slug);
+const latest = buckets[0];
+---
+<BaseLayout title={edition.name} edition={edition}>
+  {latest === undefined ? (
+    <p class="empty-state">No issues yet. The first run lands tomorrow.</p>
+  ) : (
+    <MonthView issues={latest.issues} months={months} currentMonth={latest.key} edition={edition.slug} />
+  )}
+</BaseLayout>

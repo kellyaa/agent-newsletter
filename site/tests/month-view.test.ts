@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { seedEditions } from "./seed-editions.ts";
 
 // Covers src/components/MonthView.astro end to end via a real Astro build.
 // MonthView has its own date-formatting (parseISODate) and count-labeling
@@ -130,6 +131,7 @@ test("month archive page formats dates, counts, top-3 featured, and tag dedup/sl
       await readFile(join(siteRoot, "tsconfig.json")),
     );
     await cp(join(siteRoot, "src"), join(fixtureSite, "src"), { recursive: true });
+    await seedEditions(fixtureRoot);
 
     const issueDirectory = join(fixtureSite, "src", "content", "issues", "agents");
     await mkdir(issueDirectory, { recursive: true });
@@ -177,7 +179,7 @@ test("month archive page formats dates, counts, top-3 featured, and tag dedup/sl
     });
 
     const html = await readFile(
-      join(fixtureSite, "dist", "months", "2026-06", "index.html"),
+      join(fixtureSite, "dist", "agents", "months", "2026-06", "index.html"),
       "utf8",
     );
 
@@ -222,7 +224,7 @@ test("month archive page formats dates, counts, top-3 featured, and tag dedup/sl
     // The newer (July) bucket is the latest month, so its nav link must
     // point at the base path, not a /months/2026-07/ page (home renders it).
     assert.ok(
-      html.includes(`href="/newsletter/"`),
+      html.includes(`href="/newsletter/agents/"`),
       "the latest month in the nav should link to the site root, not a dedicated month page",
     );
 
