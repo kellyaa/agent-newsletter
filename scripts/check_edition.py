@@ -114,9 +114,12 @@ def _check_sources(sources: dict, result: LintResult) -> None:
                 result.errors.append(f"{where} is missing {missing}")
             sid = entry.get("id")
             if sid is not None:
-                if sid in seen_ids:
+                if not isinstance(sid, str) or not sid.strip():
+                    result.errors.append(f"{where}: id must be a non-empty string")
+                elif sid in seen_ids:
                     result.errors.append(f"{where}: duplicate id {sid!r} in {family}")
-                seen_ids.add(sid)
+                else:
+                    seen_ids.add(sid)
             if "section" in entry and entry["section"] not in SECTIONS:
                 result.errors.append(f"{where}: section {entry['section']!r} must be one of {list(SECTIONS)}")
             if "keyword_gate_bypass" in entry and not isinstance(entry["keyword_gate_bypass"], bool):
