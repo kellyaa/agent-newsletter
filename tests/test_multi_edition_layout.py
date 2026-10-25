@@ -454,6 +454,23 @@ class TestResetDay:
         rows, _ = self._statuses(paths)
         assert rows == {"i3": "published"}
 
+    def test_refetch_makes_fetch_run_again_with_resurfaced_items(self, tmp_path, monkeypatch):
+        """#321: an older item re-surfaced today must not make fetch skip."""
+        import fetch
+        reset_day, paths = self._seed(tmp_path, monkeypatch)
+        conn = db_mod.connect(paths.state_db)
+        db_mod.set_meta(conn, fetch.FETCH_DONE_KEY, "2026-10-22")
+        assert fetch._already_fetched_today(conn) > 0
+        conn.close()
+        assert reset_day.main(["--refetch"]) == 0
+        conn = db_mod.connect(paths.state_db)
+        # i3 is a prior-day item with last_seen_date = today; it survives the delete.
+        assert conn.execute(
+            "SELECT COUNT(*) FROM items WHERE last_seen_date = '2026-10-22'"
+        ).fetchone()[0] == 1
+        assert fetch._already_fetched_today(conn) == 0
+        conn.close()
+
     def test_missing_db_is_a_noop(self, tmp_path, monkeypatch):
         import reset_day
         monkeypatch.setattr(reset_day, "CONTENT_ROOT", tmp_path)
