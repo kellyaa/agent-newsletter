@@ -80,7 +80,7 @@ const read = (site: string, ...p: string[]) => readFile(join(site, "dist", ...p)
 
 const EDITIONS = {
   agents: editionYaml({ slug: "agents", name: "AI Agents Daily", tagline: "Agents tagline.", order: 10 }),
-  sdlc: editionYaml({ slug: "sdlc", name: "Breaking Changes", tagline: "SDLC tagline.", order: 20 }),
+  sdlc: editionYaml({ slug: "sdlc", name: "Engineering with AI Daily", tagline: "SDLC tagline.", order: 20 }),
   paused: editionYaml({ slug: "paused", name: "Paused One", tagline: "Quiet.", status: "paused", order: 30 }),
   fresh: editionYaml({ slug: "fresh", name: "Fresh One", tagline: "New.", order: 40 }),
   wip: editionYaml({ slug: "wip", name: "Draft One", tagline: "Not yet.", status: "draft", order: 50 }),
@@ -167,7 +167,7 @@ test("routes are generated per listed edition and nothing is left at the legacy 
     // sdlc's issue is its own, not agents'
     const sdlcIssue = await read(fixtureSite, "sdlc", "issues", "2026-06-02", "index.html");
     assert.ok(sdlcIssue.includes("SDLC only theme.") && !sdlcIssue.includes("Newest agents theme."));
-    assert.ok(sdlcIssue.includes("<title>2026-06-02 — Breaking Changes</title>"));
+    assert.ok(sdlcIssue.includes("<title>2026-06-02 — Engineering with AI Daily</title>"));
     assert.ok(sdlcIssue.includes('href="/newsletter/sdlc/rss.xml"'));
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
@@ -186,7 +186,7 @@ test("each edition RSS contains only its own issues, and /rss.xml is a copy of /
     assert.ok(agents.includes("https://example.test/newsletter/agents/issues/2026-06-01/"));
     assert.ok(!agents.includes("SDLC only theme.") && !agents.includes("/sdlc/"));
 
-    assert.ok(sdlc.includes("<title>Breaking Changes</title>"));
+    assert.ok(sdlc.includes("<title>Engineering with AI Daily</title>"));
     assert.ok(sdlc.includes("https://example.test/newsletter/sdlc/issues/2026-06-02/"));
     assert.ok(!sdlc.includes("agents theme") && !sdlc.includes("/agents/"));
 
@@ -205,7 +205,7 @@ test("issue pages carry the Pagefind edition filter; the edition search page pre
     const search = await read(fixtureSite, "sdlc", "search", "index.html");
     assert.ok(search.includes('edition = "sdlc"'), "loader receives the edition");
     assert.ok(search.includes("triggerFilters({ edition: [edition] })"));
-    assert.ok(search.includes("<title>Search — Breaking Changes</title>"));
+    assert.ok(search.includes("<title>Search — Engineering with AI Daily</title>"));
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }

@@ -17,7 +17,7 @@ REAL = edition.EDITIONS_DIR
 def editions_dir(tmp_path, monkeypatch):
     """A copy of the real editions/ tree that tests may freely edit."""
     d = tmp_path / "editions"
-    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("breaking-changes"))
+    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("engineering-with-ai"))
     monkeypatch.setattr(edition, "EDITIONS_DIR", d)
     return d
 

@@ -1,4 +1,4 @@
-# Breaking Changes: Engineering Practice in the Agent Era.
+# Engineering with AI Daily.
 #
 # AI is the tool, software is the product: how engineering practice, quality,
 # security, architecture and team process change when AI writes, reviews and
@@ -6,12 +6,14 @@
 # agent internals belong there. Some overlap on "using coding agents as a
 # practitioner" is accepted (#291, A3); agents pillar 2 is not narrowed.
 #
-# Slug `breaking-changes` was proposed in #304 because #291 gave only a name;
-# it is permanent once live (it is in URLs).
+# Renamed from `breaking-changes` ("Breaking Changes: Engineering Practice in the
+# Agent Era") to `engineering-with-ai` in #323 while still a draft: "Breaking"
+# read as an alarm, and the new name says what the edition covers and follows
+# the pattern of AI Agents Daily. The slug is permanent once live (it is in URLs).
 #
-slug: breaking-changes
+slug: engineering-with-ai
 
-name: 'Breaking Changes: Engineering Practice in the Agent Era'
+name: Engineering with AI Daily
 
 tagline: How AI changes the way software gets built, reviewed, secured and shipped, for engineers and the teams they lead.
 
