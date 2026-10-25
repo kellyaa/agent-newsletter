@@ -22,11 +22,18 @@ from pathlib import Path
 import edition
 from db import CONTENT_ROOT, connect
 
+# Keep in sync with fetch.FETCH_DONE_KEY (not imported: fetch pulls in httpx etc.).
+FETCH_DONE_KEY = "fetch_completed_date"
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("reset_day")
 
 
 def refetch(conn, today: str) -> int:
+    # Clear fetch's completion marker too: deleting first_seen_date rows alone
+    # leaves older items whose last_seen_date was bumped to today, which made
+    # fetch skip and the write stage overwrite the live issue (#321).
+    conn.execute("DELETE FROM meta WHERE key = ?", (FETCH_DONE_KEY,))
     cur = conn.execute("DELETE FROM items WHERE first_seen_date = ?", (today,))
     conn.commit()
     return cur.rowcount or 0

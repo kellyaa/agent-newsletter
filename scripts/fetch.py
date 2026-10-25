@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import ssl
 import subprocess
 import sys
@@ -21,7 +22,9 @@ import httpx
 import yaml
 
 import edition
-from db import REPO_ROOT, canonicalize_url, connect, init_db, is_allowed_url, url_id
+from db import (
+    REPO_ROOT, canonicalize_url, connect, get_meta, init_db, is_allowed_url, set_meta, url_id,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -562,8 +565,28 @@ def _stamp_overrides(
         yield it
 
 
+# meta key: the run date for which a fetch completed. reset_day --refetch
+# clears it. The skip check keys off this marker, not off item dates, because
+# fetch bumps last_seen_date on re-surfaced older items, so item dates can't
+# tell "fetched today" from "re-surfaced today" (#321).
+FETCH_DONE_KEY = "fetch_completed_date"
+
+
+def _run_date() -> str:
+    """The date being produced: RUN_DATE like the rest of the pipeline."""
+    return os.environ.get("RUN_DATE") or datetime.now().date().isoformat()
+
+
 def _already_fetched_today(conn) -> int:
-    today = datetime.now().date().isoformat()
+    """Items seen today, or 0 when fetch has not completed for the run date.
+
+    Both the completion marker and rows with last_seen_date = today are
+    required: the marker is cleared by ``reset_day.py --refetch``; the rows
+    check keeps "delete today's rows to force" working.
+    """
+    today = _run_date()
+    if get_meta(conn, FETCH_DONE_KEY) != today:
+        return 0
     row = conn.execute(
         "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
     ).fetchone()
@@ -619,7 +642,7 @@ def main() -> int:
     if existing > 0:
         log.info(
             "fetch: skip — today already has %d items in DB "
-            "(re-running fetch is safe but wasteful; delete today's rows to force)",
+            "(re-running fetch is safe but wasteful; use run.sh --refetch to force)",
             existing,
         )
         conn.close()
@@ -650,6 +673,8 @@ def main() -> int:
             run_collector(label, gen)
 
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
+    if not (total_seen == 0 and errors > 0):
+        set_meta(conn, FETCH_DONE_KEY, _run_date())
     conn.close()
     # Per-source errors are logged but don't abort the run, as long as at
     # least one source produced data. This matches the docstring's contract

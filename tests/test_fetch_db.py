@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from fetch import Item, upsert_items, _already_fetched_today
-from db import init_db, connect, url_id
+from fetch import FETCH_DONE_KEY, Item, upsert_items, _already_fetched_today
+from db import init_db, connect, set_meta, url_id
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +243,45 @@ class TestAlreadyFetchedToday:
             mock_dt.now.return_value.isoformat.return_value = f"{today}T00:00:00Z"
             upsert_items(db, [item])
 
+        set_meta(db, FETCH_DONE_KEY, today)
         result = _already_fetched_today(db)
         assert result == 1
 
-    def test_does_not_count_items_from_yesterday(self, db):
+    def test_requires_completion_marker(self, db):
+        """Rows alone (e.g. older items re-surfaced today) don't mean fetched."""
+        from datetime import date
+
+        today = date.today().isoformat()
+        db.execute(
+            "INSERT INTO items (id, source, url, canonical_url, title, fetched_at,"
+            " status, first_seen_date, last_seen_date, appearances)"
+            " VALUES ('x','rss:t','https://a.com','https://a.com','T',"
+            " '2026-01-01T00:00:00Z','published','2026-01-01',?,2)",
+            (today,),
+        )
+        db.commit()
+        assert _already_fetched_today(db) == 0
+        set_meta(db, FETCH_DONE_KEY, today)
+        assert _already_fetched_today(db) == 1
+
+    def test_uses_run_date_env(self, db, monkeypatch):
+        monkeypatch.setenv("RUN_DATE", "2026-10-24")
+        db.execute(
+            "INSERT INTO items (id, source, url, canonical_url, title, fetched_at,"
+            " status, first_seen_date, last_seen_date, appearances)"
+            " VALUES ('x','rss:t','https://a.com','https://a.com','T',"
+            " '2026-10-24T00:00:00Z','new','2026-10-24','2026-10-24',1)"
+        )
+        db.commit()
+        set_meta(db, FETCH_DONE_KEY, "2026-10-24")
+        assert _already_fetched_today(db) == 1
+        monkeypatch.setenv("RUN_DATE", "2026-10-25")
+        assert _already_fetched_today(db) == 0
+
+    def test_does_not_count_items_from_yesterday(self, db, monkeypatch):
         from unittest.mock import patch
+
+        monkeypatch.delenv("RUN_DATE", raising=False)
 
         item = _make_item()
         with patch("fetch.datetime") as mock_dt:
@@ -255,7 +289,7 @@ class TestAlreadyFetchedToday:
             mock_dt.now.return_value.isoformat.return_value = "2026-05-30T00:00:00Z"
             upsert_items(db, [item])
 
-        # _already_fetched_today uses datetime.now().date() internally
+        set_meta(db, FETCH_DONE_KEY, "2026-05-30")
         result = _already_fetched_today(db)
         # Today is not 2026-05-30, so result should be 0
         assert result == 0

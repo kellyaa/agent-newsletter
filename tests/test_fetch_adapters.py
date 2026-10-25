@@ -840,6 +840,7 @@ class TestFetchMain:
                VALUES ('x','rss:t','https://a.com','https://a.com','T',
                '2026-07-09T00:00:00Z','new','{}','{}',1)""".format(today, today)
         )
+        db_mod.set_meta(conn, "fetch_completed_date", today)
         conn.commit()
         conn.close()
 
