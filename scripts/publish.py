@@ -208,8 +208,9 @@ def main() -> int:
         return 5
 
     conn.execute(
-        f"UPDATE items SET status = '{Status.PUBLISHED}' "
-        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
+        f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
+        (today,),
     )
     conn.commit()
     log.info(

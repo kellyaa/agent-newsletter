@@ -226,10 +226,15 @@ class TestMainNormalPublish:
             r["id"]: r["status"]
             for r in conn.execute("SELECT id, status FROM items").fetchall()
         }
+        pub_dates = {
+            r["id"]: r["published_date"]
+            for r in conn.execute("SELECT id, published_date FROM items").fetchall()
+        }
         conn.close()
         assert statuses["feat-1"] == "published"
         assert statuses["feat-2"] == "published"
         assert statuses["app-1"] == "published"
+        assert set(pub_dates.values()) == {"2026-06-01"}
 
     def test_writes_runs_row_on_normal_publish(self, db_path, tmp_path, monkeypatch):
         from publish import main as publish_main, MIN_FILE_SIZE_BYTES

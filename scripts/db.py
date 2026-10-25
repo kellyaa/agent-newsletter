@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS items (
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
-  times_competed INTEGER NOT NULL DEFAULT 0
+  times_competed INTEGER NOT NULL DEFAULT 0,
+  published_date TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
@@ -175,6 +176,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE items ADD COLUMN times_competed INTEGER NOT NULL DEFAULT 0"
         )
+    if "published_date" not in cols:
+        conn.execute("ALTER TABLE items ADD COLUMN published_date TEXT")
     run_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
     for col in ("papers_expired_unjudged", "papers_prerank_cut"):
         if col not in run_cols:

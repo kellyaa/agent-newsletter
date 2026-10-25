@@ -448,6 +448,28 @@ class TestResetDay:
         assert runs == 0
         assert not (paths.issues_dir / "2026-10-22.md").exists()
 
+    def test_force_restores_pool_paper_published_today(self, tmp_path, monkeypatch):
+        """#326: a multi-day pool paper first seen earlier but published today."""
+        reset_day, paths = self._seed(tmp_path, monkeypatch)
+        conn = db_mod.connect(paths.state_db)
+        for iid, status, pub in [
+            ("pool", "published", "2026-10-22"),
+            ("pool_old", "published", "2026-10-21"),
+        ]:
+            conn.execute(
+                "INSERT INTO items (id, source, url, canonical_url, title, fetched_at, status,"
+                " section, first_seen_date, last_seen_date, times_competed, published_date)"
+                " VALUES (?, 's', 'u', 'u', 't', '2026-10-19T00:00:00Z', ?, 'papers',"
+                " '2026-10-19', '2026-10-22', 2, ?)",
+                (iid, status, pub),
+            )
+        conn.commit()
+        conn.close()
+        assert reset_day.main([]) == 0
+        rows, _ = self._statuses(paths)
+        assert rows["pool"] == "candidate"
+        assert rows["pool_old"] == "published"
+
     def test_refetch_deletes_todays_items_first(self, tmp_path, monkeypatch):
         reset_day, paths = self._seed(tmp_path, monkeypatch)
         assert reset_day.main(["--refetch"]) == 0
