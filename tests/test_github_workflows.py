@@ -225,9 +225,10 @@ def test_deploy_stages_each_edition_into_its_own_issues_folder(tmp_path):
     assert staged == {"agents/2026-10-01.md", "engineering-with-ai/2026-10-02.md"}
 
 
-def test_deploy_stages_the_legacy_flat_layout_until_content_is_migrated(tmp_path):
+def test_deploy_no_longer_stages_the_legacy_flat_layout(tmp_path):
+    # The one-release fallback was removed (#316); content is migrated.
     staged = _stage_content(tmp_path, {"site/src/content/issues/2026-10-01.md": "a"})
-    assert staged == {"2026-10-01.md"}
+    assert staged == set()
 
 
 def test_deploy_ignores_the_legacy_layout_once_editions_exist(tmp_path):
