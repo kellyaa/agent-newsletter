@@ -74,6 +74,7 @@ class ItemRow(TypedDict, total=False):
     last_seen_date: str
     appearances: int
     times_competed: int
+    published_date: str | None
 
 
 class PrefilterItem(TypedDict):

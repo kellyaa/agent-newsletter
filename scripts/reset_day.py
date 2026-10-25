@@ -45,10 +45,14 @@ def force_reset(conn, today: str) -> None:
     # first_seen_date: last_seen_date matches any prior-day published item that
     # today's feeds re-surfaced (fetch bumps last_seen_date on conflict), which
     # would re-promote already-published items into today's issue.
+    # published_date (stamped by publish) additionally catches multi-day pool
+    # papers first seen on an earlier day that won a slot today (#326).
     conn.execute(
-        "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL "
-        "WHERE status IN ('featured', 'appendix', 'published') AND first_seen_date = ?",
-        (today,),
+        "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL, "
+        "published_date = NULL "
+        "WHERE status IN ('featured', 'appendix', 'published') "
+        "AND (first_seen_date = ? OR published_date = ?)",
+        (today, today),
     )
     conn.execute("DELETE FROM runs WHERE date = ?", (today,))
     conn.commit()

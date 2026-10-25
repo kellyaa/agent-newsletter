@@ -278,7 +278,8 @@ CREATE TABLE items (
   first_seen_date TEXT NOT NULL,
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
-  times_competed INTEGER NOT NULL DEFAULT 0  -- papers multi-day pool counter (issue #16)
+  times_competed INTEGER NOT NULL DEFAULT 0, -- papers multi-day pool counter (issue #16)
+  published_date TEXT                        -- issue date publish.py promoted it in; lets --force restore pool papers (#326)
 );
 
 CREATE TABLE runs (
