@@ -1,4 +1,4 @@
-"""The shipped second edition, ``breaking-changes`` (#304), lints clean and keeps
+"""The shipped second edition, ``engineering-with-ai`` (#304, renamed in #323), lints clean and keeps
 the promises the multi-edition design (#291) made about it."""
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import check_edition
 import edition
 import prompts
 
-SLUG = "breaking-changes"
+SLUG = "engineering-with-ai"
 
 # #291 section 10: the draft tag vocabulary.
 EXPECTED_TAGS = {
@@ -32,7 +32,7 @@ def test_lints_clean_with_no_todo_placeholders_left():
 def test_ships_as_a_draft_that_runs_after_agents(ed):
     assert ed.status == "draft"
     assert ed.order == 20 > edition.load("agents").order
-    assert ed.name == "Breaking Changes: Engineering Practice in the Agent Era"
+    assert ed.name == "Engineering with AI Daily"
 
 
 def test_discovered_in_run_order_with_agents_first():
@@ -47,7 +47,7 @@ def test_tags_are_the_ones_proposed_in_the_design(ed):
 def test_both_prompts_render_with_this_editions_subject(ed):
     for stage in prompts.STAGES:
         text = prompts.render(stage, ed)
-        assert "Breaking Changes" in text
+        assert "Engineering with AI" in text
         assert "{{" not in text
 
 

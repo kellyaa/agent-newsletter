@@ -219,10 +219,10 @@ def test_deploy_stages_each_edition_into_its_own_issues_folder(tmp_path):
     staged = _stage_content(tmp_path, {
         "editions/agents/issues/2026-10-01.md": "a",
         "editions/agents/state.db": "db",
-        "editions/breaking-changes/issues/2026-10-02.md": "b",
+        "editions/engineering-with-ai/issues/2026-10-02.md": "b",
         "editions/_template/issues/example.md": "t",
     })
-    assert staged == {"agents/2026-10-01.md", "breaking-changes/2026-10-02.md"}
+    assert staged == {"agents/2026-10-01.md", "engineering-with-ai/2026-10-02.md"}
 
 
 def test_deploy_stages_the_legacy_flat_layout_until_content_is_migrated(tmp_path):

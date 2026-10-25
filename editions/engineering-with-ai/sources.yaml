@@ -1,4 +1,4 @@
-# Feed list for Breaking Changes. Starter sources from #291 section 10; every
+# Feed list for Engineering with AI Daily. Starter sources from #291 section 10; every
 # URL was fetched by check_edition.py before merge (see REVIEW.md for the
 # results and for sources that did not survive). Families: rss, arxiv, hn,
 # reddit, html, github_releases. See editions/agents/sources.yaml for the

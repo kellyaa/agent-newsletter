@@ -18,7 +18,7 @@ REAL = edition.EDITIONS_DIR
 @pytest.fixture()
 def editions_dir(tmp_path, monkeypatch):
     d = tmp_path / "editions"
-    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("breaking-changes"))
+    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("engineering-with-ai"))
     monkeypatch.setattr(edition, "EDITIONS_DIR", d)
     return d
 
@@ -120,7 +120,7 @@ def run_llm(editions_dir, net, llm_stub, monkeypatch):
     _routes(net)
     monkeypatch.setattr(new_edition.time, "sleep", lambda s: None)
     return lambda **kw: new_edition.scaffold(
-        "breaking", "Breaking Changes", "About shipping.", kw.pop("seed", []),
+        "breaking", "Engineering Sample", "About shipping.", kw.pop("seed", []),
         use_llm=True, client=net, sleep=lambda s: None, **kw,
     )
 
@@ -130,7 +130,7 @@ def run_llm(editions_dir, net, llm_stub, monkeypatch):
 def test_llm_draft_is_validated_and_the_result_passes_the_checker(run_llm, editions_dir, llm_stub):
     dest = run_llm()
     ed = edition.load("breaking", editions_dir)
-    assert ed.status == "draft" and ed.name == "Breaking Changes"
+    assert ed.status == "draft" and ed.name == "Engineering Sample"
     assert ed.order == 20  # after agents (10)
     assert ed.tagline.startswith("A daily digest")
     # bad regex and exact duplicate dropped; good ones kept in order
@@ -151,7 +151,7 @@ def test_llm_receives_the_description_seeds_and_the_agents_edition_as_example(ru
     call = llm_stub.calls[0]
     p = call["prompt"]
     assert call["name"] == "edition_draft" and call["schema"] is new_edition.DRAFT_SCHEMA
-    assert "About shipping." in p and "Breaking Changes" in p
+    assert "About shipping." in p and "Engineering Sample" in p
     assert "- https://good.test/feed" in p
     assert "AI Agents Daily" in p  # edition.yaml of the worked example
     assert "editions/agents/prompts/write.voice.md" in p
