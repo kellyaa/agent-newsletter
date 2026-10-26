@@ -53,6 +53,8 @@ rss:
   - id: github-blog
     name: "GitHub Blog — Engineering"
     url: https://github.blog/engineering/feed/
+    keyword_gate_bypass: true
+    recency_days: 30
 
   - id: stackoverflow-blog
     name: "Stack Overflow Blog"
@@ -61,6 +63,8 @@ rss:
   - id: leaddev
     name: "LeadDev"
     url: https://leaddev.com/feed
+    keyword_gate_bypass: true
+    recency_days: 30
 
 arxiv:
   - id: arxiv-se-ai-dev
