@@ -58,8 +58,17 @@ def test_sources_cover_every_family_in_the_design(ed):
         "reddit-experienceddevs", "reddit-programming", "reddit-softwareengineering",
     }
     hn_queries = {s["query"] for s in sources["hn"]}
-    assert hn_queries == {"copilot", "cursor", "claude code", "ai coding", "vibe coding", "code review"}
+    assert hn_queries == {"claude code", "ai coding", "code review", "coding agent", "llm code"}
     assert len(sources["rss"]) >= 8
+
+
+def test_hn_sources_use_a_week_window_and_a_points_floor(ed):
+    # #330: 48h windows returned nothing for these narrow queries. The window is
+    # the lever; recency_days must match or the prefilter (hn default 3d) drops them.
+    for s in check_edition.lint(SLUG).sources["hn"]:
+        assert s["hours_back"] == 168
+        assert s["min_points"] >= 40
+        assert s["recency_days"] >= 7
 
 
 def test_reddit_is_noisy_so_it_keeps_the_keyword_gate_and_a_high_floor(ed):

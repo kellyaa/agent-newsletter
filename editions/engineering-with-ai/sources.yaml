@@ -74,41 +74,46 @@ arxiv:
     max_results: 30
 
 hn:
-  - id: hn-copilot
-    name: "HN: copilot"
-    query: "copilot"
-    hours_back: 48
-    min_points: 50
-
-  - id: hn-cursor
-    name: "HN: cursor"
-    query: "cursor"
-    hours_back: 48
-    min_points: 50
-
+  # Probed against Algolia on 2026-10-25 (#330): a 48h window with a 40-50 point
+  # floor returned nothing for these narrow terms, so the window is the lever.
+  # hours_back widens the fetch; recency_days keeps the prefilter from dropping
+  # those older hits (the hn family default is 3 days). Dedupe by items.id and
+  # the published-status check stop repeats across days. Keep min_points >= 40.
+  # Dropped: copilot, cursor, vibe coding (0 hits at every threshold for a week).
   - id: hn-claude-code
     name: "HN: claude code"
     query: "claude code"
-    hours_back: 48
+    hours_back: 168
     min_points: 40
+    recency_days: 7
 
   - id: hn-ai-coding
     name: "HN: ai coding"
     query: "ai coding"
-    hours_back: 48
+    hours_back: 168
     min_points: 40
-
-  - id: hn-vibe-coding
-    name: "HN: vibe coding"
-    query: "vibe coding"
-    hours_back: 48
-    min_points: 40
+    recency_days: 7
 
   - id: hn-code-review
     name: "HN: code review"
     query: "code review"
-    hours_back: 48
+    hours_back: 168
     min_points: 40
+    recency_days: 7
+
+  - id: hn-coding-agent
+    name: "HN: coding agent"
+    query: "coding agent"
+    hours_back: 168
+    min_points: 40
+    recency_days: 7
+
+  - id: hn-llm-code
+    name: "HN: llm code"
+    query: "llm code"
+    hours_back: 168
+    min_points: 40
+    recency_days: 7
 
 reddit:
   # Noisy. The keyword gate stays on and the upvote floor is high.
