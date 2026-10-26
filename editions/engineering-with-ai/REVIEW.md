@@ -44,7 +44,7 @@ reddit/*                    HTTP 403 from the sandbox
 
 - [ ] **Reddit.** All three subreddits returned 403 from the sandbox. `agents` uses the same `top.json` pattern, so this is probably the sandbox's network and not the URLs, but re-run `check_edition.py` from the machine that runs the pipeline. If they still fail, drop them.
 - [ ] **LeadDev** passes 0 of 10 items through the keyword gate. It is mostly management content. Either add `keyword_gate_bypass: true` and let the ranker decide, or drop the source.
-- [ ] **HN floors.** The first run found almost nothing at 80/60 points, so the floors were lowered to 50/40. Re-check once the draft has run for a few days.
+- [ ] **HN queries.** Floors were lowered to 50/40 in the first pass, then (#330) the window was widened to 168h with `recency_days: 7`, `copilot`/`cursor`/`vibe coding` were dropped (0 hits at every threshold), and `coding agent` and `llm code` were added. Re-check once the draft has run for a few days.
 - [ ] **Fowler, Pragmatic Engineer, Addy Osmani, Tidy First?, Charity Majors and Armin Ronacher** bypass the keyword gate (low volume, hand-picked), so some of their off-topic posts will reach the ranker. Watch the scores.
 - [ ] **Overlap with `agents`.** `simonw` is in both editions; `copilot`, `claude code` and `mcp` are in both keyword gates. Overlap is accepted (#291, A3), but check a week of output for the same item featured in both.
 - [x] Slug decided: `engineering-with-ai` (renamed from `breaking-changes` in #323). It is permanent once live.
