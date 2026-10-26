@@ -966,6 +966,8 @@ reddit:
             called.append(src["id"])
             return []
         monkeypatch.setattr(fetch_mod, "fetch_reddit", mock_fetch_reddit)
+        monkeypatch.setenv("REDDIT_CLIENT_ID", "cid")
+        monkeypatch.setenv("REDDIT_CLIENT_SECRET", "secret")
         result = self._run_main(db_path, sources_path, monkeypatch)
         assert result == 0
         assert "ml-reddit" in called

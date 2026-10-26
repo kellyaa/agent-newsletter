@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlsplit, urlunsplit
 
 import certifi
 import feedparser
@@ -381,14 +382,84 @@ def _normalize_date(raw: str) -> str | None:
         return None
 
 
+REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
+REDDIT_OAUTH_HOST = "oauth.reddit.com"
+_REDDIT_HOSTS = {"reddit.com", "www.reddit.com", "old.reddit.com", "np.reddit.com"}
+# Per-process (= per-run) app-only token cache; reset to None to force a refresh.
+_reddit_token: str | None = None
+
+
+def reddit_credentials() -> tuple[str, str] | None:
+    """(client_id, client_secret) from the environment, or None when unset."""
+    cid = (os.environ.get("REDDIT_CLIENT_ID") or "").strip()
+    secret = (os.environ.get("REDDIT_CLIENT_SECRET") or "").strip()
+    return (cid, secret) if cid and secret else None
+
+
+def _reddit_user_agent() -> str:
+    # Reddit's required format: <platform>:<app id>:<version> (by /u/<user>)
+    user = (os.environ.get("REDDIT_USERNAME") or "").strip() or "agent-newsletter"
+    return f"python:agent-newsletter:v0.1 (by /u/{user})"
+
+
+def _reddit_oauth_url(url: str) -> str:
+    """Rewrite www.reddit.com/r/<sub>/top.json?... to oauth.reddit.com/r/<sub>/top?..."""
+    parts = urlsplit(url)
+    if parts.hostname not in _REDDIT_HOSTS:
+        return url
+    path = parts.path[:-5] if parts.path.endswith(".json") else parts.path
+    return urlunsplit(("https", REDDIT_OAUTH_HOST, path, parts.query, ""))
+
+
+def _get_reddit_token(client: httpx.Client, creds: tuple[str, str], *, refresh: bool = False) -> str:
+    """App-only (client-credentials) token, fetched once per run and cached."""
+    global _reddit_token
+    if _reddit_token is None or refresh:
+        resp = client.post(
+            REDDIT_TOKEN_URL,
+            auth=creds,
+            data={"grant_type": "client_credentials"},
+            headers={"User-Agent": _reddit_user_agent()},
+        )
+        resp.raise_for_status()
+        token = resp.json().get("access_token")
+        if not token:
+            raise RuntimeError("reddit: token response had no access_token")
+        _reddit_token = token
+    return _reddit_token
+
+
+def _reddit_get(client: httpx.Client, url: str, creds: tuple[str, str] | None) -> httpx.Response:
+    """GET a listing; with credentials use OAuth and refresh the token once on 401."""
+    if creds is None:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return resp
+    oauth_url = _reddit_oauth_url(url)
+
+    def attempt(refresh: bool) -> httpx.Response:
+        token = _get_reddit_token(client, creds, refresh=refresh)
+        return client.get(oauth_url, headers={
+            "Authorization": f"bearer {token}",
+            "User-Agent": _reddit_user_agent(),
+        })
+
+    resp = attempt(False)
+    if resp.status_code == 401:
+        resp = attempt(True)
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
+    """Reddit listing. Uses OAuth (app-only) when REDDIT_CLIENT_ID/SECRET are set;
+    Reddit blocks unauthenticated top.json from non-browser clients (HTTP 403)."""
     url = source["url"]
     min_score = source.get("min_score", 100)
     log.info("reddit: fetching %s", source["id"])
     _client = client or _make_http_client()
     try:
-        resp = _client.get(url)
-        resp.raise_for_status()
+        resp = _reddit_get(_client, url, reddit_credentials())
     finally:
         if client is None:
             _client.close()
@@ -619,7 +690,13 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
         yield f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client))
     for src in sources.get("hn") or []:
         yield f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client))
-    for src in sources.get("reddit") or []:
+    reddit_sources = sources.get("reddit") or []
+    if reddit_sources and reddit_credentials() is None:
+        # Reddit blocks unauthenticated access (HTTP 403); skip quietly instead
+        # of logging a collector failure per source every run (#328).
+        log.info("reddit: skipped (no REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET)")
+        reddit_sources = []
+    for src in reddit_sources:
         yield f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client))
     # HTML scraper family (issue #10). Vendor pages that don't offer
     # RSS (Anthropic /news, etc.) go here.
