@@ -141,6 +141,25 @@ def test_keyword_must_compile(write_edition, base):
         _load(write_edition(base))
 
 
+@pytest.mark.parametrize("keywords", [
+    [r"\bagent\b", "(?i)tool"],                 # inline global flag not at start once joined
+    ["(?P<x>agent)", "(?P<x>tool)"],            # named group redefined across keywords
+])
+def test_keywords_must_compile_when_combined(write_edition, base, keywords):
+    # Each keyword compiles alone, but prefilter ORs them into one pattern.
+    base["keywords"] = keywords
+    with pytest.raises(EditionError, match="do not compile when combined"):
+        _load(write_edition(base))
+
+
+@pytest.mark.parametrize("kw", ["a*", "x|", "(?:)"])
+def test_keyword_must_not_match_empty_string(write_edition, base, kw):
+    # An empty-matching keyword makes the keyword gate pass every item.
+    base["keywords"] = [r"\bagent\b", kw]
+    with pytest.raises(EditionError, match="matches the empty string"):
+        _load(write_edition(base))
+
+
 def test_keywords_must_be_nonempty_list_of_strings(write_edition, base):
     base["keywords"] = []
     with pytest.raises(EditionError, match="'keywords' must not be empty"):

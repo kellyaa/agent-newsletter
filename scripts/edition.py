@@ -240,6 +240,19 @@ def load(slug: str, editions_dir: Path | None = None) -> Edition:
             re.compile(kw)
         except re.error as e:
             raise _fail(path, f"keyword {kw!r} does not compile: {e}") from e
+        if re.search(kw, "", re.IGNORECASE):
+            raise _fail(
+                path,
+                f"keyword {kw!r} matches the empty string, so the keyword gate "
+                "would pass every item",
+            )
+    # prefilter ORs the keywords into one pattern; a keyword can compile alone
+    # yet break the combination (inline global flags such as (?i), or a named
+    # group reused across keywords). Fail here, not at prefilter import time.
+    try:
+        re.compile("|".join(keywords), re.IGNORECASE)
+    except re.error as e:
+        raise _fail(path, f"keywords do not compile when combined with '|': {e}") from e
 
     tags = _str_list(path, "tags", raw["tags"])
     if not tags:
