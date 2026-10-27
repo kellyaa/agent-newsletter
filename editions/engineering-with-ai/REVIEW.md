@@ -47,4 +47,8 @@ reddit/*                    HTTP 403 from the sandbox
 - [ ] **HN queries.** Floors were lowered to 50/40 in the first pass, then (#330) the window was widened to 168h with `recency_days: 7`, `copilot`/`cursor`/`vibe coding` were dropped (0 hits at every threshold), and `coding agent` and `llm code` were added. Re-check once the draft has run for a few days.
 - [ ] **Fowler, Pragmatic Engineer, Addy Osmani, Tidy First?, Charity Majors and Armin Ronacher** bypass the keyword gate (low volume, hand-picked), so some of their off-topic posts will reach the ranker. Watch the scores.
 - [ ] **Overlap with `agents`.** `simonw` is in both editions; `copilot`, `claude code` and `mcp` are in both keyword gates. Overlap is accepted (#291, A3), but check a week of output for the same item featured in both.
-- [x] Slug decided: `engineering-with-ai` (renamed from `breaking-changes` in #323). It is permanent once live.
+- [x] Slug decided: `engineering-with-ai` (renamed from `breaking-changes` in #323). Owner confirmed it on #291. It is permanent once live.
+
+## More sources (#291, owner decision)
+
+Featured items fell to 0-2 a day after the backlog cleared. Nine feeds were added to `sources.yaml` (Sean Goedecke, DX Newsletter, Refactoring, Latent Space, O'Reilly Radar, InfoQ, GitHub Blog AI & ML, JetBrains Blog, Spotify Engineering). `check_edition.py` on 2026-10-27 raised the total passing the keyword gate from about 60 to 117 (blogs 92); see the comment block in `sources.yaml` for the four feeds that were probed and dropped. Re-measure featured items per day over a week before going live.

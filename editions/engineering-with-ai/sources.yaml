@@ -62,6 +62,52 @@ rss:
     name: "LeadDev"
     url: https://leaddev.com/feed
 
+  # Added for #291 (owner decision: more sources, after featured items fell
+  # to 0-2 a day). Hand-picked practitioner writers bypass the gate; broad
+  # engineering and publisher feeds keep it. Probed and dropped (check_edition,
+  # 2026-10-27): Hillel Wayne (1 recent, 0 pass the gate), Engineering
+  # Leadership (0 of 10), Shopify Engineering (0 of 5), Thoughtworks Insights
+  # (2754-item feed, 3 pass).
+  - id: seangoedecke
+    name: "Sean Goedecke"
+    url: https://www.seangoedecke.com/rss.xml
+    recency_days: 30
+
+  - id: getdx
+    name: "DX Newsletter"
+    url: https://newsletter.getdx.com/feed
+    keyword_gate_bypass: true
+    recency_days: 30
+
+  - id: refactoring
+    name: "Refactoring"
+    url: https://refactoring.fm/feed
+    recency_days: 30
+
+  - id: latent-space
+    name: "Latent Space"
+    url: https://www.latent.space/feed
+
+  - id: oreilly-radar
+    name: "O'Reilly Radar"
+    url: https://www.oreilly.com/radar/feed/
+
+  - id: infoq
+    name: "InfoQ"
+    url: https://www.infoq.com/feed/
+
+  - id: github-blog-ai
+    name: "GitHub Blog — AI & ML"
+    url: https://github.blog/ai-and-ml/feed/
+
+  - id: jetbrains-blog
+    name: "JetBrains Blog"
+    url: https://blog.jetbrains.com/feed/
+
+  - id: spotify-engineering
+    name: "Spotify Engineering"
+    url: https://engineering.atspotify.com/feed/
+
 arxiv:
   - id: arxiv-se-ai-dev
     name: "arXiv: cs.SE AI-assisted development"
