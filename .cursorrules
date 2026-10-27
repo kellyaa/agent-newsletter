@@ -1,0 +1,8 @@
+Read AGENTS.md at the repo root; it is the source of truth for agent rules.
+
+- Python 3.11+ pipeline in scripts/, tests in tests/ (uv run --extra test pytest; coverage gate 95%, never lower it).
+- Astro 5 site in site/ (pnpm).
+- Editions are config-only folders under editions/<slug>/; never hard-code a slug in code.
+- LLM calls only through scripts/llm.py; pipeline stage scripts must not import each other.
+- Every code change needs tests. Sign commits (git commit -s).
+- Do not edit .github/workflows/** without explicit permission, and never remove a `hold` label.

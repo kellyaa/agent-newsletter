@@ -1,0 +1,4 @@
+{
+  "total": 95,
+  "note": "Mirrors --cov-fail-under in pyproject.toml; raise both together, never lower."
+}

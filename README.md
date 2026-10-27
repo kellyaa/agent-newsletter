@@ -44,6 +44,9 @@ watchdog.sh             — fires macOS notification if the `content` branch has
 launchd/                — plists + install.sh for the two daily/hourly jobs
 site/                   — Astro 5 static site (the published surface)
 .github/workflows/      — Pages deploy workflow
+AGENTS.md, CLAUDE.md    — instructions for AI coding agents (also `.github/copilot-instructions.md`, `.cursorrules`)
+.github/                — PR template, issue templates, `dependabot.yml`
+.editorconfig, .coverage-thresholds.json — editor settings; coverage threshold (mirrors the pytest gate)
 editions/<slug>/state.db — SQLite pipeline state, one per edition (on the 'content' branch; see "Repository layout")
 ```
 
