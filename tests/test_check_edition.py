@@ -94,6 +94,12 @@ def test_sources_file_missing_or_malformed(editions_dir):
         ({"rss": [{"id": "a", "url": "u", "keyword_gate_bypass": "yes"}]}, "keyword_gate_bypass"),
         ({"rss": [{"id": "a", "url": "u", "recency_days": 0}]}, "recency_days"),
         ({"rss": [{"id": "a", "url": "u", "recency_days": True}]}, "recency_days"),
+        ({"rss": [{"id": "a", "url": None}]}, "url must be a non-empty string"),
+        ({"rss": [{"id": "a", "url": ""}]}, "url must be a non-empty string"),
+        ({"rss": [{"id": "a", "url": 5}]}, "url must be a non-empty string"),
+        ({"rss": [{"id": None, "url": "u"}]}, "id must be a non-empty string"),
+        ({"hn": [{"id": "a", "query": ["x"]}]}, "query must be a non-empty string"),
+        ({"github_releases": [{"owner": None, "repo": "r"}]}, "owner must be a non-empty string"),
     ],
 )
 def test_source_entry_validation(editions_dir, sources, fragment):

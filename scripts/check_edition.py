@@ -112,11 +112,13 @@ def _check_sources(sources: dict, result: LintResult) -> None:
             missing = sorted(REQUIRED_KEYS[family] - set(entry))
             if missing:
                 result.errors.append(f"{where} is missing {missing}")
+            for key in sorted(REQUIRED_KEYS[family] & set(entry)):
+                v = entry[key]
+                if not isinstance(v, str) or not v.strip():
+                    result.errors.append(f"{where}: {key} must be a non-empty string")
             sid = entry.get("id")
-            if sid is not None:
-                if not isinstance(sid, str) or not sid.strip():
-                    result.errors.append(f"{where}: id must be a non-empty string")
-                elif sid in seen_ids:
+            if isinstance(sid, str) and sid.strip():
+                if sid in seen_ids:
                     result.errors.append(f"{where}: duplicate id {sid!r} in {family}")
                 else:
                     seen_ids.add(sid)
