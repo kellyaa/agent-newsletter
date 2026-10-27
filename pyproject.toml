@@ -33,6 +33,10 @@ addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=95"
 # Write relative source paths so coverage.xml works in CI (py-cov-action v3
 # requires relative paths; absolute paths cause "No source for code" errors).
 relative_files = true
+# Measure branch coverage as well as line coverage. Without this the
+# gate only checks lines, and "branch coverage" figures in the docs are
+# not enforced.
+branch = true
 
 [tool.coverage.report]
 # Lines only reachable when the module is run as __main__ don't count
