@@ -74,7 +74,7 @@ def test_urls_are_http_or_https(sources):
 
 def test_numeric_fields_are_positive_ints(sources):
     for family, entry in _entries(sources):
-        for key in ("max_results", "hours_back", "min_points", "min_score", "max_items"):
+        for key in ("max_results", "hours_back", "min_points", "min_score", "max_items", "limit"):
             if key in entry:
                 value = entry[key]
                 assert isinstance(value, int) and not isinstance(value, bool) and value > 0, (

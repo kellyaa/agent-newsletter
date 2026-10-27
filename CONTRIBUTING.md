@@ -172,7 +172,7 @@ uv run scripts/new_edition.py my-slug --name "My Edition" --no-llm
 
 The slug is lowercase letters, digits and hyphens, and it is **permanent once live** (it ends up in URLs). The new edition always starts as `status: draft` with an `order` after the existing editions.
 
-`new_edition.py` does not trust the LLM. Every RSS URL is fetched and parsed, every arXiv query must return a result, every subreddit's `.json` must respond, every regex must compile, and tags are lower-cased and de-duplicated. Sources that fail are commented out in `sources.yaml` with the reason rather than silently dropped. It then writes `editions/<slug>/REVIEW.md`, the checklist you work through before going live, and runs `check_edition.py`.
+`new_edition.py` does not trust the LLM. Every RSS URL is fetched and parsed, every arXiv query must return a result, every subreddit's Atom feed must respond, every regex must compile, and tags are lower-cased and de-duplicated. Sources that fail are commented out in `sources.yaml` with the reason rather than silently dropped. It then writes `editions/<slug>/REVIEW.md`, the checklist you work through before going live, and runs `check_edition.py`.
 
 `uv run scripts/check_edition.py <slug>` can be re-run after any edit. It does two things, neither of which calls the LLM:
 

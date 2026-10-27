@@ -225,45 +225,28 @@ class TestFetchHnNoCreatedAt:
 # ---------------------------------------------------------------------------
 
 class TestFetchRedditNoCreatedUtc:
-    def _source(self):
-        return {
-            "id": "localllama",
-            "url": "https://www.reddit.com/r/LocalLLaMA/.json",
-            "min_score": 10,
-        }
-
-    def test_post_without_created_utc_gets_none_published_at(self):
-        """Reddit post with no 'created_utc' field → published_at is None (186->188)."""
+    def test_post_without_timestamp_gets_none_published_at(self):
+        """Atom entry with no published/updated → published_at is None."""
         from fetch import fetch_reddit
 
-        post = {
-            "data": {
-                "title": "Reddit post without timestamp",
-                "url_overridden_by_dest": "https://example.com/test",
-                "score": 100,
-                "num_comments": 5,
-                "selftext": "",
-                "subreddit": "LocalLLaMA",
-                # No 'created_utc' key — exercises the false branch of 186
-            }
-        }
-
+        feed = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>top</title>
+<entry><title>Reddit post without timestamp</title><id>t3_x</id>
+<link href="https://www.reddit.com/r/LocalLLaMA/comments/x/t/" /></entry></feed>"""
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
-        mock_resp.json.return_value = {
-            "data": {"children": [post]}
-        }
+        mock_resp.content = feed
+        client = MagicMock()
+        client.get.return_value = mock_resp
 
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
+        items = list(fetch_reddit(
+            {"id": "localllama", "url": "https://www.reddit.com/r/LocalLLaMA/top.json?t=day"},
+            client=client,
+        ))
 
         assert len(items) == 1
         assert items[0].published_at is None
+        assert items[0].url == "https://www.reddit.com/r/LocalLLaMA/comments/x/t/"
 
 
 # ---------------------------------------------------------------------------

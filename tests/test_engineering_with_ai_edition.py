@@ -71,7 +71,7 @@ def test_hn_sources_use_a_week_window_and_a_points_floor(ed):
         assert s["recency_days"] >= 7
 
 
-def test_reddit_is_noisy_so_it_keeps_the_keyword_gate_and_a_high_floor(ed):
+def test_reddit_is_noisy_so_it_keeps_the_keyword_gate_and_a_small_limit(ed):
     for s in check_edition.lint(SLUG).sources["reddit"]:
         assert not s.get("keyword_gate_bypass")
-        assert s["min_score"] >= 100
+        assert s["limit"] <= 5

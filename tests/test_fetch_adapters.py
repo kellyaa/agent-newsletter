@@ -7,7 +7,7 @@ Coverage targets:
   - fetch_rss()     — httpx + feedparser, entry parsing, bozo handling
   - fetch_arxiv()   — httpx + feedparser, multi-author, title whitespace
   - fetch_hn()      — httpx JSON, score/comments, missing url fallback
-  - fetch_reddit()  — httpx JSON, score filter, permalink fallback
+  - fetch_reddit()  — httpx Atom feed, top-N limit, permalink fallback
   - fetch_github_releases() — subprocess, JSON parse, missing url skip
   - main()          — sources orchestration, already-fetched guard,
                       per-source error isolation, all-failed abort
@@ -22,6 +22,7 @@ import time
 
 import pytest
 
+import fetch
 from fetch import (
     fetch_rss,
     fetch_arxiv,
@@ -291,7 +292,7 @@ def _happy_response_for(fetcher):
     if fetcher is fetch_hn:
         return _mock_httpx_response({"hits": []}, is_json=True)
     if fetcher is fetch_reddit:
-        return _mock_httpx_response({"data": {"children": []}}, is_json=True)
+        return _mock_httpx_response(_reddit_atom([]))
     raise AssertionError(f"no happy-path fixture for {fetcher!r}")
 
 
@@ -560,145 +561,171 @@ class TestFetchHn:
 # fetch_reddit()
 # ---------------------------------------------------------------------------
 
+def _reddit_atom(entries: list[dict]) -> bytes:
+    """Minimal Reddit-style Atom feed (summary is escaped HTML, as Reddit sends it)."""
+    from xml.sax.saxutils import escape
+    body = ""
+    for e in entries:
+        link_html = f'<a href="{e["href"]}">[link]</a>' if e.get("href") else ""
+        summary = (
+            f'<table><tr><td><div class="md"><p>{e.get("text", "")}</p></div>'
+            f'&#32; submitted by &#32; <a href="https://www.reddit.com/user/{e.get("user", "u1")}"> '
+            f'/u/{e.get("user", "u1")} </a> <br/> <span>{link_html}</span> '
+            f'<span><a href="{e["permalink"]}">[comments]</a></span></td></tr></table>'
+        )
+        title = f"<title>{escape(e['title'])}</title>" if e.get("title") else ""
+        author = f"<author><name>/u/{e['user']}</name></author>" if e.get("user") else ""
+        body += f"""
+        <entry>
+          {author}
+          <content type="html">{escape(summary)}</content>
+          <id>t3_{e.get('id', 'x')}</id>
+          <link href="{e['permalink']}" />
+          <updated>2026-10-27T09:00:00+00:00</updated>
+          <published>2026-10-27T08:00:00+00:00</published>
+          {title}
+        </entry>"""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>top</title>{body}</feed>""".encode("utf-8")
+
+
+def _reddit_client(content: bytes):
+    resp = MagicMock()
+    resp.content = content
+    resp.raise_for_status = MagicMock()
+    client = MagicMock()
+    client.get.return_value = resp
+    return client
+
+
 class TestFetchReddit:
-    def _source(self, url="https://reddit.com/r/MachineLearning/.json", min_score=100):
-        return {"id": "ml-reddit", "url": url, "min_score": min_score}
+    def _source(self, url="https://www.reddit.com/r/MachineLearning/top.json?t=day", **extra):
+        return {"id": "ml-reddit", "url": url, **extra}
 
-    def _reddit_response(self, posts):
-        children = [{"data": p} for p in posts]
-        return {"data": {"children": children}}
-
-    def test_yields_items_from_posts(self):
-        posts = [{
-            "url_overridden_by_dest": "https://example.com/paper",
-            "title": "New LLM agent paper",
-            "score": 200,
-            "num_comments": 45,
-            "subreddit": "MachineLearning",
-            "author": "redditor1",
-            "created_utc": 1720519200.0,
-            "selftext": "",
-            "permalink": "/r/MachineLearning/comments/abc/",
-        }]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-
+    def test_link_post_uses_external_url(self):
+        client = _reddit_client(_reddit_atom([{
+            "title": "New LLM agent paper", "user": "redditor1", "id": "a",
+            "href": "https://example.com/paper?a=1&b=2",
+            "permalink": "https://www.reddit.com/r/MachineLearning/comments/abc/x/",
+            "text": "hello &amp; welcome",
+        }]))
+        items = list(fetch_reddit(self._source(), client=client))
         assert len(items) == 1
-        assert items[0].title == "New LLM agent paper"
-        assert items[0].url == "https://example.com/paper"
-        assert items[0].source == "reddit:ml-reddit"
-        assert items[0].author == "redditor1"
+        it = items[0]
+        assert it.title == "New LLM agent paper"
+        assert it.url == "https://example.com/paper?a=1&b=2"
+        assert it.source == "reddit:ml-reddit"
+        assert it.author == "redditor1"
+        assert it.published_at.startswith("2026-10-27T08:00:00")
 
-    def test_low_score_posts_filtered_out(self):
-        posts = [
-            {"url_overridden_by_dest": "https://a.com/1", "title": "Low score",
-             "score": 50, "num_comments": 5, "subreddit": "ML",
-             "author": "x", "created_utc": 1720519200.0, "selftext": "",
-             "permalink": "/r/ML/comments/1/"},
-            {"url_overridden_by_dest": "https://a.com/2", "title": "High score",
-             "score": 150, "num_comments": 10, "subreddit": "ML",
-             "author": "y", "created_utc": 1720519200.0, "selftext": "",
-             "permalink": "/r/ML/comments/2/"},
-        ]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert len(items) == 1
-        assert items[0].title == "High score"
+    def test_self_post_uses_permalink(self):
+        client = _reddit_client(_reddit_atom([{
+            "title": "Discussion", "user": "z", "id": "b", "text": "some text",
+            "permalink": "https://www.reddit.com/r/ML/comments/xyz/d/",
+        }]))
+        # no [link] anchor: the permalink is the entry link
+        items = list(fetch_reddit(self._source(), client=client))
+        assert items[0].url == "https://www.reddit.com/r/ML/comments/xyz/d/"
 
-    def test_permalink_fallback_when_no_dest_url(self):
-        """Posts without url_overridden_by_dest use the reddit permalink."""
-        posts = [{
-            "url_overridden_by_dest": None,
-            "title": "Discussion post",
-            "score": 120, "num_comments": 8, "subreddit": "LocalLLaMA",
-            "author": "z", "created_utc": 1720519200.0, "selftext": "some text",
-            "permalink": "/r/LocalLLaMA/comments/xyz/",
-        }]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert "reddit.com/r/LocalLLaMA/comments/xyz/" in items[0].url
+    def test_raw_text_is_stripped_and_prefixed(self):
+        client = _reddit_client(_reddit_atom([{
+            "title": "T", "user": "a", "id": "c", "href": "https://a.com/1",
+            "text": "body text", "permalink": "https://www.reddit.com/r/ML/comments/1/t/",
+        }]))
+        raw = list(fetch_reddit(self._source(), client=client))[0].raw_text
+        assert raw.startswith("r/MachineLearning: ")
+        assert "body text" in raw
+        assert "<" not in raw and "[link]" not in raw and "[comments]" not in raw
+        assert "submitted by" not in raw
 
-    def test_raw_text_includes_score_and_comments(self):
-        posts = [{
-            "url_overridden_by_dest": "https://a.com/1",
-            "title": "T", "score": 300, "num_comments": 75,
-            "subreddit": "ML", "author": "a", "created_utc": 1720519200.0,
-            "selftext": "body text", "permalink": "/r/ML/1/",
-        }]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert "300 score" in items[0].raw_text
-        assert "75 comments" in items[0].raw_text
-
-    def test_published_at_from_created_utc(self):
-        posts = [{
-            "url_overridden_by_dest": "https://a.com/1",
-            "title": "T", "score": 200, "num_comments": 5,
-            "subreddit": "ML", "author": "a", "created_utc": 1720519200.0,
-            "selftext": "", "permalink": "/r/ML/1/",
-        }]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert items[0].published_at is not None
-        assert "2024" in items[0].published_at or "2026" in items[0].published_at or items[0].published_at
-
-    def test_empty_response_yields_nothing(self):
-        mock_resp = _mock_httpx_response({"data": {"children": []}}, is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert items == []
+    def test_missing_author_is_none(self):
+        client = _reddit_client(_reddit_atom([{
+            "title": "T", "id": "d", "href": "https://a.com/1",
+            "permalink": "https://www.reddit.com/r/ML/comments/1/t/",
+        }]))
+        assert list(fetch_reddit(self._source(), client=client))[0].author is None
 
     def test_missing_title_skipped(self):
-        posts = [
-            {"url_overridden_by_dest": "https://a.com/1", "title": None,
-             "score": 200, "num_comments": 5, "subreddit": "ML",
-             "author": "a", "created_utc": 1720519200.0, "selftext": "",
-             "permalink": "/r/ML/1/"},
+        client = _reddit_client(_reddit_atom([{
+            "id": "e", "href": "https://a.com/1", "user": "a",
+            "permalink": "https://www.reddit.com/r/ML/comments/1/t/",
+        }]))
+        assert list(fetch_reddit(self._source(), client=client)) == []
+
+    def test_empty_feed_yields_nothing(self):
+        assert list(fetch_reddit(self._source(), client=_reddit_client(_reddit_atom([])))) == []
+
+    def test_bozo_feed_without_entries_raises(self):
+        with pytest.raises(RuntimeError, match="bozo"):
+            list(fetch_reddit(self._source(), client=_reddit_client(b"<html><body>nope")))
+
+    def test_http_error_propagates(self):
+        client = _reddit_client(b"")
+        client.get.return_value.raise_for_status.side_effect = RuntimeError("403")
+        with pytest.raises(RuntimeError, match="403"):
+            list(fetch_reddit(self._source(), client=client))
+
+    def test_requests_rss_url_with_default_limit(self):
+        client = _reddit_client(_reddit_atom([]))
+        list(fetch_reddit(self._source(), client=client))
+        client.get.assert_called_once_with(
+            "https://www.reddit.com/r/MachineLearning/top/.rss?t=day&limit=10"
+        )
+
+    def test_limit_override_in_url_and_caps_entries(self):
+        entries = [
+            {"title": f"P{i}", "id": str(i), "href": f"https://a.com/{i}", "user": "u",
+             "permalink": f"https://www.reddit.com/r/ML/comments/{i}/t/"}
+            for i in range(5)
         ]
-        mock_resp = _mock_httpx_response(self._reddit_response(posts), is_json=True)
-        with patch("httpx.Client") as mock_client_cls:
-            mock_ctx = MagicMock()
-            mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-            mock_ctx.__exit__ = MagicMock(return_value=False)
-            mock_ctx.get.return_value = mock_resp
-            mock_client_cls.return_value = mock_ctx
-            items = list(fetch_reddit(self._source()))
-        assert items == []
+        client = _reddit_client(_reddit_atom(entries))
+        items = list(fetch_reddit(self._source(limit=3), client=client))
+        assert "limit=3" in client.get.call_args.args[0]
+        assert [i.title for i in items] == ["P0", "P1", "P2"]
+
+    def test_min_score_is_ignored(self):
+        client = _reddit_client(_reddit_atom([{
+            "title": "T", "id": "f", "href": "https://a.com/1", "user": "a",
+            "permalink": "https://www.reddit.com/r/ML/comments/1/t/",
+        }]))
+        assert len(list(fetch_reddit(self._source(min_score=100000), client=client))) == 1
+
+
+class TestRedditRssUrl:
+    def test_rewrites_json_url_and_keeps_query(self):
+        assert fetch._reddit_rss_url(
+            "https://www.reddit.com/r/LocalLLaMA/top.json?t=day", 7
+        ) == "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day&limit=7"
+
+    def test_url_without_query(self):
+        assert fetch._reddit_rss_url(
+            "https://www.reddit.com/r/x/top.json", 5
+        ) == "https://www.reddit.com/r/x/top/.rss?limit=5"
+
+    def test_existing_rss_url_only_gets_limit(self):
+        assert fetch._reddit_rss_url(
+            "https://www.reddit.com/r/x/top/.rss?t=week", 4
+        ) == "https://www.reddit.com/r/x/top/.rss?t=week&limit=4"
+
+    def test_existing_limit_is_replaced(self):
+        assert fetch._reddit_rss_url(
+            "https://www.reddit.com/r/x/top.json?t=day&limit=99", 4
+        ).endswith("limit=4")
+
+
+class TestValidateRedditLimit:
+    @pytest.mark.parametrize("value", [None])
+    def test_default(self, value):
+        assert fetch._validate_reddit_limit(value, "s") == fetch.REDDIT_DEFAULT_LIMIT
+
+    def test_valid(self):
+        assert fetch._validate_reddit_limit(3, "s") == 3
+
+    @pytest.mark.parametrize("value", [0, -1, True, "5", 2.5])
+    def test_invalid_falls_back(self, value, caplog):
+        with caplog.at_level("WARNING", logger="fetch"):
+            assert fetch._validate_reddit_limit(value, "s") == fetch.REDDIT_DEFAULT_LIMIT
+        assert "invalid limit" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -1034,6 +1061,24 @@ github_releases:
         result = self._run_main(db_path, sources_path, monkeypatch)
         assert result == 0
         assert "openai/openai-python" in called
+
+    def test_reddit_sleeps_between_subreddits(self, db_path, sources_path, monkeypatch):
+        """main() pauses between reddit sources so Reddit doesn't 429 us."""
+        import fetch as fetch_mod
+        sources_path.write_text("""
+reddit:
+  - id: r-a
+    url: https://www.reddit.com/r/a/top.json?t=day
+  - id: r-b
+    url: https://www.reddit.com/r/b/top.json?t=day
+  - id: r-c
+    url: https://www.reddit.com/r/c/top.json?t=day
+""")
+        monkeypatch.setattr(fetch_mod, "fetch_reddit", lambda src, **kwargs: [])
+        sleep_calls = []
+        with patch("time.sleep", side_effect=sleep_calls.append):
+            self._run_main(db_path, sources_path, monkeypatch)
+        assert sleep_calls == [fetch_mod.REDDIT_REQUEST_DELAY] * 2
 
     def test_arxiv_sleep_called_between_multiple_sources(self, db_path, sources_path, monkeypatch):
         """main() sleeps between arxiv sources (rate-limiting)."""
