@@ -162,21 +162,22 @@ hn:
     recency_days: 7
 
 reddit:
-  # Noisy. The keyword gate stays on and the upvote floor is high.
+  # Noisy. The keyword gate stays on and `limit` (top N of the day, from the
+  # subreddit's Atom feed; Reddit 403s .json without OAuth) is small.
   - id: reddit-experienceddevs
     name: "r/ExperiencedDevs"
     url: https://www.reddit.com/r/ExperiencedDevs/top.json?t=day
-    min_score: 150
+    limit: 5
 
   - id: reddit-programming
     name: "r/programming"
     url: https://www.reddit.com/r/programming/top.json?t=day
-    min_score: 200
+    limit: 5
 
   - id: reddit-softwareengineering
     name: "r/softwareengineering"
     url: https://www.reddit.com/r/softwareengineering/top.json?t=day
-    min_score: 100
+    limit: 5
 
 html: []
 github_releases: []

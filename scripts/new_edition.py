@@ -234,16 +234,22 @@ def check_arxiv(client: httpx.Client, query: str) -> str | None:
 
 
 def check_subreddit(client: httpx.Client, url: str) -> str | None:
+    """Probe the subreddit's Atom feed (the endpoint ``fetch_reddit`` reads).
+
+    Reddit answers 403 to the ``.json`` endpoints without OAuth, so the feed
+    URL is derived from the ``top.json`` URL the same way fetch.py does.
+    """
+    parts = urlparse(url)
+    path = parts.path if parts.path.endswith(".rss") else parts.path.removesuffix(".json").rstrip("/") + "/.rss"
+    rss_url = parts._replace(path=path, query=f"{parts.query}&limit=1" if parts.query else "limit=1").geturl()
     try:
-        resp = client.get(url)
+        resp = client.get(rss_url)
         resp.raise_for_status()
-        data = resp.json()
     except httpx.HTTPError as e:
         return f"fetch failed: {type(e).__name__}: {e}"[:160]
-    except ValueError:
-        return "response was not JSON"
-    if not isinstance(data, dict) or not isinstance(data.get("data", {}).get("children"), list):
-        return "JSON has no data.children listing"
+    parsed = feedparser.parse(resp.content)
+    if not parsed.version:
+        return "response was not a feed"
     return None
 
 

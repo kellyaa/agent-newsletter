@@ -111,7 +111,7 @@ def _routes(net):
     r["dup.test"] = _atom(1)
     r["zz.ZZ"] = _atom(0)  # before the generic arXiv route: first match wins
     r["export.arxiv.org"] = _atom(1)
-    r["reddit.com/r/programming"] = b'{"data": {"children": []}}'
+    r["reddit.com/r/programming"] = _atom(1)
     r["reddit.com/r/gone"] = 404
 
 
@@ -356,15 +356,14 @@ def test_check_arxiv_reasons(net):
 
 
 def test_check_subreddit_reasons(net):
-    net.routes["r/ok"] = b'{"data": {"children": [{}]}}'
-    net.routes["r/html"] = b"<html>"
-    net.routes["r/shape"] = b'{"data": {}}'
-    net.routes["r/list"] = b"[]"
-    net.routes["r/err"] = 403
-    assert new_edition.check_subreddit(net, "https://x/r/ok/top.json") is None
-    assert new_edition.check_subreddit(net, "https://x/r/html/top.json") == "response was not JSON"
-    assert "no data.children" in new_edition.check_subreddit(net, "https://x/r/shape/top.json")
-    assert "no data.children" in new_edition.check_subreddit(net, "https://x/r/list/top.json")
+    net.routes["r/ok/"] = _atom(1)
+    net.routes["r/quiet/"] = _atom(0)
+    net.routes["r/html/"] = b"<html>"
+    net.routes["r/err/"] = 403
+    assert new_edition.check_subreddit(net, "https://x/r/ok/top.json?t=day") is None
+    assert new_edition.check_subreddit(net, "https://x/r/ok/top/.rss") is None
+    assert new_edition.check_subreddit(net, "https://x/r/quiet/top.json") is None
+    assert new_edition.check_subreddit(net, "https://x/r/html/top.json") == "response was not a feed"
     assert "fetch failed" in new_edition.check_subreddit(net, "https://x/r/err/top.json")
 
 
@@ -377,7 +376,7 @@ def test_clean_helpers_directly():
 
 def test_source_defaults_are_sanitised(net):
     net.routes.update({"a.test": _atom(1), "export.arxiv.org": _atom(1),
-                       "reddit.com": b'{"data": {"children": []}}'})
+                       "reddit.com": _atom(1)})
     out, dropped = new_edition.validate_sources(
         {"rss": [{"url": "https://a.test/f", "keyword_gate_bypass": "yes", "recency_days": -5}],
          "arxiv": [{"query": "cat:cs.SE", "max_results": True}],

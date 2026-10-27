@@ -127,16 +127,18 @@ hn:
     min_points: 40
 
 reddit:
-  # Reddit JSON endpoints. Score-gated in prefilter.
+  # Fetched from each subreddit's Atom feed (top/.rss), because Reddit 403s the
+  # .json endpoints without OAuth. The feed has no score, so `limit` (top N of
+  # the day, default 10) replaces `min_score`.
   - id: reddit-localllama
     name: "r/LocalLLaMA"
     url: https://www.reddit.com/r/LocalLLaMA/top.json?t=day
-    min_score: 100
+    limit: 10
 
   - id: reddit-mlops
     name: "r/MachineLearning"
     url: https://www.reddit.com/r/MachineLearning/top.json?t=day
-    min_score: 100
+    limit: 8
 
 # GitHub releases removed as a source (2026-05-14). Release-note dumps were
 # crowding the News bucket with low-signal version churn that the LLM ranker

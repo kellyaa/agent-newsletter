@@ -35,7 +35,7 @@ reddit: []
   # - id: reddit-example
   #   name: "r/example"
   #   url: https://www.reddit.com/r/example/top.json?t=day
-  #   min_score: 100
+  #   limit: 10  # top N of the day (fetched from the Atom feed)
 
 html: []
 github_releases: []

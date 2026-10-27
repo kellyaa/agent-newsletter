@@ -80,7 +80,7 @@ Pure Python, no LLM calls. Pulls from:
 | RSS/Atom      | `feedparser`                       | Simon Willison, Latent Space, Anthropic blog, LangChain, HuggingFace, Sebastian Raschka... |
 | arXiv         | arXiv API (Atom)                   | Queries on `cs.AI`, `cs.CL`, `cs.SE` with agent-related terms, last 48h                    |
 | HN            | Algolia API                        | `query=agent OR LLM`, min points threshold, last 48h                                       |
-| Reddit        | `.json` endpoints                  | `r/LocalLLaMA`, `r/MachineLearning`, min upvotes                                           |
+| Reddit        | Atom feeds (`top/.rss?t=day`)      | `r/LocalLLaMA`, `r/MachineLearning`, top-N `limit`                                          |
 | GitHub        | `gh api` via subprocess            | Trending repos tagged `ai-agents`/`llm-agent` (releases watchlist removed 2026-05-14 — see §Source list realities) |
 
 **Removed / not yet implemented sources:**
@@ -103,7 +103,7 @@ Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 Rules (all configurable in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
-- **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `editions/agents/sources.yaml`); Reddit ≥100 upvotes; arXiv papers need an abstract (not just title).
+- **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `editions/agents/sources.yaml`); Reddit is the top-N of the day per subreddit (`limit`, default 10; the Atom feed carries no score); arXiv papers need an abstract (not just title).
 - **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` or `status = 'appendix'` (with `appearances < limit`) are eligible to re-enter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
@@ -324,7 +324,7 @@ Code never contains subject-specific text. `scripts/edition.py` loads and strict
 
 1. copies `editions/_template/` to `editions/<slug>/` and sets `status: draft` and the next `order`;
 2. unless `--no-llm`, calls the LLM (`WRITER_MODEL`, structured JSON) with `prompts/draft_edition.md`, the editor's description, any seed sources, and the complete `agents` edition as a worked example. It returns the tagline, reader profile, down-weighted list, keywords, tags, all ten prompt fragments and starter sources;
-3. **validates everything the LLM proposed**, because LLMs invent feed URLs: each RSS URL is fetched and parsed with `feedparser`, each arXiv query must return a result, each subreddit's `.json` must respond, each regex must compile, tags are lower-cased, kebab-cased and de-duplicated. A source that fails is commented out in `sources.yaml` with the reason, not silently dropped; an unusable proposal (missing fragment, no compiling keyword, no tags) aborts before anything is written;
+3. **validates everything the LLM proposed**, because LLMs invent feed URLs: each RSS URL is fetched and parsed with `feedparser`, each arXiv query must return a result, each subreddit's Atom feed must respond, each regex must compile, tags are lower-cased, kebab-cased and de-duplicated. A source that fails is commented out in `sources.yaml` with the reason, not silently dropped; an unusable proposal (missing fragment, no compiling keyword, no tags) aborts before anything is written;
 4. writes `editions/<slug>/REVIEW.md`, the checklist a human works through before going live, including what was dropped and why;
 5. runs `scripts/check_edition.py <slug>`.
 

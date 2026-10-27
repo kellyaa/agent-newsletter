@@ -4,9 +4,11 @@ No LLM calls. Per-source errors are logged and don't abort the run.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -15,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import certifi
 import feedparser
@@ -381,10 +384,53 @@ def _normalize_date(raw: str) -> str | None:
         return None
 
 
+REDDIT_DEFAULT_LIMIT = 10
+REDDIT_REQUEST_DELAY = 2.0  # seconds between subreddit requests (429 avoidance)
+_REDDIT_LINK_RE = re.compile(r'<a\s+href="([^"]+)"[^>]*>\s*\[link\]\s*</a>', re.IGNORECASE)
+_TAG_RE = re.compile(r"<[^>]+>")
+_REDDIT_SUBMITTED_BY_RE = re.compile(r"submitted by\s+/u/\S+")
+
+
+def _reddit_rss_url(url: str, limit: int) -> str:
+    """Derive the unauthenticated RSS URL from a ``sources.yaml`` reddit URL.
+
+    ``https://www.reddit.com/r/<sub>/top.json?t=day`` becomes
+    ``https://www.reddit.com/r/<sub>/top/.rss?t=day&limit=<limit>``. Reddit
+    answers 403 to the ``.json`` endpoints without OAuth, but the Atom feed
+    still works and is already sorted by score, so ``limit`` (top N) takes the
+    place of the old ``min_score`` gate.
+    """
+    parts = urlsplit(url)
+    path = parts.path
+    if not path.endswith(".rss"):
+        path = path.removesuffix(".json").rstrip("/") + "/.rss"
+    query = dict(parse_qsl(parts.query))
+    query["limit"] = str(limit)
+    return urlunsplit(parts._replace(path=path, query=urlencode(query)))
+
+
+def _validate_reddit_limit(value, source_id: str) -> int:
+    if value is None:
+        return REDDIT_DEFAULT_LIMIT
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    log.warning("source %s: invalid limit %r (must be positive int); using %d",
+                source_id, value, REDDIT_DEFAULT_LIMIT)
+    return REDDIT_DEFAULT_LIMIT
+
+
 def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
-    url = source["url"]
-    min_score = source.get("min_score", 100)
-    log.info("reddit: fetching %s", source["id"])
+    """Top-N posts of a subreddit via its unauthenticated Atom feed.
+
+    There is no score or comment count in the feed, so the per-source ``limit``
+    (default 10) is the gate; ``min_score`` is ignored. Every item still goes
+    through the keyword gate and the LLM ranker.
+    """
+    limit = _validate_reddit_limit(source.get("limit"), source["id"])
+    url = _reddit_rss_url(source["url"], limit)
+    sub_match = re.search(r"/r/([^/]+)/", urlsplit(url).path)
+    sub = sub_match.group(1) if sub_match else source["id"]
+    log.info("reddit: fetching %s (%s)", source["id"], url)
     _client = client or _make_http_client()
     try:
         resp = _client.get(url)
@@ -392,30 +438,31 @@ def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterabl
     finally:
         if client is None:
             _client.close()
-    data = resp.json()
-    for child in data.get("data", {}).get("children", []):
-        post = child.get("data", {})
-        if post.get("score", 0) < min_score:
-            continue
-        link = post.get("url_overridden_by_dest") or f"https://www.reddit.com{post.get('permalink', '')}"
-        title = post.get("title")
+    parsed = feedparser.parse(resp.content)
+    if parsed.bozo and not parsed.entries:
+        raise RuntimeError(f"feedparser bozo, no entries: {parsed.bozo_exception}")
+    for entry in list(parsed.entries)[:limit]:
+        title = entry.get("title")
+        summary = entry.get("summary") or ""
+        m = _REDDIT_LINK_RE.search(summary)
+        link = (m.group(1) if m else None) or entry.get("link")
         if not title or not link:
             continue
-        published = None
-        if post.get("created_utc"):
-            published = datetime.fromtimestamp(post["created_utc"], tz=timezone.utc).isoformat()
-        text = (
-            f"r/{post.get('subreddit')}: {post.get('score', 0)} score, "
-            f"{post.get('num_comments', 0)} comments. "
-            f"{(post.get('selftext') or '')[:2000]}"
-        )
+        link = html.unescape(link)
+        body = html.unescape(_TAG_RE.sub(" ", summary))
+        body = _REDDIT_SUBMITTED_BY_RE.sub(" ", body).replace("[link]", " ").replace("[comments]", " ")
+        body = " ".join(body.split())
+        author = entry.get("author")
+        if author:
+            author = author.removeprefix("/u/")
+        published = _to_iso(entry.get("published_parsed") or entry.get("updated_parsed"))
         yield Item(
             source=f"reddit:{source['id']}",
             url=link,
             title=title.strip(),
-            author=post.get("author"),
+            author=author or None,
             published_at=published,
-            raw_text=text[:4000],
+            raw_text=f"r/{sub}: {body}"[:4000],
         )
 
 
@@ -619,7 +666,9 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
         yield f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client))
     for src in sources.get("hn") or []:
         yield f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client))
-    for src in sources.get("reddit") or []:
+    for i, src in enumerate(sources.get("reddit") or []):
+        if i > 0:
+            time.sleep(REDDIT_REQUEST_DELAY)
         yield f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client))
     # HTML scraper family (issue #10). Vendor pages that don't offer
     # RSS (Anthropic /news, etc.) go here.
