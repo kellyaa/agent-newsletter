@@ -556,6 +556,20 @@ class TestFetchHn:
             items = list(fetch_hn(self._source()))
         assert items == []
 
+    @pytest.mark.parametrize("exclude, expected_tags", [
+        (None, "story"),
+        (False, "story"),
+        (True, "story,-show_hn,-launch_hn"),
+    ])
+    def test_exclude_launches_negates_show_and_launch_tags(self, exclude, expected_tags):
+        source = self._source()
+        if exclude is not None:
+            source["exclude_launches"] = exclude
+        client = MagicMock()
+        client.get.return_value = _mock_httpx_response({"hits": []}, is_json=True)
+        list(fetch_hn(source, client=client))
+        assert client.get.call_args.kwargs["params"]["tags"] == expected_tags
+
 
 # ---------------------------------------------------------------------------
 # fetch_reddit()

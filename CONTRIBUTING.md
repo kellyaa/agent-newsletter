@@ -148,6 +148,7 @@ Feed sources are declared in `editions/agents/sources.yaml`. Each source has an 
 - `section: papers | news | blogs` — override the family-default section assignment
 - `keyword_gate_bypass: true` — skip the prefilter keyword gate (use only for low-volume, hand-curated practitioner blogs)
 - `recency_days: N` — override the default recency window (useful for slow-publishing sources)
+- `exclude_launches: true` (`hn:` only) — drop Show HN and Launch HN posts at the Algolia query
 - `weight: <float>` — **reserved stub; currently a no-op** (not read by pipeline code). Present on all existing entries. Do not change weight values expecting any behavioral effect.
 
 **To add a source:**

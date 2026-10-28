@@ -49,6 +49,21 @@ reddit/*                    HTTP 403 from the sandbox
 - [ ] **Overlap with `agents`.** `simonw` is in both editions; `copilot`, `claude code` and `mcp` are in both keyword gates. Overlap is accepted (#291, A3), but check a week of output for the same item featured in both.
 - [x] Slug decided: `engineering-with-ai` (renamed from `breaking-changes` in #323). Owner confirmed it on #291. It is permanent once live.
 
+## First-hand practitioner signal (2026-10-28)
+
+The owner wants first-hand accounts from engineers building with AI, not news or takes. Changes:
+
+- **Keyword gate:** added bare `ai`, `agents?`/`agentic`, `claude`, `harness` and `vibe-coded`. On-topic LeadDev, Latent Space and Sean Goedecke posts were failing on teaser-length summaries.
+- **HN:** every query sets `exclude_launches` (Show HN / Launch HN were 4 of 5 `claude code` hits). `claude code`, `ai coding` and `coding agent` dropped to a 10-point floor; added `agents` (40) and `ai` (150).
+- **Feeds:** Meta and Shopify engineering, Lobsters `ai-tooling,practices`, and the AI Engineer and GOTO YouTube channels.
+- **Rubric:** `rank.relevance.md` and `rank.sections.md` now put first-hand practice at the top of relevance, cap essays without first-hand detail at 5 and general AI news at 3, and make `why` start with `first-hand:` / `second-hand:`.
+
+`check_edition.py` went from 113 items past the gate (blogs 89, news 5, papers 19) to 226 (blogs 174, news 33, papers 19).
+
+- [ ] **`hn-ai` is the noisiest source.** About 2 of its 26 weekly hits are on-topic; the rest is general AI news the rubric should score at 3 or less. Drop it if it crowds the news section.
+- [ ] **AI Engineer talks** pass the gate 15 of 15, and many are sponsor talks. Watch that the sponsor cap holds.
+- [ ] Check a week of `why` fields: are featured blogs mostly `first-hand:`?
+
 ## More sources (#291, owner decision)
 
 Featured items fell to 0-2 a day after the backlog cleared. Nine feeds were added to `sources.yaml` (Sean Goedecke, DX Newsletter, Refactoring, Latent Space, O'Reilly Radar, InfoQ, GitHub Blog AI & ML, JetBrains Blog, Spotify Engineering). `check_edition.py` on 2026-10-27 raised the total passing the keyword gate from about 60 to 117 (blogs 92); see the comment block in `sources.yaml` for the four feeds that were probed and dropped. Re-measure featured items per day over a week before going live.

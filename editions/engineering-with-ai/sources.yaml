@@ -115,6 +115,37 @@ rss:
     name: "Spotify Engineering"
     url: https://engineering.atspotify.com/feed/
 
+  # Added 2026-10-28 for first-hand practice ("how we use AI internally"
+  # posts, practitioner talks, practitioner discussion). Probed with the
+  # widened keyword gate: Meta 5 of 9 recent items pass, Shopify 2 of 5 (it
+  # was 0 of 5 under the old gate, see above), Lobsters 7 of 25, GOTO 4 of 9,
+  # AI Engineer 15 of 15. All keep the gate. Probed and skipped: LeadDev's
+  # YouTube channel (sponsor talks, empty descriptions); Kagi Small Web (about
+  # 140 of 1,000 entries a day pass `\bai\b`, mostly off-topic, so it needs a
+  # stricter per-source gate first).
+  - id: meta-engineering
+    name: "Engineering at Meta"
+    url: https://engineering.fb.com/feed/
+
+  - id: shopify-engineering
+    name: "Shopify Engineering"
+    url: https://shopify.engineering/blog.atom
+
+  - id: lobsters-ai-tooling
+    name: "Lobsters: ai-tooling, practices"
+    # `vibecoding` was retired on 2026-10-18; `ai-tooling` replaced it.
+    url: https://lobste.rs/t/ai-tooling,practices.rss
+
+  # Conference talks via YouTube channel feeds (no key, last 15 uploads; the
+  # video description arrives as the summary).
+  - id: ai-engineer-talks
+    name: "AI Engineer (YouTube)"
+    url: https://www.youtube.com/feeds/videos.xml?channel_id=UCLKPca3kwwd-B59HNr-_lvA
+
+  - id: goto-talks
+    name: "GOTO Conferences (YouTube)"
+    url: https://www.youtube.com/feeds/videos.xml?channel_id=UCs_tLP3AiwYKwdUHpltJPuA
+
 arxiv:
   - id: arxiv-se-ai-dev
     name: "arXiv: cs.SE AI-assisted development"
@@ -133,19 +164,29 @@ hn:
   # those older hits (the hn family default is 3 days). Dedupe by items.id and
   # the published-status check stop repeats across days. Keep min_points >= 40.
   # Dropped: copilot, cursor, vibe coding (0 hits at every threshold for a week).
+  #
+  # Re-probed 2026-10-28: 4 of the 5 `claude code` hits at 40 points were
+  # Show HN / Launch HN product posts, and `coding agent` / `ai coding` had 0
+  # hits at 40 but a few first-hand Ask HN and self posts at 10. Every query
+  # now sets `exclude_launches`. Narrow coding terms use a low floor because
+  # the long tail of practitioner posts never reaches 40 points. Broad terms
+  # (`ai`, `agents`) keep a high floor: at 60 points `ai` returned 53 stories
+  # in a week, most of them general AI news.
   - id: hn-claude-code
     name: "HN: claude code"
     query: "claude code"
     hours_back: 168
-    min_points: 40
+    min_points: 10
     recency_days: 7
+    exclude_launches: true
 
   - id: hn-ai-coding
     name: "HN: ai coding"
     query: "ai coding"
     hours_back: 168
-    min_points: 40
+    min_points: 10
     recency_days: 7
+    exclude_launches: true
 
   - id: hn-code-review
     name: "HN: code review"
@@ -153,13 +194,15 @@ hn:
     hours_back: 168
     min_points: 40
     recency_days: 7
+    exclude_launches: true
 
   - id: hn-coding-agent
     name: "HN: coding agent"
     query: "coding agent"
     hours_back: 168
-    min_points: 40
+    min_points: 10
     recency_days: 7
+    exclude_launches: true
 
   - id: hn-llm-code
     name: "HN: llm code"
@@ -167,6 +210,23 @@ hn:
     hours_back: 168
     min_points: 40
     recency_days: 7
+    exclude_launches: true
+
+  - id: hn-agents
+    name: "HN: agents"
+    query: "agents"
+    hours_back: 168
+    min_points: 40
+    recency_days: 7
+    exclude_launches: true
+
+  - id: hn-ai
+    name: "HN: ai"
+    query: "ai"
+    hours_back: 168
+    min_points: 150
+    recency_days: 7
+    exclude_launches: true
 
 reddit:
   # Noisy. The keyword gate stays on and `limit` (top N of the day, from the

@@ -124,8 +124,9 @@ def _check_sources(sources: dict, result: LintResult) -> None:
                     seen_ids.add(sid)
             if "section" in entry and entry["section"] not in SECTIONS:
                 result.errors.append(f"{where}: section {entry['section']!r} must be one of {list(SECTIONS)}")
-            if "keyword_gate_bypass" in entry and not isinstance(entry["keyword_gate_bypass"], bool):
-                result.errors.append(f"{where}: keyword_gate_bypass must be true or false")
+            for flag in ("keyword_gate_bypass", "exclude_launches"):
+                if flag in entry and not isinstance(entry[flag], bool):
+                    result.errors.append(f"{where}: {flag} must be true or false")
             if "recency_days" in entry:
                 rd = entry["recency_days"]
                 if isinstance(rd, bool) or not isinstance(rd, int) or rd <= 0:

@@ -47,21 +47,26 @@ downweighted:
   - prompt-tip listicles and vendor marketing
 
 keywords:   # prefilter keyword gate (regex, case-insensitive)
-  - '\bai[- ]assisted\b'
-  - '\bai[- ]generated\b'
-  - '\bai[- ]native\b'
-  - '\bai coding\b'
-  - '\bcoding (agent|assistant)s?\b'
-  - '\bvibe[- ]coding\b'
+  # Bare `ai`, `agents`, `claude` and `harness` were added after a dry run
+  # showed on-topic practitioner posts failing the gate on teaser-length RSS
+  # summaries ("Engineers lose 17+ days a year to AI rework", "Agents still
+  # need design reviews"). The gate is a cheap recall filter; the ranker
+  # judges relevance. `\bai\b` also covers ai-assisted, ai-generated and
+  # ai-native; `\bclaude\b` covers claude code.
+  - '\bai\b'
+  - '\bagent(s|ic)?\b'
+  - '\bcoding assistants?\b'
+  - '\bvibe[- ]cod(ing|ed|er)\b'
   - '\bcopilot\b'
   - '\bcursor\b'
-  - '\bclaude code\b'
+  - '\bclaude\b'
   - '\bcodex\b'
   - '\bwindsurf\b'
+  - '\bharness(es)?\b'
   - '\bcode (review|generation|completion)\b'
   - '\bpull requests?\b'
   - '\btest generation\b'
-  - '\bllm\b'
+  - '\bllms?\b'
   - '\bgen(erative)? ?ai\b'
   - '\blanguage models?\b'
   - '\bdeveloper (productivity|experience|tools?)\b'
