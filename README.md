@@ -261,7 +261,7 @@ The two branches never merge. This keeps `main`'s history readable (no daily aut
 
 **Local development.** When iterating on code from `main`, the Astro dev server reads issue files from `.worktrees/content/site/src/content/issues/`. If you don't have the worktree set up locally, create it once: `git worktree add .worktrees/content content`.
 
-## Troubleshooting a stalled run
+**Site developer guide.** For comprehensive documentation on the Astro site architecture, components, testing, and development workflows, see [`docs/site-architecture.md`](docs/site-architecture.md).
 
 If the morning run never produced a newsletter commit, walk the pipeline stage by stage. The launchd job writes everything to `logs/`.
 
