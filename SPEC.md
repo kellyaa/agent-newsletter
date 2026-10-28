@@ -379,7 +379,9 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 │           ├── state.db       ← SQLite pipeline state (content branch only)
 │           └── issues/YYYY-MM-DD.md
 ├── .github/workflows/
+│   ├── build.yml              ← site build on a Node matrix (PRs + main)
 │   ├── deploy.yml             ← Astro build + Pages deploy (triggers on main or content push)
+│   ├── site-tests.yml         ← site unit tests (node --test)
 │   └── tests.yml              ← pytest CI
 (the sha256 of the rendered rank prompt lives in each edition's `state.db`, table `meta`, key `rubric_hash`; prefilter.py uses it to detect rubric changes and bulk-reset cached paper scores)
 ├── launchd/                   ← macOS plists + install.sh

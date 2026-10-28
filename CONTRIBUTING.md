@@ -122,7 +122,7 @@ The end-to-end tests in `tests/e2e/` launch the pipeline CLIs as real subprocess
 
 The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current gate is `--cov-fail-under=95`; line coverage is at 100% and branch coverage is ~99% as of the last gate-setting PR.
 
-CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR with failing tests or coverage below the gate will not be merged.
+CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR with failing tests or coverage below the gate will not be merged. Two more workflows run on the same triggers: `site-tests.yml` runs the site's unit tests, and `build.yml` builds the site on Node 22 and 24 so a build break surfaces before `deploy.yml` runs after merge.
 
 ---
 

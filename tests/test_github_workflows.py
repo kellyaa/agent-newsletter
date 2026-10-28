@@ -20,7 +20,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 WORKFLOW_PATHS = sorted(WORKFLOW_DIR.glob("*.yml"))
-EXPECTED_WORKFLOWS = {"deploy.yml", "site-tests.yml", "tests.yml"}
+EXPECTED_WORKFLOWS = {"build.yml", "deploy.yml", "site-tests.yml", "tests.yml"}
+PR_WORKFLOWS = ["tests.yml", "site-tests.yml", "build.yml"]
 
 
 def _load(name: str) -> dict:
@@ -87,14 +88,14 @@ def test_every_action_is_pinned_to_a_version(path):
         assert not uses.endswith(("@main", "@master")), f"{uses} floats on a branch"
 
 
-@pytest.mark.parametrize("name", ["tests.yml", "site-tests.yml"])
+@pytest.mark.parametrize("name", PR_WORKFLOWS)
 def test_test_workflows_run_on_pr_and_push_to_main(name):
     triggers = _triggers(_load(name))
     assert triggers["pull_request"]["branches"] == ["main"]
     assert triggers["push"]["branches"] == ["main"]
 
 
-@pytest.mark.parametrize("name", ["tests.yml", "site-tests.yml"])
+@pytest.mark.parametrize("name", PR_WORKFLOWS)
 def test_test_workflows_only_cancel_superseded_pull_request_runs(name):
     # Every merge to main must get a clean signal; only PR runs may be cancelled.
     group = _load(name)["concurrency"]
@@ -103,7 +104,7 @@ def test_test_workflows_only_cancel_superseded_pull_request_runs(name):
     assert "==" in str(group["cancel-in-progress"])
 
 
-@pytest.mark.parametrize("name", ["tests.yml", "site-tests.yml"])
+@pytest.mark.parametrize("name", PR_WORKFLOWS)
 def test_test_workflows_give_each_push_its_own_concurrency_group(name):
     # A shared group holds only one pending run, so back-to-back merges would
     # cancel each other even with cancel-in-progress false (#262).
@@ -161,6 +162,27 @@ def test_site_workflow_node_version_meets_documented_minimum():
     # package.json `test` script uses --experimental-strip-types (Node 22.6+).
     node = int(str(_step_with(_load("site-tests.yml"), "actions/setup-node")["node-version"]).split(".")[0])
     assert node >= 22
+
+
+def test_build_matrix_covers_the_deploy_toolchain():
+    # The matrix must include the Node version deploy.yml ships with, on the
+    # same pnpm, or a green build says nothing about the deployed site.
+    build, deploy = _load("build.yml"), _load("deploy.yml")
+    job = build["jobs"]["site-build"]
+    nodes = job["strategy"]["matrix"]["node"]
+    assert len(nodes) >= 2
+    assert _step_with(build, "actions/setup-node")["node-version"] == "${{ matrix.node }}"
+    assert _step_with(deploy, "actions/setup-node")["node-version"] in nodes
+    assert (
+        _step_with(build, "pnpm/action-setup")["version"]
+        == _step_with(deploy, "pnpm/action-setup")["version"]
+    )
+    assert job["strategy"]["fail-fast"] is False
+
+
+def test_build_workflow_builds_the_site_without_duplicating_pytest():
+    runs = [s["run"] for s in _steps(_load("build.yml")) if "run" in s]
+    assert runs == ["pnpm install --frozen-lockfile", "pnpm build"]
 
 
 def test_site_tests_workflow_runs_the_package_test_script():
