@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Self-tuning quality thresholds for automated QA. A QA run may propose raising a threshold when it has been exceeded for the whole observation window; it must never lower one. Changes land through a normal hold-gated PR.",
+  "thresholds": {
+    "coverage_percent": {
+      "source": "pyproject.toml",
+      "key": "tool.pytest.ini_options.addopts --cov-fail-under",
+      "direction": "raise_only"
+    }
+  },
+  "tuning": {
+    "observation_window_runs": 20,
+    "raise_when_headroom_points_at_least": 3,
+    "raise_step_points": 1,
+    "may_lower": false,
+    "requires_human_review": true
+  }
+}
