@@ -1,0 +1,30 @@
+# Machine-readable policy for automated contributors (AI agents and bots).
+# Human-readable counterpart: AGENTS.md. tests/test_agent_policy.py checks this
+# file is well-formed and that the paths it names exist, so it cannot rot.
+version: 1
+
+pull_requests:
+  # A PR carrying any of these labels must not be merged until a human removes it.
+  hold_labels: [hold, on-hold, do-not-merge]
+  agents_may_remove_hold_label: false
+  agents_may_merge: false
+  require_dco_signoff: true
+
+paths:
+  # Agents must not edit these; open an issue with the exact replacement text.
+  agent_forbidden:
+    - .github/workflows
+  # Daily output lives on the `content` branch and is never committed by hand.
+  never_commit_by_hand_branch: content
+  # Files that must never be committed.
+  secret_files: [.env]
+
+testing:
+  tests_required_with_code_change: true
+  coverage_gate_source: pyproject.toml   # do not duplicate the number here
+
+architecture:
+  # Pipeline stages share state only through state.db and these helpers.
+  stage_shared_modules: [db.py, edition.py, models.py, llm.py]
+  llm_calls_only_via: scripts/llm.py
+  hard_coded_edition_slugs_allowed: false
