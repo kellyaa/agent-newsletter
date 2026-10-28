@@ -29,7 +29,7 @@ import sys
 from datetime import datetime, timezone
 
 from db import DB_PATH, REPO_ROOT, connect, init_db, run_date
-from publish import usage_totals
+from llm import usage_totals
 
 logging.basicConfig(
     level=logging.INFO,

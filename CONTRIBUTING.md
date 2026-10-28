@@ -222,7 +222,7 @@ How much review a change needs depends on what it touches: see [`docs/risk-tiers
 
 - Python 3.11+; no type annotations required but they are welcome.
 - No external formatter enforced (no black/ruff CI gate), but keep code readable.
-- Keep scripts self-contained — pipeline stage scripts (`fetch.py`, `prefilter.py`, `rank.py`, `write.py`, `publish.py`) should not import from each other; they share state only through `state.db` and use the shared modules `db.py`, `llm.py`, `models.py`, and `candidates.py`. **Orchestration scripts** (`backfill.py`, `replay_writer.py`) are intentionally exempt: they invoke pipeline-stage functions directly (e.g., `backfill.py` imports `rank.py` and `write.py`) to reuse threshold/cap logic without duplicating it.
+- Keep scripts self-contained — pipeline stage scripts (`fetch.py`, `prefilter.py`, `rank.py`, `write.py`, `publish.py`, `run_attempt.py`) must not import from each other; they share state only through `state.db` and use the shared modules `db.py`, `edition.py`, `llm.py`, `models.py`, and `candidates.py` (enforced by `tests/test_stage_import_boundary.py`). Code two stages both need goes in a shared module, e.g. the papers prerank cap lives in `candidates.py` and the usage-log reader in `llm.py`. **Orchestration scripts** (`backfill.py`, `replay_writer.py`) are intentionally exempt: they invoke pipeline-stage functions directly (e.g., `backfill.py` imports `rank.py` and `write.py`) to reuse threshold/cap logic without duplicating it.
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
 

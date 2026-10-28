@@ -28,7 +28,7 @@ pnpm --prefix site install && pnpm --prefix site build
 
 - Branch from `main`; commit with DCO sign-off (`git commit -s`); conventional style `<scope>: <description>`.
 - Add or update tests with every code change. Keep coverage at or above the gate.
-- Pipeline stage scripts must not import from each other; they share state only through `state.db` and the shared helpers (`db.py`, `edition.py`, `models.py`, `llm.py`).
+- Pipeline stage scripts (`fetch`, `prefilter`, `rank`, `write`, `publish`, `run_attempt`) must not import from each other; they share state only through `state.db` and the shared helpers (`db.py`, `edition.py`, `models.py`, `llm.py`, `candidates.py`). `tests/test_stage_import_boundary.py` enforces this.
 - LLM calls go through `scripts/llm.py` only.
 - Edition behaviour comes from `editions/<slug>/` config, never from hard-coded slugs in code.
 - A new script or documented path must be reflected in `README.md` / `CONTRIBUTING.md` (`tests/test_docs_paths.py` enforces this).

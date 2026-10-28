@@ -1,4 +1,4 @@
-"""Tests for run accounting (#13): llm._append_usage, publish.usage_totals,
+"""Tests for run accounting (#13): llm._append_usage, llm.usage_totals,
 publish.run_duration_s, and record_run's token and duration columns."""
 from __future__ import annotations
 
@@ -63,17 +63,17 @@ class TestAppendUsage:
 
 
 # ---------------------------------------------------------------------------
-# publish.usage_totals / run_duration_s
+# llm.usage_totals / publish.run_duration_s
 # ---------------------------------------------------------------------------
 
 class TestUsageTotals:
     def test_none_without_file(self, tmp_path):
-        from publish import usage_totals
+        from llm import usage_totals
         assert usage_totals(None) is None
         assert usage_totals(str(tmp_path / "absent.jsonl")) is None
 
     def test_sums_calls_and_folds_retries(self, tmp_path):
-        from publish import usage_totals
+        from llm import usage_totals
         path = tmp_path / "usage.jsonl"
         rows = [
             {"label": "papers (attempt 1)", "model": "r", "prompt_tokens": 100, "completion_tokens": 10},
@@ -87,7 +87,7 @@ class TestUsageTotals:
         }
 
     def test_unreported_tokens_stay_none(self, tmp_path):
-        from publish import usage_totals
+        from llm import usage_totals
         path = tmp_path / "usage.jsonl"
         path.write_text(json.dumps({"label": "writer", "model": "w", "prompt_tokens": None, "completion_tokens": None}) + "\n")
         totals = usage_totals(str(path))
@@ -146,7 +146,7 @@ class TestRecordRunAccounting:
 
 class TestUsageTotalsByAttempt:
     def test_counts_only_the_given_attempt(self, tmp_path):
-        from publish import usage_totals
+        from llm import usage_totals
         path = tmp_path / "usage.jsonl"
         rows = [
             {"attempt": "1", "label": "papers", "model": "r", "prompt_tokens": 100, "completion_tokens": 10},

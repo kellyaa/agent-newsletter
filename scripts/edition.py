@@ -100,6 +100,11 @@ class Edition:
     def keyword_regexes(self) -> list[str]:
         return list(self.keywords)
 
+    def keyword_re(self) -> re.Pattern[str]:
+        """The keyword gate as one case-insensitive pattern (prefilter's gate,
+        and the keyword-density term of the papers prerank heuristic)."""
+        return re.compile("|".join(self.keywords), re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class RuntimePaths:

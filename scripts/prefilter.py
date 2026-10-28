@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from candidates import load_candidates_from_db
+from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
 import edition
 import prompts
 from db import (
@@ -36,7 +36,7 @@ CANDIDATES_OUT = _RUNTIME.candidates
 # EDITION to be set so a missing selection fails before any work is done.
 EDITION = edition.current()
 KEYWORDS = EDITION.keyword_regexes()
-KEYWORD_RE = re.compile("|".join(KEYWORDS), re.IGNORECASE)
+KEYWORD_RE = EDITION.keyword_re()
 
 # Recency windows by source family. RSS is wide because practitioner blogs
 # publish weekly-or-monthly; the cross-day dedup layer (status >= 'ranked' is
@@ -88,13 +88,10 @@ APPENDIX_MAX_APPEARANCES = 2
 # for one of the 5 featured slots. PAPER_POOL_MAX_COMPETES caps how many
 # competitions a single paper can lose before being aged out — independent of
 # wall-clock age, so a paper that lands during a quiet week still gets a fair
-# number of attempts. PAPER_PRERANK_CAP bounds the LLM input size as a guard
-# against a degenerate burst. Post-prefilter inflow runs ~63-95 papers/day, so
-# 100 should almost never bind; at 50 it bound on nearly every weekday and
-# starved ~20-45 papers/day until they expired unjudged (see issue #295).
+# number of attempts. PAPER_PRERANK_CAP (defined in candidates.py, shared with
+# rank.py) bounds the LLM input size as a guard against a degenerate burst.
 PAPER_POOL_MAX_COMPETES = 7
 PAPER_POOL_MAX_AGE_DAYS = 7
-PAPER_PRERANK_CAP = 100
 
 # Age-out for the papers candidate pool. Shared with backfill.py so the two
 # can't drift. Papers leave the pool when they hit the competition cap or when
@@ -176,25 +173,8 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _prerank_score(item: PrefilterItem, now: datetime) -> float:
-    """Cheap composite for capping the unscored-papers pool before the LLM.
-
-    Source weight is omitted: all papers items today are arxiv:*, so a weight
-    factor would be a constant. If another paper source is added later with a
-    non-1.0 weight, plumb it through here.
-    """
-    pub = item.get("published_at") or item.get("fetched_at")
-    try:
-        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
-    except (ValueError, AttributeError):
-        age_days = 0.0
-    recency = 1.0 / (1.0 + age_days)
-    haystack = ((item.get("title") or "") + "\n" + (item.get("raw_text") or "")).lower()
-    kw_hits = len(KEYWORD_RE.findall(haystack))
-    kw = min(kw_hits, 5) / 5.0
-    return recency * (0.5 + kw)
+    """candidates.prerank_score bound to this edition's keyword gate."""
+    return prerank_score(item, now, KEYWORD_RE)
 
 
 def _rubric_hash() -> str:

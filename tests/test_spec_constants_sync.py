@@ -8,6 +8,7 @@ guidance and nothing fails, so pin the values here.
 import re
 from pathlib import Path
 
+import candidates
 import prefilter
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,11 +17,15 @@ README = (REPO_ROOT / "README.md").read_text()
 WATCHDOG = (REPO_ROOT / "watchdog.sh").read_text()
 
 
-def test_spec_pool_constants_match_prefilter():
-    for name in ("PAPER_POOL_MAX_AGE_DAYS", "PAPER_POOL_MAX_COMPETES", "PAPER_PRERANK_CAP"):
+def test_spec_pool_constants_match_code():
+    for mod, name in (
+        (prefilter, "PAPER_POOL_MAX_AGE_DAYS"),
+        (prefilter, "PAPER_POOL_MAX_COMPETES"),
+        (candidates, "PAPER_PRERANK_CAP"),
+    ):
         m = re.search(rf"`{name} = (\d+)`", SPEC)
         assert m, f"SPEC.md does not document {name} = N"
-        assert int(m.group(1)) == getattr(prefilter, name), name
+        assert int(m.group(1)) == getattr(mod, name), name
 
 
 def test_spec_appendix_retry_cap_matches_prefilter():

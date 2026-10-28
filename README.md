@@ -21,7 +21,7 @@ prompts/
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
   prefilter.py          — recency + keyword + dedup gates; writes candidates.json as debug artifact
-  candidates.py         — shared candidate pool query (DB → grouped dict); used by rank.py and backfill.py
+  candidates.py         — shared candidate pool query (DB → grouped dict) and papers prerank cap; used by prefilter.py, rank.py and backfill.py
   rank.py               — three LLM calls (OpenAI-compatible), one per section; writes ranked.json as debug artifact
   write.py              — one LLM call (OpenAI-compatible); emits editions/<slug>/issues/YYYY-MM-DD.md (on the content branch)
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
