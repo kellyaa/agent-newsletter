@@ -220,7 +220,7 @@ def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
         else:
             os.environ["EDITION"] = previous
 
-    keyword_re = re.compile("|".join(ed.keyword_regexes()), re.IGNORECASE)
+    keyword_re = ed.keyword_re()
     now = datetime.now(timezone.utc)
     tmp = Path(tempfile.mkdtemp(prefix=f"check-edition-{ed.slug}-"))
     counts: list[SourceCount] = []

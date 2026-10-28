@@ -15,13 +15,12 @@ import logging
 import os
 import sys
 
-from candidates import load_candidates_from_db
+from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
 import edition
 import prompts
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem
-from prefilter import PAPER_PRERANK_CAP, _prerank_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +72,7 @@ def effective_cap(section: str, items: list[dict]) -> int:
     return rules["cap"]
 
 VALID_TAGS = EDITION.valid_tags()
+KEYWORD_RE = EDITION.keyword_re()
 
 RANKER_OUTPUT_SCHEMA = {
     "type": "object",
@@ -297,6 +297,11 @@ def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     return counts
 
 
+def _prerank_scorer(item: dict, now) -> float:
+    """candidates.prerank_score bound to this edition's keyword gate."""
+    return prerank_score(item, now, KEYWORD_RE)
+
+
 def main() -> int:
     init_db()
     if not PROMPT_PATH.exists():
@@ -320,7 +325,7 @@ def main() -> int:
     # on the next run.
     candidates = load_candidates_from_db(
         prerank_cap=PAPER_PRERANK_CAP,
-        prerank_scorer=_prerank_score,
+        prerank_scorer=_prerank_scorer,
     )
 
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).

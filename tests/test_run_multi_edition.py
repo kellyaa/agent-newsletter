@@ -71,11 +71,6 @@ if STAGE == "write":
     (d / f"{os.environ['RUN_DATE']}.md").write_text("issue for " + slug)
 '''
 
-PUBLISH_STUB = STAGE_STUB + '''
-
-def usage_totals(path, attempt=None):
-    return None
-'''
 
 
 def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -105,9 +100,8 @@ def fx(tmp_path):
     for f in (REAL / "scripts").iterdir():
         if f.suffix in (".py", ".sh"):
             shutil.copy2(f, seed / "scripts" / f.name)
-    for stage in ("fetch", "prefilter", "rank", "write"):
+    for stage in ("fetch", "prefilter", "rank", "write", "publish"):
         (seed / "scripts" / f"{stage}.py").write_text(STAGE_STUB)
-    (seed / "scripts" / "publish.py").write_text(PUBLISH_STUB)
     _write_edition(seed, "agents", order=10, name="Agents Daily")
     _write_edition(seed, "beta", order=20, name="Beta Daily")
     _write_edition(seed, "gamma", status="paused", order=30)

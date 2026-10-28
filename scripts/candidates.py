@@ -22,12 +22,45 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from db import connect
 
 log = logging.getLogger(__name__)
+
+# Upper bound on unscored papers sent to one ranker call. Lives here, not in a
+# stage, because both prefilter (debug artifact + per-run cut count) and rank
+# (the real LLM call) apply it, and stages must not import each other.
+# Post-prefilter inflow runs ~63-95 papers/day, so 100 should almost never
+# bind; at 50 it bound on nearly every weekday and starved ~20-45 papers/day
+# until they expired unjudged (see issue #295).
+PAPER_PRERANK_CAP = 100
+
+
+def prerank_score(item: dict, now: datetime, keyword_re: re.Pattern[str]) -> float:
+    """Cheap composite for capping the unscored-papers pool before the LLM.
+
+    recency x keyword density, where *keyword_re* is the edition's compiled
+    keyword gate (``Edition.keyword_re()``). Source weight is omitted: all
+    papers items today are arxiv:*, so a weight factor would be a constant. If
+    another paper source is added later with a non-1.0 weight, plumb it
+    through here.
+    """
+    pub = item.get("published_at") or item.get("fetched_at")
+    try:
+        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+    except (ValueError, AttributeError):
+        age_days = 0.0
+    recency = 1.0 / (1.0 + age_days)
+    haystack = ((item.get("title") or "") + "\n" + (item.get("raw_text") or "")).lower()
+    kw_hits = len(keyword_re.findall(haystack))
+    kw = min(kw_hits, 5) / 5.0
+    return recency * (0.5 + kw)
 
 
 def load_candidates_from_db(
