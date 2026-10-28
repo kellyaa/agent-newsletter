@@ -96,6 +96,13 @@ rss:
     name: "InfoQ"
     url: https://www.infoq.com/feed/
 
+  - id: infoq-ai-coding
+    name: "InfoQ — AI Coding"
+    url: https://feed.infoq.com/ai-coding/
+    # Topic-specific category feed (#357), so it bypasses the keyword gate.
+    keyword_gate_bypass: true
+    recency_days: 30
+
   - id: github-blog-ai
     name: "GitHub Blog — AI & ML"
     url: https://github.blog/ai-and-ml/feed/
