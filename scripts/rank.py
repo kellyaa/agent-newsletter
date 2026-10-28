@@ -101,6 +101,7 @@ def build_prompt(section: str, items: list[dict], rubric: str) -> str:
     """Return the full prompt: section header + items JSON + rubric."""
     items_json = json.dumps(items, ensure_ascii=False, indent=2)
     return (
+        f"{prompts.UNTRUSTED_INPUT_NOTICE}\n\n"
         f"# Section to rank: {section}\n\n"
         f"Number of items: {len(items)}\n\n"
         f"Candidates (JSON array):\n\n"

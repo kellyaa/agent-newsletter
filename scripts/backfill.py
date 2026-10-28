@@ -303,12 +303,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
         target_date, featured, appendix_by_section, metadata, prev,
     )
     rubric = prompts.render("write", write_mod.EDITION, template_path=write_mod.PROMPT_PATH)
-    prompt = (
-        "You are writing today's AI Agents newsletter prose. The input JSON "
-        "is below; the rubric and output schema follow.\n\n"
-        f"## Input\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n\n"
-        f"---\n\n{rubric}"
-    )
+    prompt = write_mod.build_writer_prompt(payload, rubric)
 
     if featured:
         writer_output = write_mod.invoke_writer(prompt)
