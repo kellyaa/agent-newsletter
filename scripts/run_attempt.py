@@ -28,7 +28,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from db import DB_PATH, REPO_ROOT, connect, init_db
+from db import DB_PATH, REPO_ROOT, connect, init_db, run_date
 from publish import usage_totals
 
 logging.basicConfig(
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--exit-code", type=int)
     args = ap.parse_args(argv)
 
-    date = os.environ.get("RUN_DATE") or datetime.now().date().isoformat()
+    date = run_date()
     if args.cmd == "latest":
         # Read-only: never create an edition's DB just to ask about it.
         if not DB_PATH.exists():

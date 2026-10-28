@@ -139,20 +139,13 @@ class TestUpsertItemsConflict:
         row = db.execute("SELECT keyword_gate_bypass FROM items").fetchone()
         assert row["keyword_gate_bypass"] == 1
 
-    def test_last_seen_date_updated_on_conflict(self, db):
-        from unittest.mock import patch
-        from datetime import date
-
+    def test_last_seen_date_updated_on_conflict(self, db, monkeypatch):
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            mock_dt.now.return_value.isoformat.return_value = "2026-06-01T00:00:00Z"
-            upsert_items(db, [item])
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        upsert_items(db, [item])
 
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-02"
-            mock_dt.now.return_value.isoformat.return_value = "2026-06-02T00:00:00Z"
-            upsert_items(db, [item])
+        monkeypatch.setenv("RUN_DATE", "2026-06-02")
+        upsert_items(db, [item])
 
         row = db.execute("SELECT last_seen_date FROM items").fetchone()
         assert row["last_seen_date"] == "2026-06-02"
@@ -232,16 +225,13 @@ class TestAlreadyFetchedToday:
         result = _already_fetched_today(db)
         assert result == 0
 
-    def test_counts_items_seen_today(self, db):
+    def test_counts_items_seen_today(self, db, monkeypatch):
         from datetime import date
-        from unittest.mock import patch
 
         today = date.today().isoformat()
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = today
-            mock_dt.now.return_value.isoformat.return_value = f"{today}T00:00:00Z"
-            upsert_items(db, [item])
+        monkeypatch.setenv("RUN_DATE", today)
+        upsert_items(db, [item])
 
         set_meta(db, FETCH_DONE_KEY, today)
         result = _already_fetched_today(db)
@@ -278,18 +268,26 @@ class TestAlreadyFetchedToday:
         monkeypatch.setenv("RUN_DATE", "2026-10-25")
         assert _already_fetched_today(db) == 0
 
+    def test_upsert_stamps_run_date_not_wall_clock(self, db, monkeypatch):
+        """The day items are stamped with is the run's RUN_DATE, the same day
+        the fetch-completed marker records (a run crossing midnight or a manual
+        re-run for an earlier date must not split the two)."""
+        monkeypatch.setenv("RUN_DATE", "2026-10-24")
+        upsert_items(db, [_make_item()])
+        set_meta(db, FETCH_DONE_KEY, "2026-10-24")
+
+        row = db.execute("SELECT first_seen_date, last_seen_date FROM items").fetchone()
+        assert (row["first_seen_date"], row["last_seen_date"]) == ("2026-10-24", "2026-10-24")
+        assert _already_fetched_today(db) == 1
+
     def test_does_not_count_items_from_yesterday(self, db, monkeypatch):
-        from unittest.mock import patch
-
-        monkeypatch.delenv("RUN_DATE", raising=False)
-
         item = _make_item()
-        with patch("fetch.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-05-30"
-            mock_dt.now.return_value.isoformat.return_value = "2026-05-30T00:00:00Z"
-            upsert_items(db, [item])
-
+        monkeypatch.setenv("RUN_DATE", "2026-05-30")
+        upsert_items(db, [item])
         set_meta(db, FETCH_DONE_KEY, "2026-05-30")
+
+        # Checked on a later run with no RUN_DATE: falls back to the local date.
+        monkeypatch.delenv("RUN_DATE", raising=False)
         result = _already_fetched_today(db)
         # Today is not 2026-05-30, so result should be 0
         assert result == 0

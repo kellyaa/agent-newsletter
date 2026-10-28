@@ -17,7 +17,8 @@ from candidates import load_candidates_from_db
 import edition
 import prompts
 from db import (
-    CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, set_meta,
+    CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, run_date,
+    set_meta,
 )
 from models import CandidateItem, PrefilterItem
 
@@ -368,7 +369,7 @@ def main() -> int:
     log.info("papers pre-rank cap cut this run: %d", prerank_cut)
     record_stage_stats(
         conn,
-        datetime.now().date().isoformat(),
+        run_date(),
         expired_unjudged=expired_unjudged_now,
         prerank_cut=prerank_cut,
     )

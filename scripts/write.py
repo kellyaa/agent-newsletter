@@ -16,11 +16,10 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
 
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, run_date
 from llm import call_llm
 
 logging.basicConfig(
@@ -372,7 +371,7 @@ def main() -> int:
         log.error("missing %s", PROMPT_PATH)
         return 2
 
-    today = datetime.now().date().isoformat()
+    today = run_date()
     out_path = ISSUES_DIR / f"{today}.md"
     if out_path.exists():
         log.info(

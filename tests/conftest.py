@@ -26,6 +26,13 @@ def base_template(stage: str) -> str:
 
 
 @pytest.fixture(autouse=True)
+def _no_inherited_run_date(monkeypatch):
+    """Stages key the day on $RUN_DATE (db.run_date). Don't let a value from the
+    developer's shell leak in; tests that need a run date set it themselves."""
+    monkeypatch.delenv("RUN_DATE", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_edition_logs(tmp_path, monkeypatch):
     """Rendered prompts are debug output under logs/<slug>/; keep tests out of the repo's logs/."""
     import edition

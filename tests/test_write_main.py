@@ -195,3 +195,16 @@ def test_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
     import write
     importlib.reload(write)
     assert write.ISSUES_DIR == tmp_path / "editions" / "agents" / "issues"
+
+
+class TestWriteMainRunDate:
+    def test_issue_file_is_named_for_run_date(self, db_path, issues_dir, prompt_file, monkeypatch):
+        """write keys on RUN_DATE (as fetch and publish do), not the wall clock."""
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_appendix(conn, "app1")
+        conn.close()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        with patch("write.invoke_writer"):
+            assert _run_main(db_path, issues_dir, prompt_file, monkeypatch) == 0
+        assert [p.name for p in issues_dir.glob("*.md")] == ["2026-06-01.md"]

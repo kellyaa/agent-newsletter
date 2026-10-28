@@ -78,6 +78,9 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(candidates_mod, "connect", connect)
     monkeypatch.setattr(pf_mod, "datetime", _frozen_datetime())
     monkeypatch.setattr(candidates_mod, "datetime", _frozen_datetime())
+    # The run date (stage stats, last_seen_date) comes from RUN_DATE, the
+    # same contract run_edition.sh uses; the clock above only drives recency.
+    monkeypatch.setenv("RUN_DATE", FROZEN.date().isoformat())
     return db_path
 
 
