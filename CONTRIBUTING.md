@@ -9,13 +9,14 @@ Thank you for contributing. This document covers development setup, the test sui
 1. [Prerequisites](#prerequisites)
 2. [Local setup](#local-setup)
 3. [Running the test suite](#running-the-test-suite)
-4. [Repository layout and branch model](#repository-layout-and-branch-model)
-5. [Adding or removing a feed source](#adding-or-removing-a-feed-source)
-6. [Adding an edition](#adding-an-edition)
-7. [PR workflow and naming](#pr-workflow-and-naming)
-8. [The `hold` label](#the-hold-label)
-9. [Code style](#code-style)
-10. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
+4. [Site development](#site-development)
+5. [Repository layout and branch model](#repository-layout-and-branch-model)
+6. [Adding or removing a feed source](#adding-or-removing-a-feed-source)
+7. [Adding an edition](#adding-an-edition)
+8. [PR workflow and naming](#pr-workflow-and-naming)
+9. [The `hold` label](#the-hold-label)
+10. [Code style](#code-style)
+11. [docs/superpowers/ — internal agent docs](#docssuperpowers--internal-agent-docs)
 
 ---
 
@@ -105,7 +106,7 @@ pnpm --prefix site dev
 ## Running the test suite
 
 ```bash
-# Run all tests with coverage
+# Python tests — pipeline and utility scripts
 uv run --extra test pytest
 
 # Same, with HTML coverage report
@@ -116,17 +117,69 @@ uv run --extra test pytest tests/test_fetch_adapters.py -v
 
 # Run only the end-to-end tests
 uv run --extra test pytest tests/e2e -v
+
+# Site (Astro) tests — edition registry, page generation, component rendering
+pnpm --prefix site test
+
+# Same, in watch mode (reruns on file changes)
+pnpm --prefix site test --watch
 ```
 
+**Python tests:**
 The end-to-end tests in `tests/e2e/` launch the pipeline CLIs as real subprocesses against a throwaway copy of the repo and a local HTTP feed (no internet, no LLM). `tests/e2e/test_check_edition_e2e.py` covers `scripts/check_edition.py`.
 
 The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current gate is `--cov-fail-under=95`; line coverage is at 100% and branch coverage is ~99% as of the last gate-setting PR.
 
-CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR with failing tests or coverage below the gate will not be merged. Two more workflows run on the same triggers: `site-tests.yml` runs the site's unit tests, and `build.yml` builds the site on Node 22 and 24 so a build break surfaces before `deploy.yml` runs after merge.
+**Site tests:**
+Site tests in `site/tests/` verify edition registry parsing, page routing, component rendering, and RSS/search functionality. They run with Vitest on Node.js and are intentionally not end-to-end browser tests. See [`docs/site-architecture.md`](docs/site-architecture.md) §Testing for how to write new site tests and understand the test patterns.
+
+**CI:**
+Three workflows run on every PR and push to `main`:
+- `.github/workflows/tests.yml` — Python pipeline tests (pytest with coverage gate)
+- `.github/workflows/site-tests.yml` — Site unit tests (Vitest)
+- `.github/workflows/build.yml` — Site build on Node 22 and 24 (catches build breaks before deploy)
+
+A PR with failing tests or coverage below the Python gate will not be merged.
 
 ---
 
-## Repository layout and branch model
+## Site development
+
+The newsletter is published as a static Astro 5 site with components for featured items, tag browsing, monthly archives, and full-text search (Pagefind). For a comprehensive guide to site architecture, components, and development workflows, see [`docs/site-architecture.md`](docs/site-architecture.md).
+
+**Quick start for site work:**
+
+```bash
+# Start the local dev server (rebuilds on changes)
+pnpm --prefix site dev
+
+# Open http://localhost:3000 and navigate to your edition
+# The server reads issue files from .worktrees/content/site/src/content/issues/
+```
+
+**Common tasks:**
+
+- **Add a component:** Create `site/src/components/MyComponent.astro` with an interface defining props, then import and use it on a page. Add a test in `site/tests/my-component.test.ts`.
+- **Modify a page route:** Edit the corresponding `.astro` file in `site/src/pages/`. Dynamic routes use `[bracket]` syntax (e.g., `[edition]/[date].astro` generates `/agents/issues/2026-06-29/`).
+- **Add a test:** Create a `.test.ts` file in `site/tests/` using the Vitest + seed-editions pattern. See existing tests for examples.
+- **Debug a build failure:** The build error message usually names the issue file that failed. Check issue frontmatter YAML and edition registry validation.
+- **Test search locally:** Run `pnpm --prefix site build` then `pnpm --prefix site preview` (Pagefind indexing only happens in full build, not dev mode).
+
+**Site structure overview:**
+
+| File/Dir | Purpose |
+|----------|---------|
+| `src/pages/` | Dynamic routes (Astro routing) |
+| `src/components/` | Reusable UI blocks (FeaturedItem, TagChip, MonthView, etc.) |
+| `src/scripts/` | TypeScript modules (no Astro framework code): edition registry, tag slugging, URL sanitization |
+| `src/content/` | Astro content collection; schema in `config.ts`; issue files populated by deploy workflow |
+| `src/layouts/` | BaseLayout wraps all pages (nav, footer, metadata) |
+| `tests/` | Vitest suite for registry, routing, components, RSS, multi-edition setup |
+| `astro.config.mjs` | Astro build config (routing, integration, adapter settings) |
+
+The site is pre-rendered at build time to 100% static HTML. No API calls, no client-side routing — all pages exist as static files after build. This makes the site fast (sub-100ms response from GitHub Pages CDN) and resilient.
+
+---
 
 The repo uses two long-lived branches:
 
