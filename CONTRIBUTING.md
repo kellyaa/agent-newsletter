@@ -9,7 +9,8 @@ Thank you for contributing. This document covers development setup, the test sui
 1. [Prerequisites](#prerequisites)
 2. [Local setup](#local-setup)
 3. [Running the test suite](#running-the-test-suite)
-4. [Repository layout and branch model](#repository-layout-and-branch-model)
+4. [Site development](#site-development)
+5. [Repository layout and branch model](#repository-layout-and-branch-model)
 5. [Adding or removing a feed source](#adding-or-removing-a-feed-source)
 6. [Adding an edition](#adding-an-edition)
 7. [PR workflow and naming](#pr-workflow-and-naming)
@@ -126,7 +127,43 @@ CI (`.github/workflows/tests.yml`) runs on every PR and push to `main`. A PR wit
 
 ---
 
-## Repository layout and branch model
+## Site development
+
+The newsletter is published as a static Astro 5 site with components for featured items, tag browsing, monthly archives, and full-text search (Pagefind). For a comprehensive guide to site architecture, components, and development workflows, see [`docs/site-architecture.md`](docs/site-architecture.md).
+
+**Quick start for site work:**
+
+```bash
+# Start the local dev server (rebuilds on changes)
+pnpm --prefix site dev
+
+# Open http://localhost:3000 and navigate to your edition
+# The server reads issue files from .worktrees/content/site/src/content/issues/
+```
+
+**Common tasks:**
+
+- **Add a component:** Create `site/src/components/MyComponent.astro` with an interface defining props, then import and use it on a page. Add a test in `site/tests/my-component.test.ts`.
+- **Modify a page route:** Edit the corresponding `.astro` file in `site/src/pages/`. Dynamic routes use `[bracket]` syntax (e.g., `[edition]/[date].astro` generates `/agents/issues/2026-06-29/`).
+- **Add a test:** Create a `.test.ts` file in `site/tests/` using the Vitest + seed-editions pattern. See existing tests for examples.
+- **Debug a build failure:** The build error message usually names the issue file that failed. Check issue frontmatter YAML and edition registry validation.
+- **Test search locally:** Run `pnpm --prefix site build` then `pnpm --prefix site preview` (Pagefind indexing only happens in full build, not dev mode).
+
+**Site structure overview:**
+
+| File/Dir | Purpose |
+|----------|---------|
+| `src/pages/` | Dynamic routes (Astro routing) |
+| `src/components/` | Reusable UI blocks (FeaturedItem, TagChip, MonthView, etc.) |
+| `src/scripts/` | TypeScript modules (no Astro framework code): edition registry, tag slugging, URL sanitization |
+| `src/content/` | Astro content collection; schema in `config.ts`; issue files populated by deploy workflow |
+| `src/layouts/` | BaseLayout wraps all pages (nav, footer, metadata) |
+| `tests/` | Vitest suite for registry, routing, components, RSS, multi-edition setup |
+| `astro.config.mjs` | Astro build config (routing, integration, adapter settings) |
+
+The site is pre-rendered at build time to 100% static HTML. No API calls, no client-side routing — all pages exist as static files after build. This makes the site fast (sub-100ms response from GitHub Pages CDN) and resilient.
+
+---
 
 The repo uses two long-lived branches:
 
