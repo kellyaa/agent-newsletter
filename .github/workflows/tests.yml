@@ -27,9 +27,9 @@ jobs:
     # the free-tier minutes budget. Typical run is ~90s; 10 min is generous.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           # Enable uv's built-in caching keyed on pyproject.toml + uv.lock.
           # Speeds up cold runs from ~15s to ~3s. Refs bead 2191707c-1b0.
@@ -38,7 +38,7 @@ jobs:
             pyproject.toml
             uv.lock
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
 
@@ -49,7 +49,7 @@ jobs:
       # so both local runs and CI use the same threshold (refs #52, #55).
       - run: uv run pytest --cov=scripts --cov-report=xml --cov-report=term
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: coverage-xml
@@ -61,7 +61,7 @@ jobs:
       # Runs on pull_request events only; skipped on direct pushes to main.
       - name: Coverage comment
         if: github.event_name == 'pull_request'
-        uses: py-cov-action/python-coverage-comment-action@v3
+        uses: py-cov-action/python-coverage-comment-action@50d15ff8768f6d897b04e5a0805bd1a98f7096c4 # v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
           # Annotate changed lines that lack coverage directly in the PR diff.
