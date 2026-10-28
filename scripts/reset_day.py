@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import edition
-from db import CONTENT_ROOT, connect
+from db import CONTENT_ROOT, connect, run_date
 
 # Keep in sync with fetch.FETCH_DONE_KEY (not imported: fetch pulls in httpx etc.).
 FETCH_DONE_KEY = "fetch_completed_date"
@@ -64,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     paths = edition.runtime_paths(CONTENT_ROOT)
-    today = os.environ.get("RUN_DATE") or datetime.now().date().isoformat()
+    today = run_date()
     if not paths.state_db.exists():
         log.info("no state.db at %s; nothing to reset", paths.state_db)
         return 0

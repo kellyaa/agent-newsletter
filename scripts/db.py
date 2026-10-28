@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
@@ -16,6 +17,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONTENT_ROOT_ENV = os.environ.get("CONTENT_ROOT")
 CONTENT_ROOT = Path(_CONTENT_ROOT_ENV) if _CONTENT_ROOT_ENV else REPO_ROOT
 DB_PATH = _edition.runtime_paths(CONTENT_ROOT).state_db
+
+
+def run_date() -> str:
+    """The date this run produces, as ``YYYY-MM-DD``.
+
+    This is the single source of "which day is this run" for every stage: the
+    issue filename, ``items.first_seen_date``/``last_seen_date``, ``runs.date``,
+    ``run_attempts.date``, ``run_stage_stats.date`` and the fetch-completed
+    marker. ``run_edition.sh`` exports ``RUN_DATE`` once per run, so every stage
+    keys on the same day even if the run crosses midnight or is re-run by hand
+    for an earlier date. Without ``RUN_DATE`` (a stage run directly), it falls
+    back to the local date.
+
+    Wall-clock *instants* (``fetched_at``, recency windows, attempt timestamps)
+    are not run dates and keep using the clock.
+    """
+    return os.environ.get("RUN_DATE") or date.today().isoformat()
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (

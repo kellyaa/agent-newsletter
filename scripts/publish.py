@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import edition
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, load_stage_stats
+from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, load_stage_stats, run_date
 from models import Status
 
 logging.basicConfig(
@@ -157,7 +157,7 @@ def record_run(
 
 def main() -> int:
     init_db()
-    today = datetime.now().date().isoformat()
+    today = run_date()
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)

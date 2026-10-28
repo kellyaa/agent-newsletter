@@ -110,3 +110,19 @@ def test_is_allowed_url_rejects_non_http_schemes(url: str) -> None:
 
 def test_is_allowed_url_rejects_non_string_input() -> None:
     assert is_allowed_url(None) is False  # type: ignore[arg-type]
+
+
+def test_run_date_reads_run_date_env(monkeypatch):
+    from db import run_date
+
+    monkeypatch.setenv("RUN_DATE", "2026-10-24")
+    assert run_date() == "2026-10-24"
+
+
+def test_run_date_defaults_to_local_today(monkeypatch):
+    from datetime import date
+
+    from db import run_date
+
+    monkeypatch.delenv("RUN_DATE", raising=False)
+    assert run_date() == date.today().isoformat()

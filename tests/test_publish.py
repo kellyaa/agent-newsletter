@@ -14,7 +14,6 @@ def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -126,9 +125,8 @@ class TestMainMissingFile:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            result = publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        result = publish_main()
 
         assert result == 2
 
@@ -152,9 +150,8 @@ class TestMainFileTooSmall:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            result = publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        result = publish_main()
 
         assert result == 4
 
@@ -179,9 +176,8 @@ class TestMainEmptyIssue:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            result = publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        result = publish_main()
 
         assert result == 5
 
@@ -215,9 +211,8 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "connect", _make_conn)
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            result = publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        result = publish_main()
 
         assert result == 0
 
@@ -253,9 +248,8 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        publish_main()
 
         conn = db_mod.connect(db_path)
         row = conn.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
@@ -282,9 +276,8 @@ class TestMainNormalPublish:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        publish_main()
 
         conn = db_mod.connect(db_path)
         row = conn.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
@@ -317,8 +310,7 @@ class TestMainIdempotentSkip:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-        with patch("publish.datetime") as mock_dt:
-            mock_dt.now.return_value.date.return_value.isoformat.return_value = "2026-06-01"
-            result = publish_main()
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+        result = publish_main()
 
         assert result == 0
