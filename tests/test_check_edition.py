@@ -92,6 +92,7 @@ def test_sources_file_missing_or_malformed(editions_dir):
         ({"bogus": []}, "unknown source families"),
         ({"rss": [{"id": "a", "url": "u", "section": "videos"}]}, "section 'videos'"),
         ({"rss": [{"id": "a", "url": "u", "keyword_gate_bypass": "yes"}]}, "keyword_gate_bypass"),
+        ({"hn": [{"id": "a", "query": "q", "exclude_launches": "yes"}]}, "exclude_launches"),
         ({"rss": [{"id": "a", "url": "u", "recency_days": 0}]}, "recency_days"),
         ({"rss": [{"id": "a", "url": "u", "recency_days": True}]}, "recency_days"),
         ({"rss": [{"id": "a", "url": None}]}, "url must be a non-empty string"),

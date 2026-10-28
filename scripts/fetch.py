@@ -185,6 +185,9 @@ def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[It
     hours_back = source.get("hours_back", 48)
     min_points = source.get("min_points", 50)
     cutoff = int(time.time()) - hours_back * 3600
+    # `exclude_launches: true` drops Show HN / Launch HN posts at the API.
+    # Algolia tags are AND-ed, and a leading `-` negates one.
+    tags = "story,-show_hn,-launch_hn" if source.get("exclude_launches") else "story"
     log.info("hn: fetching %s (q=%r)", source["id"], query)
     _client = client or _make_http_client()
     try:
@@ -192,7 +195,7 @@ def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[It
             "https://hn.algolia.com/api/v1/search",
             params={
                 "query": query,
-                "tags": "story",
+                "tags": tags,
                 "numericFilters": f"created_at_i>{cutoff},points>={min_points}",
                 "hitsPerPage": 50,
             },
