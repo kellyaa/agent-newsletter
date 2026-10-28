@@ -113,7 +113,12 @@ uv run --extra test pytest --cov-report=html
 
 # Run a specific test file
 uv run --extra test pytest tests/test_fetch_adapters.py -v
+
+# Run only the end-to-end tests
+uv run --extra test pytest tests/e2e -v
 ```
+
+The end-to-end tests in `tests/e2e/` launch the pipeline CLIs as real subprocesses against a throwaway copy of the repo and a local HTTP feed (no internet, no LLM). `tests/e2e/test_check_edition_e2e.py` covers `scripts/check_edition.py`.
 
 The coverage gate is configured in `pyproject.toml` under `[tool.pytest.ini_options] addopts`. Do not lower it. If you add new code, add tests for it. The current gate is `--cov-fail-under=95`; line coverage is at 100% and branch coverage is ~99% as of the last gate-setting PR.
 
