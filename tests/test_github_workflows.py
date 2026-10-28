@@ -20,7 +20,14 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 WORKFLOW_PATHS = sorted(WORKFLOW_DIR.glob("*.yml"))
-EXPECTED_WORKFLOWS = {"build.yml", "deploy.yml", "site-tests.yml", "tests.yml"}
+EXPECTED_WORKFLOWS = {
+    "ai-fix.yml",
+    "build.yml",
+    "deploy.yml",
+    "nightly-compliance.yml",
+    "site-tests.yml",
+    "tests.yml",
+}
 PR_WORKFLOWS = ["tests.yml", "site-tests.yml", "build.yml"]
 
 
@@ -188,6 +195,29 @@ def test_build_workflow_builds_the_site_without_duplicating_pytest():
 def test_site_tests_workflow_runs_the_package_test_script():
     runs = [s["run"] for s in _steps(_load("site-tests.yml")) if "run" in s]
     assert "pnpm test" in runs
+
+
+def test_nightly_compliance_runs_the_gated_suite_on_a_schedule():
+    # ACMM nightly-compliance (#378). The gate stays in pyproject.toml.
+    wf = _load("nightly-compliance.yml")
+    triggers = _triggers(wf)
+    assert triggers["schedule"] and "workflow_dispatch" in triggers
+    assert wf["permissions"] == {"contents": "read"}
+    runs = [s["run"] for s in _steps(wf) if "run" in s]
+    assert "uv run --extra test pytest" in runs
+    assert not any("--cov-fail-under" in r for r in runs)
+
+
+def test_ai_fix_only_acknowledges_the_ai_fix_requested_label():
+    # ACMM ai-fix / review-apply (#379, #381). Comment-only: no model, no
+    # secrets, no write access to contents.
+    wf = _load("ai-fix.yml")
+    assert _triggers(wf) == {"issues": {"types": ["labeled"]}}
+    assert wf["permissions"] == {"contents": "read", "issues": "write"}
+    (job,) = wf["jobs"].values()
+    assert job["if"] == "github.event.label.name == 'ai-fix-requested'"
+    assert not any("uses" in s for s in job["steps"])
+    assert "secrets." not in (WORKFLOW_DIR / "ai-fix.yml").read_text()
 
 
 def test_deploy_runs_only_from_main_or_content_and_has_pages_permissions():

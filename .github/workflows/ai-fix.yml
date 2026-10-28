@@ -1,0 +1,23 @@
+name: AI fix requested
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  acknowledge:
+    if: github.event.label.name == 'ai-fix-requested'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Acknowledge the request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "AI fix requested. An automated contributor may pick this up and open a PR labelled \`hold\`. See AGENTS.md and SECURITY-AI.md for the rules it follows; a human must review and merge."
