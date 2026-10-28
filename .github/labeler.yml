@@ -1,0 +1,41 @@
+# Path-to-label rules for actions/labeler (v5 format). Labels must already exist
+# in the repository. A workflow that applies this file needs a human to add it
+# under .github/workflows/ (agents cannot push there).
+pipeline:
+  - changed-files:
+      - any-glob-to-any-file:
+          - scripts/**
+          - prompts/**
+          - run.sh
+          - watchdog.sh
+          - launchd/**
+
+site:
+  - changed-files:
+      - any-glob-to-any-file: site/**
+
+sources:
+  - changed-files:
+      - any-glob-to-any-file: editions/*/sources.yaml
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - '*.md'
+
+testing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
+          - site/tests/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: .github/workflows/**
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - uv.lock
+          - site/pnpm-lock.yaml

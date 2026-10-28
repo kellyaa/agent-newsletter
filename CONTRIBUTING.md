@@ -214,6 +214,8 @@ The slug is lowercase letters, digits and hyphens, and it is **permanent once li
 
 A PR labeled `hold` (or `on-hold` / `do-not-merge`) **must not be merged** until a human removes the label. This is used by the Hive agent framework to create hold-gated PRs that require human review before merging. Do not remove the label unless you are the designated reviewer and have reviewed the PR.
 
+How much review a change needs depends on what it touches: see [`docs/risk-tiers.md`](docs/risk-tiers.md). Rules for AI agents and LLM calls (secrets, untrusted feed content, forbidden paths) are in [`SECURITY-AI.md`](SECURITY-AI.md). `.github/labeler.yml` maps changed paths to labels for `actions/labeler`.
+
 ---
 
 ## Code style
