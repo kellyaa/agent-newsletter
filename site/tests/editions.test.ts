@@ -5,8 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   editionOf,
+  editionPath,
+  editionsDir,
   issuesFor,
   listEditions,
+  loadRegistry,
   parseEdition,
   readEditions,
   unknownContentEntries,
@@ -89,4 +92,65 @@ test("issuesFor filters entries by the first segment of their id", () => {
   const entries = [{ id: "agents/2026-06-01" }, { id: "sdlc/2026-06-01" }, { id: "agents/2026-06-02" }];
   assert.equal(editionOf(entries[1]), "sdlc");
   assert.deepEqual(issuesFor(entries, "agents").map((e) => e.id), ["agents/2026-06-01", "agents/2026-06-02"]);
+});
+
+test("parseEdition names the offending file when the YAML does not parse", () => {
+  assert.throws(
+    () => parseEdition("slug: [unclosed\n", "agents"),
+    /editions\/agents\/edition\.yaml: invalid YAML/,
+  );
+});
+
+test("parseEdition rejects a non-finite order and blank strings", () => {
+  const base = editionYaml({ slug: "agents" });
+  assert.throws(() => parseEdition(base.replace("order: 10", "order: .inf"), "agents"), /"order" must be a number/);
+  assert.throws(() => parseEdition(base.replace(/^name: .*$/m, 'name: "   "'), "agents"), /"name" must be a non-empty string/);
+});
+
+test("editionPath builds site-relative paths inside an edition", () => {
+  assert.equal(editionPath("agents"), "/agents/");
+  assert.equal(editionPath("agents", "issues/2026-06-01/"), "/agents/issues/2026-06-01/");
+});
+
+test("editionsDir honours EDITIONS_DIR and otherwise points at ../editions", () => {
+  const saved = process.env.EDITIONS_DIR;
+  try {
+    process.env.EDITIONS_DIR = "/somewhere/else";
+    assert.equal(editionsDir(), "/somewhere/else");
+    delete process.env.EDITIONS_DIR;
+    assert.equal(editionsDir(), join(process.cwd(), "..", "editions"));
+  } finally {
+    if (saved === undefined) delete process.env.EDITIONS_DIR;
+    else process.env.EDITIONS_DIR = saved;
+  }
+});
+
+test("loadRegistry lists every edition in `all` but hides drafts from `listed`", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "registry-"));
+  try {
+    for (const [slug, o] of [
+      ["agents", { slug: "agents", order: 10 }],
+      ["sdlc", { slug: "sdlc", order: 20, status: "draft" }],
+    ] as const) {
+      await mkdir(join(dir, slug));
+      await writeFile(join(dir, slug, "edition.yaml"), editionYaml(o));
+    }
+    const hidden = loadRegistry(dir, false);
+    assert.deepEqual(hidden.all.map((e) => e.slug), ["agents", "sdlc"]);
+    assert.deepEqual(hidden.listed.map((e) => e.slug), ["agents"]);
+    assert.deepEqual(loadRegistry(dir, true).listed.map((e) => e.slug), ["agents", "sdlc"]);
+
+    const saved = process.env.SHOW_DRAFTS;
+    try {
+      process.env.SHOW_DRAFTS = "1";
+      assert.deepEqual(loadRegistry(dir).listed.map((e) => e.slug), ["agents", "sdlc"]);
+      process.env.SHOW_DRAFTS = "0";
+      assert.deepEqual(loadRegistry(dir).listed.map((e) => e.slug), ["agents"]);
+    } finally {
+      if (saved === undefined) delete process.env.SHOW_DRAFTS;
+      else process.env.SHOW_DRAFTS = saved;
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
