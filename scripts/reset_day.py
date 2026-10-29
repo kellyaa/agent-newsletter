@@ -19,6 +19,7 @@ from pathlib import Path
 
 import edition
 from db import CONTENT_ROOT, connect, run_date
+from models import Status
 
 # Keep in sync with fetch.FETCH_DONE_KEY (not imported: fetch pulls in httpx etc.).
 FETCH_DONE_KEY = "fetch_completed_date"
@@ -46,9 +47,9 @@ def force_reset(conn, today: str) -> None:
     # published_date (stamped by publish) additionally catches multi-day pool
     # papers first seen on an earlier day that won a slot today (#326).
     conn.execute(
-        "UPDATE items SET status = 'candidate', score = NULL, tags = NULL, why = NULL, "
-        "published_date = NULL "
-        "WHERE status IN ('featured', 'appendix', 'published') "
+        f"UPDATE items SET status = '{Status.CANDIDATE}', score = NULL, tags = NULL, "
+        "why = NULL, published_date = NULL "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}', '{Status.PUBLISHED}') "
         "AND (first_seen_date = ? OR published_date = ?)",
         (today, today),
     )

@@ -184,12 +184,14 @@ def apply_published_to_live(featured_ids: list[str]) -> int:
     """
     if _LIVE_CONNECT is None or _LIVE_DB_PATH is None:
         raise RuntimeError("bind_db_to_sandbox must be called before apply_published_to_live")
+    from models import Status
+
     conn = _LIVE_CONNECT(_LIVE_DB_PATH)
     try:
         placeholders = ",".join("?" * len(featured_ids))
         cur = conn.execute(
-            f"UPDATE items SET status = 'published' "
-            f"WHERE status = 'candidate' AND id IN ({placeholders})",
+            f"UPDATE items SET status = '{Status.PUBLISHED}' "
+            f"WHERE status = '{Status.CANDIDATE}' AND id IN ({placeholders})",
             featured_ids,
         )
         conn.commit()

@@ -21,6 +21,7 @@ import edition
 import prompts
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, run_date
 from llm import call_llm
+from models import Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,20 +74,20 @@ WRITER_SCHEMA = {
 
 def load_today_items(conn, today: str):
     featured_rows = conn.execute(
-        """
+        f"""
         SELECT id, source, url, canonical_url, title, author, published_at, raw_text,
                score, tags, why, section
         FROM items
-        WHERE status = 'featured'
+        WHERE status = '{Status.FEATURED}'
         ORDER BY section, score DESC, id
         """
     ).fetchall()
 
     appendix_rows = conn.execute(
-        """
+        f"""
         SELECT id, source, url, canonical_url, title, section
         FROM items
-        WHERE status = 'appendix'
+        WHERE status = '{Status.APPENDIX}'
         ORDER BY section, id
         """
     ).fetchall()

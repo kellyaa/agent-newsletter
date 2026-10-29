@@ -20,7 +20,7 @@ import edition
 import prompts
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
 from llm import ContentFilterError, call_llm
-from models import RankDecision, ScoredItem
+from models import RankDecision, ScoredItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -261,19 +261,19 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
         for entry in items:
             score = entry["score"]
             if score >= rules["featured_min"] and featured_count < cap:
-                status = "featured"
+                status = Status.FEATURED
                 featured_count += 1
-            elif score >= rules["featured_min"] and section == "papers":
+            elif score >= rules["featured_min"] and section == Section.PAPERS:
                 # Cleared the bar but lost the cap → keep in the pool for
                 # tomorrow. The reader sees this paper at most once, in its
                 # featured slot on whichever day it eventually wins one.
-                status = "candidate"
+                status = Status.CANDIDATE
             elif score >= rules["appendix_min"]:
                 # Also covers news/blogs that cleared featured_min but lost
                 # the cap (appendix_min < featured_min, so they land here).
-                status = "appendix"
+                status = Status.APPENDIX
             else:
-                status = "dropped"
+                status = Status.DROPPED
             final[entry["id"]] = {
                 "status": status,
                 "score": score,
@@ -424,7 +424,7 @@ def main() -> int:
         placeholders = ",".join("?" * len(papers_competitors))
         bumped = conn.execute(
             f"UPDATE items SET times_competed = times_competed + 1 "
-            f"WHERE status = 'candidate' AND id IN ({placeholders})",
+            f"WHERE status = '{Status.CANDIDATE}' AND id IN ({placeholders})",
             papers_competitors,
         )
         conn.commit()

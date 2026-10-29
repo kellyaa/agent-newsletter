@@ -28,6 +28,7 @@ from db import (
     REPO_ROOT, canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
     url_id,
 )
+from models import Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -523,13 +524,13 @@ def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
         cur = conn.execute(
-            """
+            f"""
             INSERT INTO items (id, source, url, canonical_url, title, author,
                                published_at, fetched_at, raw_text, status,
                                section_override, keyword_gate_bypass,
                                recency_days_override,
                                first_seen_date, last_seen_date, appearances)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
             ON CONFLICT(id) DO UPDATE SET
                 last_seen_date = excluded.last_seen_date,
                 appearances = items.appearances + 1,
