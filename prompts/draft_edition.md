@@ -47,7 +47,7 @@ Propose real sources you are confident exist. Do not invent URLs: a feed you are
 - `rss`: `{id, name, url, keyword_gate_bypass, recency_days}`. Set `keyword_gate_bypass` true only for low-volume, hand-curated practitioner blogs where nearly every post is relevant. `recency_days` is null unless the blog posts rarely (then 90).
 - `arxiv`: `{id, name, query, max_results}`. `query` uses arXiv API syntax, e.g. `cat:cs.SE AND (abs:"LLM" OR abs:"agent")`.
 - `hn`: `{id, name, query, min_points}`. The query is free text, not boolean: one concept per query.
-- `reddit`: `{id, name, subreddit, min_score}`. `subreddit` is the bare name (`programming`, not `r/programming`). Use a high `min_score` (100+) for large, noisy subreddits.
+- `reddit`: `{id, name, subreddit, limit}`. `subreddit` is the bare name (`programming`, not `r/programming`). `limit` is how many of the day's top posts to take (the feed has no score); use 5-8 for large, noisy subreddits and 10 otherwise.
 
 `id` values are lowercase kebab-case and unique within a family.
 
