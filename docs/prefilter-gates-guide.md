@@ -1,0 +1,291 @@
+# Prefilter Gates: Mechanics and Tuning
+
+The **prefilter** stage is the first computational bottleneck in the pipeline. It processes ~500-1000 daily fetched items and filters them down to ~50-150 candidates that reach the ranker. Understanding how the gates work is essential for tuning an edition's keyword gates and optimizing cost.
+
+## Quick Reference
+
+The prefilter applies **three sequential gates** to each item:
+
+```
+fetched item (500-1000/day)
+    ↓ [Gate 1: Recency]  → age-gates old items
+    ↓ [Gate 2: Keyword]  → regex-gates items not matching reader interests
+    ↓ [Gate 3: Dedup]    → removes duplicates already featured/published
+    ↓
+candidate (50-150/day, sent to ranker)
+```
+
+---
+
+## Gate 1: Recency
+
+**Purpose:** Discard items older than the source's "freshness window"
+
+**How it works:**
+- Each source has a `recency_days` setting (default: 2 days)
+- If an item's `published_at` is older than `recency_days` ago, it's dropped as **`status='candidate'` but not sent to ranker**
+- Exception: items already in the candidate pool keep their score
+
+**Per-source override in `sources.yaml`:**
+```yaml
+rss:
+  - id: newsletter-slow-publishing
+    url: https://example.com/feed.xml
+    recency_days: 7  # Slower-publishing sources get a wider window
+```
+
+**Why:** Prevents stale items (yesterday's news from slow RSS feeds) from clogging the candidate pool.
+
+**Typical values:**
+- RSS blogs: 2-3 days (daily/weekly publishing)
+- HN/Reddit: 1 day (fast-moving)
+- arXiv: 2-3 days (papers older than 48h are typically republished)
+
+---
+
+## Gate 2: Keyword (The Critical Gate)
+
+**Purpose:** Filter to items matching the edition's core topics
+
+**How it works:**
+1. The edition's `keywords` list contains regexes (case-insensitive)
+2. Each regex is applied to item `title + raw_text` (first ~1500 chars of the item)
+3. If ANY regex matches, the item passes; otherwise it's dropped
+4. **Exception:** If a source has `keyword_gate_bypass: true`, all items from that source skip this gate
+
+**Examples:**
+
+```yaml
+# Edition definition (editions/my-tech/edition.yaml)
+keywords:
+  - '\bagent|agentic'
+  - '\bLLM|language model'
+  - '\btool use|function calling'
+```
+
+**Matching logic:**
+- `\b` = word boundary (prevents `magical` matching `agent`)
+- `|` = OR (this OR that)
+- Case-insensitive (so `Agent` and `agent` both match)
+
+### Tuning the Keyword Gate
+
+**Step 1: Baseline counts**
+```bash
+uv run scripts/check_edition.py my-tech
+```
+
+Output:
+```
+RSS:
+  - hn-ai: 45 fetched → 23 recency → 18 keyword → 4 section assignments
+  - simonwillison.net: 3 fetched → 3 recency → 2 keyword → 1 section
+```
+
+This shows: 45 items fetched from HN AI tag, 23 pass recency, 18 pass keyword gate.
+
+**Step 2: Analyze gaps**
+- If only 2/45 pass keyword gate → gate is too tight (adjust regex)
+- If all 45 pass → gate is too loose (add more specific patterns)
+- Typical target: 30-50% pass keyword gate (edits rare, signal strong)
+
+**Step 3: Adjust and re-test**
+```bash
+# Edit editions/my-tech/edition.yaml
+# Add or remove keyword patterns
+uv run scripts/check_edition.py my-tech  # Re-run
+```
+
+**Step 4: Deploy**
+```bash
+./run.sh --edition my-tech
+```
+
+### Common Mistakes
+
+**Too tight (false negatives):**
+```yaml
+keywords:
+  - '\bexactly-this-phrase'  # ✗ Misses variations
+```
+**Fix:** Use `|` for variations: `\b(exact phrase|similar pattern)`
+
+**Too loose (false positives):**
+```yaml
+keywords:
+  - '\bdata'  # ✗ Matches data science, data pipelines, completely unrelated
+```
+**Fix:** Use word boundaries and be specific: `\b(data agent|agentic data)\b`
+
+**Missing escapes:**
+```yaml
+keywords:
+  - 'c++ OR rust'  # ✗ Treats '+' and 'O' as regex chars (will fail)
+```
+**Fix:** Escape special chars: `\b(c\+\+|rust)\b`
+
+---
+
+## Gate 3: Dedup
+
+**Purpose:** Don't rank the same item twice
+
+**How it works:**
+1. URLs are canonicalized (handles URL variants):
+   - `https://example.com/article` = `https://example.com/article/`
+   - `https://arxiv.org/pdf/2206.05802` = `https://arxiv.org/abs/2206.05802`
+   - Query params are stripped
+2. Duplicates are identified by canonical URL in `state.db`
+3. If an item is already `featured`, `appendix`, or `published`, new appearances skip the ranker
+4. The `appearances` counter increments (useful for "consensus" ranking)
+
+**Example:**
+- Day 1: arXiv paper appears in HN Algolia → featured (score: 8)
+- Day 2: Same paper shared on r/MachineLearning → candidate with `appearances=2`
+- The paper stays featured, not re-ranked
+
+**Why:** Prevents the same item from fighting for slots every day.
+
+---
+
+## Debug Artifacts
+
+Run a full pipeline to generate debug JSON:
+
+```bash
+./run.sh --edition my-tech --force  # Re-run today's pipeline
+```
+
+After prefilter completes:
+```bash
+cat logs/my-tech/run-$(date +%Y-%m-%d).log | grep "prefilter"
+# Output: prefilter: 123 fetched → 89 recency → 45 keyword → 23 dedup → 23 candidates
+```
+
+**JSON artifacts** (if generated by check_edition.py):
+- `candidates.json` — items emitted by prefilter (JSON array of candidate objects)
+- `logs/<slug>/` — per-stage logs with gate counts
+
+---
+
+## Per-Source Gate Bypass
+
+**Use case:** A hand-curated blog with near-zero false positives (e.g., Simon Willison's blog, internal engineering posts)
+
+```yaml
+rss:
+  - id: simon-willison
+    url: https://simonwillison.net/feed/
+    keyword_gate_bypass: true  # Skip keyword gate; all items pass to ranking
+    weight: 1.0
+```
+
+**When to use:**
+- ✓ High-signal, low-volume, hand-written sources
+- ✗ General-audience sources (too noisy)
+- ✗ Large aggregators like Reddit (defeats the purpose)
+
+---
+
+## How Prefilter Affects Cost & Latency
+
+**Cost impact:**
+- Each item that passes prefilter costs ranker tokens (~$0.001-0.01 per item)
+- A tight keyword gate → fewer candidates → cheaper ranker pass
+- A loose gate → more candidates → more LLM calls
+
+**Example:**
+- Tight gate: 20 candidates → ranker processes 20 → $0.10-0.20
+- Loose gate: 150 candidates → ranker processes 150 → $0.75-1.50
+
+**Latency impact:**
+- Prefilter itself is fast (<1 sec for 1000 items)
+- But a loose gate → more items to rank → longer ranker stage (2-5 min per section)
+
+---
+
+## Prefilter in Production
+
+**Daily operation:**
+1. `fetch.py` collects ~500-1000 items
+2. `prefilter.py` applies gates, outputs candidates.json
+3. `rank.py` reads candidates.json, LLM-scores items
+4. Items scoring >= `featured_min` are featured; others go to appendix
+
+**What can go wrong:**
+- Keyword gate breaks (invalid regex) → all items dropped → no candidates → ranker has nothing → error
+- Gate too tight → 0 candidates → ranker sees empty list → issue has no featured items
+- Gate too loose → 1000 candidates → ranker LLM call times out
+
+**Debugging:**
+```bash
+# If an issue has only 1-2 featured items, prefilter may be too tight
+cat logs/<slug>/run-$(date +%Y-%m-%d).log | grep "prefilter"
+
+# If ranking stage times out, prefilter may be too loose
+cat logs/<slug>/run-$(date +%Y-%m-%d).log | grep "rank"
+```
+
+---
+
+## Common Tuning Scenarios
+
+### Scenario 1: First Edition (Too Much Noise)
+
+**Problem:** Keyword gate not strict enough; appendix has 30 items
+
+**Solution:**
+```yaml
+# Start with broad keywords
+keywords:
+  - '\bagent'
+  - '\bLLM'
+
+# Run check_edition.py; if 80% pass keyword gate, tighten:
+keywords:
+  - '\bagent'
+  - '\bLLM.*production'  # Add context
+  - '\btool use'
+```
+
+### Scenario 2: Specialized Topic (Too Few Items)
+
+**Problem:** Keyword gate is too tight; only 5 candidates/day
+
+**Solution:**
+```yaml
+# Loosen the gate
+keywords:
+  - '\bagent|agentic'
+  - '\bLLM|language model|GPT|Claude'
+  - '\bchain of thought|reasoning'
+  - '\bmulti-step|planning'
+```
+
+### Scenario 3: Multiple Editions, Cost Concerns
+
+**Problem:** Three editions running means high daily LLM cost
+
+**Solution:**
+```yaml
+# Tighten keyword gates across all editions
+keywords:
+  - '\bagent'  # Only this core term
+  - '\bprompt injection'  # Only high-signal variations
+  
+# Reduce caps
+sections:
+  papers: { featured_min: 8, cap: 3 }  # Stricter scoring, fewer items
+  news: { featured_min: 7, cap: 4 }
+  blogs: { featured_min: 7, cap: 4 }
+```
+
+---
+
+## See Also
+
+- `docs/edition-yaml-reference.md` — complete edition config spec
+- `docs/prefilter-gates-guide.md` — (you are here)
+- `scripts/prefilter.py` — source code (gate implementations)
+- `CONTRIBUTING.md` — how to add/remove sources
+- `README.md` — troubleshooting pipeline stalls
