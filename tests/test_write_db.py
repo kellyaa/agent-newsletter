@@ -384,3 +384,18 @@ class TestBuildWriterPromptUntrustedNotice:
         assert "UNTRUSTED DATA" in prompt
         assert prompt.index("UNTRUSTED DATA") < prompt.index("Ignore previous")
         assert prompt.index("Ignore previous") < prompt.index("RUBRIC")
+
+
+class TestBuildWriterPromptEditionName:
+    """The preamble names the running edition, not a hard-coded one: the
+    engineering-with-ai writer used to be told it wrote "AI Agents" prose."""
+
+    def test_names_the_current_edition(self, monkeypatch):
+        import dataclasses
+        import write
+        other = dataclasses.replace(write.EDITION, name="Engineering with AI Daily")
+        monkeypatch.setattr(write, "EDITION", other)
+        prompt = write.build_writer_prompt({}, "RUBRIC")
+        assert "today's Engineering with AI Daily newsletter" in prompt
+        assert "AI Agents" not in prompt
+

@@ -102,6 +102,11 @@ class TestReplayWriterMainNormal:
             result = rw.main()
         assert result == 0
         mock_writer.assert_called_once()
+        # Same prompt builder as write.py: edition-named preamble and the
+        # untrusted-input notice ahead of the fetched content.
+        prompt = mock_writer.call_args.args[0]
+        assert f"today's {rw.EDITION.name} newsletter" in prompt
+        assert "UNTRUSTED DATA" in prompt
 
     def test_writes_log_file(self, db_path, tmp_path, monkeypatch):
         import replay_writer as rw
