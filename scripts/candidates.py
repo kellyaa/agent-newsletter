@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from db import connect
+from models import Status
 
 log = logging.getLogger(__name__)
 
@@ -114,11 +115,11 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
     }
 
     rows = conn.execute(
-        """
+        f"""
         SELECT id, source, url, title, author, published_at, raw_text,
                section, section_override, score, tags, why
         FROM items
-        WHERE status = 'candidate'
+        WHERE status = '{Status.CANDIDATE}'
         """
     ).fetchall()
 

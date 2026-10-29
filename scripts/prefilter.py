@@ -20,7 +20,7 @@ from db import (
     CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, run_date,
     set_meta,
 )
-from models import CandidateItem, PrefilterItem
+from models import CandidateItem, PrefilterItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -102,14 +102,14 @@ PAPER_POOL_MAX_AGE_DAYS = 7
 # 'expired_unjudged'. Expiring it at all keeps the pool (and the per-run work in
 # candidates._load) bounded when daily inflow exceeds the prerank cap (issue #289).
 # Parameters: (max_competes, now, max_age_days).
-PAPER_AGE_OUT_SQL = """
+PAPER_AGE_OUT_SQL = f"""
     UPDATE items
     SET status = CASE
-        WHEN times_competed = 0 AND score IS NULL THEN 'expired_unjudged'
-        ELSE 'dropped'
+        WHEN times_competed = 0 AND score IS NULL THEN '{Status.EXPIRED_UNJUDGED}'
+        ELSE '{Status.DROPPED}'
     END
-    WHERE status = 'candidate'
-      AND section = 'papers'
+    WHERE status = '{Status.CANDIDATE}'
+      AND section = '{Section.PAPERS}'
       AND (times_competed >= ?
            OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
 """
@@ -198,7 +198,8 @@ def _maybe_invalidate_papers_scores(conn) -> int:
         return 0
     cur = conn.execute(
         "UPDATE items SET score = NULL "
-        "WHERE status = 'candidate' AND section = 'papers' AND score IS NOT NULL"
+        f"WHERE status = '{Status.CANDIDATE}' AND section = '{Section.PAPERS}' "
+        "AND score IS NOT NULL"
     )
     invalidated = cur.rowcount or 0
     set_meta(conn, RUBRIC_HASH_KEY, current)  # commits, along with the UPDATE above
@@ -246,7 +247,7 @@ def main() -> int:
     # SQLite's julianday('now')) so tests that freeze the Python clock also
     # freeze this comparison; production `now` is real UTC time.
     unjudged_before = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status = 'expired_unjudged'"
+        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
     ).fetchone()[0]
     aged = conn.execute(
         PAPER_AGE_OUT_SQL,
@@ -260,7 +261,7 @@ def main() -> int:
     # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
     # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
     expired_unjudged_now = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE status = 'expired_unjudged'"
+        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
     ).fetchone()[0] - unjudged_before
     conn.commit()
     if aged_out:
@@ -272,20 +273,20 @@ def main() -> int:
 
     unjudged = conn.execute(
         "SELECT COUNT(*) FROM items "
-        "WHERE section = 'papers' AND score IS NULL "
-        "AND status IN ('dropped', 'expired_unjudged')"
+        f"WHERE section = '{Section.PAPERS}' AND score IS NULL "
+        f"AND status IN ('{Status.DROPPED}', '{Status.EXPIRED_UNJUDGED}')"
     ).fetchone()[0]
     log.info("papers expired without ever being scored (cumulative): %d", unjudged)
 
     # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
     rows = conn.execute(
-        """
+        f"""
         SELECT id, source, url, canonical_url, title, author, published_at,
                fetched_at, raw_text, status, appearances, section_override,
                keyword_gate_bypass, recency_days_override
         FROM items
-        WHERE status = 'new'
-           OR (status = 'appendix' AND appearances < ?)
+        WHERE status = '{Status.NEW}'
+           OR (status = '{Status.APPENDIX}' AND appearances < ?)
         """,
         (APPENDIX_MAX_APPEARANCES,),
     ).fetchall()
@@ -315,7 +316,7 @@ def main() -> int:
         for it in after_dedup:
             it["section"] = assign_section(it["source"], it.get("section_override"))
         conn.executemany(
-            "UPDATE items SET status = 'candidate', section = ? WHERE id = ?",
+            f"UPDATE items SET status = '{Status.CANDIDATE}', section = ? WHERE id = ?",
             [(it["section"], it["id"]) for it in after_dedup],
         )
         conn.commit()
@@ -323,12 +324,12 @@ def main() -> int:
     # Demote new-but-rejected to 'dropped' so they don't re-enter the pipeline.
     rejected_ids = [
         it["id"] for it in items
-        if it["status"] == "new" and it["id"] not in set(candidate_ids)
+        if it["status"] == Status.NEW and it["id"] not in set(candidate_ids)
     ]
     if rejected_ids:
         placeholders = ",".join("?" * len(rejected_ids))
         conn.execute(
-            f"UPDATE items SET status = 'dropped' WHERE id IN ({placeholders})",
+            f"UPDATE items SET status = '{Status.DROPPED}' WHERE id IN ({placeholders})",
             rejected_ids,
         )
         conn.commit()
