@@ -82,9 +82,9 @@ def _proposal():
                 {"id": "hn-bad", "name": "x", "query": " ", "min_points": 0},
             ],
             "reddit": [
-                {"id": "r-ok", "name": "r/programming", "subreddit": "r/programming", "min_score": 200},
-                {"id": "r-dead", "name": "r/gone", "subreddit": "gone", "min_score": 100},
-                {"id": "r-bad", "name": "bad", "subreddit": "not a sub!", "min_score": 100},
+                {"id": "r-ok", "name": "r/programming", "subreddit": "r/programming", "limit": 5},
+                {"id": "r-dead", "name": "r/gone", "subreddit": "gone", "limit": 10},
+                {"id": "r-bad", "name": "bad", "subreddit": "not a sub!", "limit": 10},
             ],
         },
     }
@@ -169,7 +169,7 @@ def test_dead_feeds_queries_and_subreddits_are_commented_out_not_silently_droppe
     assert [e["id"] for e in live["hn"]] == ["hn-ai"]
     assert [e["id"] for e in live["reddit"]] == ["r-ok"]
     assert live["reddit"][0]["url"] == "https://www.reddit.com/r/programming/top.json?t=day"
-    assert live["reddit"][0]["min_score"] == 200
+    assert live["reddit"][0]["limit"] == 5 and "min_score" not in live["reddit"][0]
     # the failures are still visible, annotated with why
     assert "# DROPPED (fetch failed: HTTPStatusError" in text and "dead.test/feed" in text
     assert "# DROPPED (query returned no results)" in text
@@ -381,14 +381,14 @@ def test_source_defaults_are_sanitised(net):
         {"rss": [{"url": "https://a.test/f", "keyword_gate_bypass": "yes", "recency_days": -5}],
          "arxiv": [{"query": "cat:cs.SE", "max_results": True}],
          "hn": [{"query": "x", "min_points": "lots"}],
-         "reddit": [{"subreddit": "python", "min_score": None}]},
+         "reddit": [{"subreddit": "python", "limit": None}]},
         [], net, sleep=lambda s: None,
     )
     assert dropped == []
     assert out["rss"] == [{"id": "a-test", "name": "https://a.test/f", "url": "https://a.test/f"}]
     assert out["arxiv"][0]["max_results"] == 30
     assert out["hn"][0]["min_points"] == 40 and out["hn"][0]["hours_back"] == 48
-    assert out["reddit"][0]["min_score"] == 100 and out["reddit"][0]["id"] == "reddit-python"
+    assert out["reddit"][0]["limit"] == 10 and out["reddit"][0]["id"] == "reddit-python"
 
 
 # ------------------------------------------------------------- --no-llm

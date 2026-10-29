@@ -124,10 +124,10 @@ DRAFT_SCHEMA: dict[str, Any] = {
                 }},
                 "reddit": {"type": "array", "items": {
                     "type": "object", "additionalProperties": False,
-                    "required": ["id", "name", "subreddit", "min_score"],
+                    "required": ["id", "name", "subreddit", "limit"],
                     "properties": {
                         "id": _str_prop(), "name": _str_prop(), "subreddit": _str_prop(),
-                        "min_score": {"type": "integer"},
+                        "limit": {"type": "integer"},
                     },
                 }},
             },
@@ -346,12 +346,12 @@ def validate_sources(
             dropped.append(Dropped("reddit", sub or "(empty)", "not a valid subreddit name"))
             continue
         url = f"https://www.reddit.com/r/{sub}/top.json?t=day"
-        ms = e.get("min_score")
+        lim = e.get("limit")
         entry = {
             "id": _unique_id(str(e.get("id") or f"reddit-{sub}"), "reddit", seen),
             "name": str(e.get("name") or f"r/{sub}"),
             "url": url,
-            "min_score": ms if isinstance(ms, int) and not isinstance(ms, bool) and ms > 0 else 100,
+            "limit": lim if isinstance(lim, int) and not isinstance(lim, bool) and lim > 0 else 10,
         }
         reason = check_subreddit(client, url)
         if reason:
