@@ -18,10 +18,9 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import edition
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, load_stage_stats, run_date
+from db import CONTENT_ROOT, connect, init_db, load_stage_stats, run_date
 from llm import usage_totals
 from models import Status
 

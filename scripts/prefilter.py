@@ -11,7 +11,6 @@ import logging
 import re
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
 import edition
@@ -20,7 +19,7 @@ from db import (
     CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, run_date,
     set_meta,
 )
-from models import CandidateItem, PrefilterItem, Section, Status
+from models import PrefilterItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,

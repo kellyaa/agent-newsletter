@@ -14,7 +14,6 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -25,7 +24,7 @@ import yaml
 
 import edition
 from db import (
-    REPO_ROOT, canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
+    canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
     url_id,
 )
 from models import Status
