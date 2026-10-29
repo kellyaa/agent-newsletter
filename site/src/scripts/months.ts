@@ -53,3 +53,47 @@ export function buildMonthList(buckets: MonthBucket[], editionSlug?: string): Mo
     href: b.key === latestKey ? `${prefix}/` : `${prefix}/months/${b.key}/`,
   }));
 }
+
+export interface ArchiveDay {
+  date: string;
+  /** e.g. "Mon 15" */
+  label: string;
+  href: string;
+  current: boolean;
+}
+
+export interface ArchiveMonth {
+  key: string;
+  label: string;
+  /** True for the month containing the current issue. */
+  open: boolean;
+  days: ArchiveDay[];
+}
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function dayLabel(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dow = DAY_NAMES[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()];
+  return `${dow} ${d}`;
+}
+
+/**
+ * Archive tree for the issue-page sidebar: months newest first, each with its
+ * days newest first. Hrefs are `/<slug>/issues/<date>/` (no BASE_URL; callers
+ * prefix it). `currentDate` marks the current day and opens its month.
+ */
+export function buildArchive(buckets: MonthBucket[], editionSlug: string, currentDate: string): ArchiveMonth[] {
+  const currentKey = monthKey(currentDate);
+  return buckets.map((b) => ({
+    key: b.key,
+    label: monthLabel(b.key),
+    open: b.key === currentKey,
+    days: b.issues.map((i) => ({
+      date: i.data.date,
+      label: dayLabel(i.data.date),
+      href: `/${editionSlug}/issues/${i.data.date}/`,
+      current: i.data.date === currentDate,
+    })),
+  }));
+}

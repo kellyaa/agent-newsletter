@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMonthList, groupByMonth } from "../src/scripts/months.ts";
+import { buildArchive, buildMonthList, groupByMonth } from "../src/scripts/months.ts";
 
 function issue(date: string, id = date) {
   return { id, data: { date } };
@@ -61,4 +61,30 @@ test("buildMonthList prefixes hrefs with the edition slug when given one", () =>
     { key: "2026-03", label: "Mar 2026", count: 1, href: "/sdlc/" },
     { key: "2026-01", label: "Jan 2026", count: 1, href: "/sdlc/months/2026-01/" },
   ]);
+});
+
+test("buildArchive lists days newest first, opens and marks only the current issue's month", () => {
+  const buckets = groupByMonth([
+    issue("2026-01-15"),
+    issue("2026-02-03"),
+    issue("2026-02-25"),
+  ]);
+
+  const archive = buildArchive(buckets, "agents", "2026-01-15");
+
+  assert.deepEqual(
+    archive.map(({ key, label, open }) => ({ key, label, open })),
+    [
+      { key: "2026-02", label: "Feb 2026", open: false },
+      { key: "2026-01", label: "Jan 2026", open: true },
+    ],
+  );
+  assert.deepEqual(
+    archive[0].days.map(({ date, label, href, current }) => ({ date, label, href, current })),
+    [
+      { date: "2026-02-25", label: "Wed 25", href: "/agents/issues/2026-02-25/", current: false },
+      { date: "2026-02-03", label: "Tue 3", href: "/agents/issues/2026-02-03/", current: false },
+    ],
+  );
+  assert.deepEqual(archive[1].days.map((d) => d.current), [true]);
 });

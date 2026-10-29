@@ -1,0 +1,34 @@
+---
+import type { ArchiveMonth } from "../scripts/months";
+
+interface Props {
+  months: ArchiveMonth[];
+}
+
+const { months } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<aside class="archive-nav" aria-label="Issue archive">
+  <h2 class="archive-nav__heading">Archive</h2>
+  {months.map((m) => (
+    <details class="archive-nav__month" open={m.open}>
+      <summary class="archive-nav__summary">
+        <span class="archive-nav__label">{m.label}</span>
+        <span class="archive-nav__count">{m.days.length}</span>
+      </summary>
+      <ol class="archive-nav__days">
+        {m.days.map((d) => (
+          <li>
+            <a
+              href={`${base}${d.href}`}
+              class={`archive-nav__day${d.current ? " archive-nav__day--current" : ""}`}
+              aria-current={d.current ? "page" : undefined}
+            >
+              <time datetime={d.date}>{d.label}</time>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </details>
+  ))}
+</aside>

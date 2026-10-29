@@ -131,6 +131,18 @@ img, svg { display: block; max-width: 100%; }
   color: var(--fg-subtle);
   flex: 1;
 }
+.site-header__home-row {
+  margin-bottom: var(--s-3);
+}
+.site-header__home {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-subtle);
+  text-decoration: none;
+}
+.site-header__home:hover {
+  color: var(--fg);
+}
 .site-header__search {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -641,4 +653,77 @@ code {
   color: var(--fg-subtle);
   padding: var(--s-7) 0;
   text-align: center;
+}
+
+/* Issue-page archive sidebar: months as native <details> groups (no JS). */
+.archive-nav {
+  position: sticky;
+  top: var(--s-5);
+  max-height: calc(100vh - var(--s-7));
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.archive-nav__heading {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-subtle);
+  margin-bottom: var(--s-3);
+}
+.archive-nav__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.archive-nav__summary:hover,
+.archive-nav__summary:focus-visible {
+  color: var(--fg);
+  background: var(--bg-elevated);
+}
+.archive-nav__month[open] > .archive-nav__summary {
+  color: var(--fg);
+  font-weight: 600;
+}
+.archive-nav__count {
+  color: var(--fg-subtle);
+  font-weight: 400;
+}
+.archive-nav__days {
+  list-style: none;
+  margin: 0 0 var(--s-2);
+  padding: 0 0 0 var(--s-3);
+}
+.archive-nav__day {
+  display: block;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+.archive-nav__day:hover {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  text-decoration: none;
+}
+.archive-nav__day--current,
+.archive-nav__day--current:hover {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  font-weight: 600;
+}
+@media (max-width: 767px) {
+  .archive-nav {
+    position: static;
+    max-height: none;
+  }
+  .archive-nav__heading { display: none; }
 }
