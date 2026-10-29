@@ -13,8 +13,11 @@ DOC = (REPO_ROOT / "docs" / "metrics" / "README.md").read_text()
 
 def _columns(table: str) -> set[str]:
     conn = sqlite3.connect(":memory:")
-    conn.executescript(db.SCHEMA)
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    try:
+        conn.executescript(db.SCHEMA)
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    finally:
+        conn.close()
 
 
 def test_documented_runs_columns_exist():
