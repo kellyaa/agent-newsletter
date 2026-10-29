@@ -31,8 +31,8 @@ def test_lints_clean_with_no_todo_placeholders_left():
     assert result.warnings == []
 
 
-def test_ships_as_a_draft_that_runs_after_agents(ed):
-    assert ed.status == "draft"
+def test_is_live_and_runs_after_agents(ed):
+    assert ed.status == "live"
     assert ed.order == 20 > edition.load("agents").order
     assert ed.name == "Engineering with AI Daily"
 
