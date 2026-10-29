@@ -33,6 +33,7 @@ from write import (  # noqa: E402
     PROMPT_PATH,
     RAW_TEXT_MAX,
     build_writer_input,
+    build_writer_prompt,
     find_previous_newsletter,
     invoke_writer,
 )
@@ -171,12 +172,7 @@ def main() -> int:
     payload = build_writer_input(date, featured, appendix_by_section, metadata, prev)
 
     rubric = prompts.render("write", EDITION, template_path=PROMPT_PATH)
-    prompt = (
-        "You are writing today's AI Agents newsletter prose. The input JSON "
-        "is below; the rubric and output schema follow.\n\n"
-        f"## Input\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n\n"
-        f"---\n\n{rubric}"
-    )
+    prompt = build_writer_prompt(payload, rubric)
 
     writer_output = invoke_writer(prompt)
 

@@ -169,7 +169,7 @@ def build_writer_input(date: str, featured, appendix_by_section, metadata, prev)
 def build_writer_prompt(payload: dict, rubric: str) -> str:
     """Full writer prompt: untrusted-input notice, input JSON, then the rubric."""
     return (
-        "You are writing today's AI Agents newsletter prose. The input JSON "
+        f"You are writing today's {EDITION.name} newsletter prose. The input JSON "
         "is below; the rubric and output schema follow.\n\n"
         f"{prompts.UNTRUSTED_INPUT_NOTICE}\n\n"
         f"## Input\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n\n"
