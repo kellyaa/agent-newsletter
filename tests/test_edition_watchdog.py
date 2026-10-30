@@ -49,6 +49,7 @@ def repo(tmp_path):
     (r / "scripts").mkdir(parents=True)
     shutil.copy2(REAL / "scripts" / "watchdog.sh", r / "scripts" / "watchdog.sh")
     shutil.copy2(REAL / "scripts" / "edition.py", r / "scripts" / "edition.py")
+    shutil.copy2(REAL / "scripts" / "models.py", r / "scripts" / "models.py")  # edition.py imports it
     (r / "run.sh").write_text(FAKE_RUN)
     for slug, status, order in (("agents", "live", 10), ("beta", "draft", 20), ("gamma", "paused", 30)):
         (r / "editions" / slug).mkdir(parents=True)

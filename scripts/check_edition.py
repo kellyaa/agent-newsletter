@@ -44,7 +44,7 @@ REQUIRED_KEYS = {
     "html": {"id", "url"},
     "github_releases": {"owner", "repo"},
 }
-SECTIONS = ("papers", "news", "blogs")
+SECTIONS = edition_mod.SECTION_NAMES
 _TODO = re.compile(r"\bTODO\b")
 _UNFILLED_SLOT = re.compile(r"\{\{[a-z][a-z0-9_-]*\}\}")
 

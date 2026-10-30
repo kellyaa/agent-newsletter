@@ -26,6 +26,8 @@ from typing import Any
 
 import yaml
 
+from models import Section
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EDITIONS_DIR = REPO_ROOT / "editions"
 # Rendered prompts and other per-edition debug output go under LOGS_ROOT/<slug>/.
@@ -33,7 +35,8 @@ EDITIONS_DIR = REPO_ROOT / "editions"
 LOGS_ROOT = REPO_ROOT / "logs"
 
 STATUSES = ("draft", "live", "paused")
-SECTION_NAMES = ("papers", "news", "blogs")
+# Plain strings (not Section members) so error messages print "papers", not "<Section.PAPERS ...>".
+SECTION_NAMES = tuple(s.value for s in Section)
 
 _SLUG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 _TAG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
