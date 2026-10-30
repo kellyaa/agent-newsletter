@@ -768,6 +768,16 @@ class TestFetchGithubReleases:
         assert items[0].raw_text == "Release notes here"
         assert items[0].author == "openai"
 
+    @pytest.mark.parametrize("owner,repo", [
+        ("a/b", "r"), ("o", "r?per_page=100"), ("o", ".."), ("..", "r"),
+        ("-x", "r"), ("o", ""), (None, "r"), ("o", 5),
+    ])
+    def test_invalid_owner_repo_skipped_without_subprocess(self, owner, repo):
+        with patch("subprocess.run") as run:
+            items = list(fetch_github_releases([{"owner": owner, "repo": repo}]))
+        assert items == []
+        run.assert_not_called()
+
     def test_release_missing_url_skipped(self):
         releases = [
             {"html_url": None, "tag_name": "v0.9", "body": ""},
