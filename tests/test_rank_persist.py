@@ -43,7 +43,7 @@ class TestPersistWrites:
         decisions = {
             "item-1": {"status": "featured", "score": 8, "tags": [], "why": "good", "section": "papers"},
         }
-        counts = persist(db, decisions)
+        persist(db, decisions)
         row = db.execute("SELECT status FROM items WHERE id='item-1'").fetchone()
         assert row["status"] == "featured"
 

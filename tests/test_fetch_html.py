@@ -425,8 +425,8 @@ def test_normalize_date_none_like_falsy_returns_none():
     import fetch
 
     # fetch_html always passes a str, but the guard is `if not raw`, so
-    # confirm the falsy check itself (not just the empty-string literal).
-    assert fetch._normalize_date("   " and "") is None
+    # confirm that whitespace-only input (truthy, but unparseable) is also None.
+    assert fetch._normalize_date("   ") is None
 
 
 def test_normalize_date_non_iso_human_string_uses_dateutil_fallback():
