@@ -74,9 +74,10 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(rank_mod, "connect", connect)
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
     # Real load_candidates_from_db() is used (not monkeypatched); only its
-    # connection factory and clock are pointed at the test DB / frozen time.
+    # connection factory is pointed at the test DB. prefilter.main() takes
+    # its clock as an argument (``main(now=FROZEN)``); rank.main() does not
+    # yet, so candidates' clock is still frozen by patching.
     monkeypatch.setattr(candidates_mod, "connect", connect)
-    monkeypatch.setattr(pf_mod, "datetime", _frozen_datetime())
     monkeypatch.setattr(candidates_mod, "datetime", _frozen_datetime())
     # The run date (stage stats, last_seen_date) comes from RUN_DATE, the
     # same contract run_edition.sh uses; the clock above only drives recency.
@@ -113,7 +114,7 @@ def test_pool_over_cap_does_not_mark_unscored_stale_papers_dropped(wired):
     conn.commit()
     conn.close()
 
-    assert pf_mod.main() == 0
+    assert pf_mod.main(now=FROZEN) == 0
 
     # #297: prefilter staged this run's counters for publish to copy onto `runs`.
     conn = db_mod.connect(wired)
@@ -162,7 +163,7 @@ def test_fresh_unscored_paper_stays_in_pool(wired):
     conn.commit()
     conn.close()
 
-    pf_mod.main()
+    pf_mod.main(now=FROZEN)
 
     conn = db_mod.connect(wired)
     row = conn.execute("SELECT status FROM items WHERE id='fresh-unscored'").fetchone()
@@ -181,7 +182,7 @@ def test_stale_paper_that_has_competed_still_ages_out(wired):
     conn.commit()
     conn.close()
 
-    pf_mod.main()
+    pf_mod.main(now=FROZEN)
 
     conn = db_mod.connect(wired)
     row = conn.execute("SELECT status FROM items WHERE id='judged'").fetchone()
@@ -204,7 +205,7 @@ def test_prerank_cut_and_expired_counts_are_logged_and_staged(wired, caplog):
     conn.close()
 
     with caplog.at_level(logging.INFO):
-        assert pf_mod.main() == 0
+        assert pf_mod.main(now=FROZEN) == 0
 
     text = caplog.text
     assert "papers age-out this run: expired_unjudged=1 dropped=0" in text
@@ -222,7 +223,7 @@ def test_counts_are_logged_even_when_zero(wired, caplog):
     import prefilter as pf_mod
 
     with caplog.at_level(logging.INFO):
-        assert pf_mod.main() == 0
+        assert pf_mod.main(now=FROZEN) == 0
 
     assert "papers age-out this run: expired_unjudged=0 dropped=0" in caplog.text
     assert "papers pre-rank cap cut this run: 0" in caplog.text

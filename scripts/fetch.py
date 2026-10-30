@@ -504,8 +504,14 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
 
 # ---------- Persistence ----------
 
-def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
+def upsert_items(
+    conn, items: Iterable[Item], now: datetime | None = None
+) -> tuple[int, int]:
     """Dedup/insert items into state.db.
+
+    ``now`` stamps ``fetched_at`` on new rows; it defaults to the current UTC
+    time. Pass a fixed instant from tests or backfills instead of patching
+    ``datetime``.
 
     Rejects items whose URL scheme isn't http(s) — javascript:, data:,
     file:, etc. — here, at the single choke point every source adapter
@@ -515,7 +521,7 @@ def upsert_items(conn, items: Iterable[Item]) -> tuple[int, int]:
     """
     seen, inserted = 0, 0
     today = run_date()
-    fetched_at = datetime.now(timezone.utc).isoformat()
+    fetched_at = (now or datetime.now(timezone.utc)).isoformat()
     for it in items:
         seen += 1
         if not is_allowed_url(it.url):
