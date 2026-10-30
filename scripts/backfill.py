@@ -7,8 +7,9 @@ Usage:
 What it does, end-to-end:
   1. Finds the last `newsletter(<slug>): <date> daily run` commit (EDITION)
      dated < --date and extracts the edition's state.db into a sandbox under /tmp/backfill-<date>/.
-  2. Re-binds db.connect/db.init_db to the sandbox so the real state.db is
-     never touched.
+  2. Opens the sandbox DB by explicit path and threads that connection
+     through every stage, so the real state.db is never touched. Nothing is
+     monkey-patched: the db module's connect/init_db/DB_PATH stay as they are.
   3. Re-applies prefilter's age-out rule using --date as the synthetic 'now'
      (julianday('now') would otherwise overshoot by however many days are
      between the snapshot and --date).
@@ -141,51 +142,22 @@ def setup_sandbox(target_date: str) -> Path:
     return sandbox  # pragma: no cover  (loop always returns or raises)
 
 
-# Keep references to the unpatched connect/init_db so --apply-published can
-# reach the real state.db after the sandbox-bound run is done.
-_LIVE_CONNECT = None
-_LIVE_DB_PATH = None
-
-
-def bind_db_to_sandbox(sandbox_db: Path) -> None:
-    """Patch db.connect/init_db so all callers land on the sandbox.
-
-    Must run BEFORE rank/write modules are imported, because their
-    `from db import connect, init_db` captures the function references at
-    import time. Patching db_mod.connect first means those imports pick up
-    the patched function.
-    """
-    global _LIVE_CONNECT, _LIVE_DB_PATH
-    import db as db_mod
-
-    _LIVE_CONNECT = db_mod.connect
-    _LIVE_DB_PATH = db_mod.DB_PATH
-    orig_init_db = db_mod.init_db
-
-    def sandbox_connect(db_path=None):
-        return _LIVE_CONNECT(db_path or sandbox_db)
-
-    def sandbox_init_db(db_path=None):
-        return orig_init_db(db_path or sandbox_db)
-
-    db_mod.DB_PATH = sandbox_db
-    db_mod.connect = sandbox_connect
-    db_mod.init_db = sandbox_init_db
-
-
-def apply_published_to_live(featured_ids: list[str]) -> int:
+def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None) -> int:
     """Promote the backfill's featured ids to status='published' in the LIVE
     state.db. Without this step, those ids stay 'candidate' in the live pool
     and would compete (and could re-feature) on the next normal run.
 
+    ``live_db`` defaults to the edition's real state.db (``db.DB_PATH``). The
+    sandbox is never consulted here: the backfill run itself only ever holds a
+    connection to the sandbox, opened by explicit path in main().
+
     Idempotent and gated on status='candidate' so a re-run, or a row that's
     already been promoted by some other path, is left alone.
     """
-    if _LIVE_CONNECT is None or _LIVE_DB_PATH is None:
-        raise RuntimeError("bind_db_to_sandbox must be called before apply_published_to_live")
+    import db as db_mod
     from models import Status
 
-    conn = _LIVE_CONNECT(_LIVE_DB_PATH)
+    conn = db_mod.connect(live_db or db_mod.DB_PATH)
     try:
         placeholders = ",".join("?" * len(featured_ids))
         cur = conn.execute(
@@ -352,16 +324,17 @@ def main() -> int:
         log.error("--date must be YYYY-MM-DD, got %r", args.date)
         return 2
 
-    sandbox = setup_sandbox(args.date)
-    bind_db_to_sandbox(sandbox / "state.db")
-
-    # Imports must come AFTER bind_db_to_sandbox so their `from db import connect`
-    # captures the patched function.
-    import db as db_mod  # noqa: F401  (already patched, just ensure schema migrations run)
+    import db as db_mod
     from candidates import load_candidates_from_db
 
-    db_mod.init_db()
-    conn = db_mod.connect()
+    sandbox = setup_sandbox(args.date)
+    sandbox_db = sandbox / "state.db"
+
+    # Every stage below receives this sandbox connection explicitly; nothing
+    # opens a DB by default path, so the live state.db is untouched until
+    # apply_published_to_live() targets it on purpose.
+    db_mod.init_db(sandbox_db)
+    conn = db_mod.connect(sandbox_db)
 
     aged = age_out_for_synthetic_date(conn, args.date)
     if aged:
@@ -399,7 +372,7 @@ def main() -> int:
         promoted = apply_published_to_live(featured_ids)
         log.info(
             "promoted %d/%d featured ids to status='published' in live %s",
-            promoted, len(featured_ids), _LIVE_DB_PATH,
+            promoted, len(featured_ids), db_mod.DB_PATH,
         )
         if promoted < len(featured_ids):
             log.warning(

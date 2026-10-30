@@ -6,7 +6,6 @@ Covers:
   rank_with_optional_llm() — prescored-only path, LLM path for unscored items
   run_writer_for_date() — file-exists guard, normal write path, nothing-to-publish
   main() — date validation, full orchestration with --apply-published
-  bind_db_to_sandbox() inner functions — sandbox_connect/sandbox_init_db
 """
 from __future__ import annotations
 
@@ -225,77 +224,6 @@ class TestSetupSandbox:
         # Stale file should be gone after wipe
         assert not stale.exists()
         assert (sandbox_path / "state.db").exists()
-
-
-# ---------------------------------------------------------------------------
-# bind_db_to_sandbox — inner functions (line 130)
-# ---------------------------------------------------------------------------
-
-class TestBindDbToSandboxInnerFunctions:
-    def test_sandbox_connect_uses_sandbox_path_when_no_arg(self, tmp_path):
-        """sandbox_connect() with no arg defaults to the sandbox DB path."""
-        import db as db_mod
-        import backfill as bf
-        import importlib
-
-        # Use a temp DB
-        sandbox_db = tmp_path / "sandbox.db"
-        _init_db(sandbox_db)
-
-        # Save original
-        orig_connect = db_mod.connect
-        orig_db_path = db_mod.DB_PATH
-        orig_init_db = db_mod.init_db
-
-        try:
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
-            bf.bind_db_to_sandbox(sandbox_db)
-
-            # sandbox_connect() with no arg should connect to sandbox_db
-            conn = db_mod.connect()
-            assert conn is not None
-            # Verify it's the sandbox (check file path via pragma)
-            row = conn.execute("PRAGMA database_list").fetchone()
-            conn.close()
-            assert str(sandbox_db) in row[2]
-        finally:
-            # Restore originals
-            db_mod.connect = orig_connect
-            db_mod.DB_PATH = orig_db_path
-            db_mod.init_db = orig_init_db
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
-
-    def test_sandbox_connect_uses_explicit_arg_when_provided(self, tmp_path):
-        """sandbox_connect(path) uses the explicit path, not the sandbox default."""
-        import db as db_mod
-        import backfill as bf
-
-        sandbox_db = tmp_path / "sandbox.db"
-        explicit_db = tmp_path / "explicit.db"
-        _init_db(sandbox_db)
-        _init_db(explicit_db)
-
-        orig_connect = db_mod.connect
-        orig_db_path = db_mod.DB_PATH
-        orig_init_db = db_mod.init_db
-
-        try:
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
-            bf.bind_db_to_sandbox(sandbox_db)
-
-            conn = db_mod.connect(explicit_db)
-            row = conn.execute("PRAGMA database_list").fetchone()
-            conn.close()
-            assert str(explicit_db) in row[2]
-        finally:
-            db_mod.connect = orig_connect
-            db_mod.DB_PATH = orig_db_path
-            db_mod.init_db = orig_init_db
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
 
 
 # ---------------------------------------------------------------------------
@@ -646,7 +574,6 @@ class TestBackfillMain:
 
         # Patch setup_sandbox to use our tmp DB
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
 
         import db as db_real
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
@@ -682,7 +609,6 @@ class TestBackfillMain:
         db_real.init_db(sandbox_db)
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
@@ -707,7 +633,6 @@ class TestBackfillMain:
 
         apply_calls = []
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
@@ -732,40 +657,52 @@ class TestBackfillMain:
         assert result == 0
         assert apply_calls == [["feat1"]]
 
-    def test_sandbox_init_db_uses_sandbox_path_when_no_arg(self, tmp_path):
-        """sandbox_init_db() with no arg defaults to the sandbox DB path (line 130)."""
-        import db as db_mod
+    def test_main_uses_sandbox_by_explicit_path_without_patching_db(
+        self, tmp_path, monkeypatch,
+    ):
+        """main() threads a sandbox connection through every stage and never
+        rebinds db.connect/db.init_db/db.DB_PATH, so the live DB stays put."""
         import backfill as bf
+        import db as db_mod
 
-        sandbox_db = tmp_path / "sandbox.db"
-        _init_db(sandbox_db)
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        live_db = tmp_path / "live.db"
+        _init_db(live_db)
+        monkeypatch.setattr(db_mod, "DB_PATH", live_db)
+        live_before = live_db.read_bytes()
+        connect_before, init_before = db_mod.connect, db_mod.init_db
 
-        orig_connect = db_mod.connect
-        orig_db_path = db_mod.DB_PATH
-        orig_init_db = db_mod.init_db
+        seen = []
 
-        init_calls = []
-        def recording_init_db(db_path=None):
-            init_calls.append(db_path)
-            return orig_init_db(db_path or sandbox_db)
+        def record_db(conn):
+            seen.append(conn.execute("PRAGMA database_list").fetchone()[2])
 
-        db_mod.init_db = recording_init_db
+        def fake_age_out(conn, date):
+            record_db(conn)
+            return 0
 
-        try:
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
-            bf.bind_db_to_sandbox(sandbox_db)
+        def fake_rank(conn, candidates):
+            record_db(conn)
+            return {}
 
-            # Call sandbox_init_db (which is now db_mod.init_db after patching)
-            db_mod.init_db()
-            # Should have been called with sandbox_db (or None, which resolves to sandbox_db)
-            assert len(init_calls) >= 1
-        finally:
-            db_mod.connect = orig_connect
-            db_mod.DB_PATH = orig_db_path
-            db_mod.init_db = orig_init_db
-            bf._LIVE_CONNECT = None
-            bf._LIVE_DB_PATH = None
+        def fake_write(conn, date, force):
+            record_db(conn)
+            return None
+
+        monkeypatch.setattr("backfill.setup_sandbox", lambda date: sandbox)
+        monkeypatch.setattr("backfill.age_out_for_synthetic_date", fake_age_out)
+        monkeypatch.setattr("backfill.rank_with_optional_llm", fake_rank)
+        monkeypatch.setattr("backfill.run_writer_for_date", fake_write)
+        monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15"])
+
+        assert bf.main() == 1  # writer stub returns None
+
+        assert seen == [str(sandbox / "state.db")] * 3
+        assert db_mod.connect is connect_before
+        assert db_mod.init_db is init_before
+        assert db_mod.DB_PATH == live_db
+        assert live_db.read_bytes() == live_before
 
 
 class TestBackfillMainEdgeCases:
@@ -781,7 +718,6 @@ class TestBackfillMainEdgeCases:
         db_real.init_db(sandbox_db)
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         # Return 3 aged-out papers to exercise the `if aged:` branch (line 386)
@@ -807,7 +743,6 @@ class TestBackfillMainEdgeCases:
         db_real.init_db(sandbox_db)
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
@@ -837,7 +772,6 @@ class TestBackfillMainEdgeCases:
         db_real.init_db(sandbox_db)
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
-        monkeypatch.setattr("backfill.bind_db_to_sandbox", lambda db: None)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
         monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
         monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)

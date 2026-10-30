@@ -7,8 +7,7 @@ run_writer_for_date() which require LLM mocks outside our scope here.
 
 Covers:
   - age_out_for_synthetic_date()
-  - apply_published_to_live() (via bind_db_to_sandbox())
-  - bind_db_to_sandbox() — the module-level patch mechanism
+  - apply_published_to_live()
 
 Note: build_candidates_snapshot() and persist_decisions() were removed in
 PR #142. Their logic is now in candidates.load_candidates_from_db() and
@@ -170,25 +169,10 @@ class TestAgeOutForSyntheticDate:
 
 
 # ---------------------------------------------------------------------------
-# apply_published_to_live() and bind_db_to_sandbox()
+# apply_published_to_live()
 # ---------------------------------------------------------------------------
 
 class TestApplyPublishedToLive:
-    def test_raises_if_bind_not_called_first(self):
-        """apply_published_to_live requires bind_db_to_sandbox to be called first."""
-        import backfill as backfill_mod
-        # Save and reset the module-level globals
-        orig_connect = backfill_mod._LIVE_CONNECT
-        orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = None
-        backfill_mod._LIVE_DB_PATH = None
-        try:
-            with pytest.raises(RuntimeError, match="bind_db_to_sandbox"):
-                backfill_mod.apply_published_to_live(["some-id"])
-        finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
-            backfill_mod._LIVE_DB_PATH = orig_path
-
     def test_promotes_candidate_ids_to_published(self, db_path):
         import db as db_mod
         import backfill as backfill_mod
@@ -208,16 +192,9 @@ class TestApplyPublishedToLive:
         conn.commit()
         conn.close()
 
-        # Manually wire up the backfill module's live pointers
-        orig_connect = backfill_mod._LIVE_CONNECT
-        orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = db_mod.connect
-        backfill_mod._LIVE_DB_PATH = db_path
-        try:
-            promoted = backfill_mod.apply_published_to_live(["item-0", "item-1"])
-        finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
-            backfill_mod._LIVE_DB_PATH = orig_path
+        promoted = backfill_mod.apply_published_to_live(
+            ["item-0", "item-1"], live_db=db_path,
+        )
 
         assert promoted == 2
         conn = db_mod.connect(db_path)
@@ -248,48 +225,27 @@ class TestApplyPublishedToLive:
         conn.commit()
         conn.close()
 
-        orig_connect = backfill_mod._LIVE_CONNECT
-        orig_path = backfill_mod._LIVE_DB_PATH
-        backfill_mod._LIVE_CONNECT = db_mod.connect
-        backfill_mod._LIVE_DB_PATH = db_path
-        try:
-            promoted = backfill_mod.apply_published_to_live(["pub-1"])
-        finally:
-            backfill_mod._LIVE_CONNECT = orig_connect
-            backfill_mod._LIVE_DB_PATH = orig_path
+        promoted = backfill_mod.apply_published_to_live(["pub-1"], live_db=db_path)
 
         assert promoted == 0  # already published, not re-promoted
 
-
-class TestBindDbToSandbox:
-    def test_patches_db_connect_to_sandbox(self, tmp_path):
-        """bind_db_to_sandbox redirects db.connect to the sandbox path."""
+    def test_defaults_to_live_db_path(self, db_path, monkeypatch):
+        """Without live_db, the promotion targets db.DB_PATH (the real state.db)."""
         import db as db_mod
         import backfill as backfill_mod
 
-        sandbox_db = tmp_path / "sandbox.db"
-        db_mod.init_db(sandbox_db)
+        conn = db_mod.connect(db_path)
+        conn.execute(
+            """
+            INSERT INTO items (id, source, url, canonical_url, title, fetched_at,
+                status, first_seen_date, last_seen_date, appearances)
+            VALUES ('c-1', 'rss:x', 'https://a.com/c', 'https://a.com/c',
+                    'T', '2026-06-25T00:00:00Z', 'candidate',
+                    '2026-06-25', '2026-06-25', 1)
+            """
+        )
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr(db_mod, "DB_PATH", db_path)
 
-        # Save original state
-        orig_connect = db_mod.connect
-        orig_init_db = db_mod.init_db
-        orig_db_path = db_mod.DB_PATH
-        orig_live_connect = backfill_mod._LIVE_CONNECT
-        orig_live_path = backfill_mod._LIVE_DB_PATH
-
-        try:
-            backfill_mod.bind_db_to_sandbox(sandbox_db)
-            # After binding, db_mod.DB_PATH should point to the sandbox
-            assert db_mod.DB_PATH == sandbox_db
-            # The patched connect should open the sandbox DB
-            conn = db_mod.connect()
-            # We can execute schema queries — this confirms it's a real SQLite conn
-            conn.execute("SELECT 1").fetchone()
-            conn.close()
-        finally:
-            # Restore original state to avoid polluting other tests
-            db_mod.connect = orig_connect
-            db_mod.init_db = orig_init_db
-            db_mod.DB_PATH = orig_db_path
-            backfill_mod._LIVE_CONNECT = orig_live_connect
-            backfill_mod._LIVE_DB_PATH = orig_live_path
+        assert backfill_mod.apply_published_to_live(["c-1"]) == 1
