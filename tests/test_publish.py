@@ -182,6 +182,42 @@ class TestMainEmptyIssue:
         assert result == 5
 
 
+class TestMainAppendixOnlyIssue:
+    """Zero featured items with a non-empty appendix still publishes (see #428).
+
+    Pins the current behaviour so that refusing such days is a deliberate change.
+    """
+
+    def test_publishes_appendix_only_issue(self, db_path, tmp_path, monkeypatch):
+        from publish import main as publish_main, MIN_FILE_SIZE_BYTES
+        import publish as publish_mod
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        _insert_item(conn, "app-1", "appendix", "papers")
+        _insert_item(conn, "app-2", "appendix", "papers")
+        conn.close()
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 10))
+        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+
+        assert publish_main() == 0
+
+        conn = db_mod.connect(db_path)
+        statuses = [r["status"] for r in conn.execute("SELECT status FROM items")]
+        run = conn.execute(
+            "SELECT items_featured FROM runs WHERE date = '2026-06-01'"
+        ).fetchone()
+        conn.close()
+        assert statuses == ["published", "published"]
+        assert run["items_featured"] == 0
+
+
 # ---------------------------------------------------------------------------
 # main() — normal publish path
 # ---------------------------------------------------------------------------
