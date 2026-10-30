@@ -41,7 +41,6 @@ Default is off so you can dry-run; pass it for real backfills.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import shutil
 import subprocess
