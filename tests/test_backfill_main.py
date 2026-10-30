@@ -220,7 +220,7 @@ class TestSetupSandbox:
             return original_path(x)
         monkeypatch.setattr("backfill.Path", patched_path)
 
-        result = bf.setup_sandbox("2026-07-15")
+        bf.setup_sandbox("2026-07-15")
         # Stale file should be gone after wipe
         assert not stale.exists()
         assert (sandbox_path / "state.db").exists()

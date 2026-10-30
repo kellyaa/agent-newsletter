@@ -1,5 +1,6 @@
 """edition.py: loading, strict validation, current()."""
 import copy
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,7 @@ def _load(editions_dir, slug="agents"):
 def test_agents_edition_loads_and_is_frozen():
     ed = edition.load("agents")
     assert ed.slug == "agents"
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         ed.slug = "other"  # frozen dataclass
 
 

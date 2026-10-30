@@ -13,6 +13,7 @@ own connection and/or doesn't supply an explicit `now` / `prerank_scorer`:
 """
 from __future__ import annotations
 
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,7 +82,7 @@ class TestConnLifecycle:
         # sqlite3 raises ProgrammingError on any operation against a closed
         # connection — this is the simplest externally-observable proof the
         # auto-opened connection was closed.
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.ProgrammingError):
             opened[0].execute("SELECT 1")
 
     def test_caller_supplied_conn_is_never_closed(self, db_path):
@@ -123,7 +124,7 @@ class TestConnLifecycle:
             candidates.load_candidates_from_db()
 
         assert len(opened) == 1
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.ProgrammingError):
             opened[0].execute("SELECT 1")
 
 

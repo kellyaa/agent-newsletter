@@ -408,8 +408,6 @@ class TestFetchArxiv:
             mock_ctx.get.return_value = mock_resp
             mock_client_cls.return_value = mock_ctx
             list(fetch_arxiv({"id": "x", "query": "cat:cs.AI", "max_results": 25}))
-        call_kwargs = mock_ctx.get.call_args
-        params = call_kwargs[1].get("params", {}) or call_kwargs[0][1] if len(call_kwargs[0]) > 1 else {}
         # The URL should be the arxiv export API
         called_url = mock_ctx.get.call_args[0][0]
         assert "arxiv.org" in called_url
