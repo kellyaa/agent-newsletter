@@ -22,6 +22,9 @@ import pytest
 from conftest import base_template
 
 
+FROZEN_NOW = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -104,18 +107,9 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
 
-    # Freeze "now" so short recency windows (hn=3d, reddit=3d) don't drop
+    # Pin "now" so short recency windows (hn=3d, reddit=3d) don't drop
     # fixtures as wall-clock advances. Fixtures use published_at=2026-07-09.
-    frozen = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
-
-    class _FrozenDatetime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return frozen if tz is None else frozen.astimezone(tz)
-
-    monkeypatch.setattr(pf_mod, "datetime", _FrozenDatetime)
-
-    return pf_mod.main()
+    return pf_mod.main(now=FROZEN_NOW)
 
 
 # ---------------------------------------------------------------------------
@@ -444,3 +438,44 @@ class TestPrefilterMainMalformedTags:
         item = next((it for it in prescored if it["id"] == "mt1"), None)
         assert item is not None
         assert item["tags"] == []
+
+
+# ---------------------------------------------------------------------------
+# age_out_papers() — the clock is an argument, not datetime.now()
+# ---------------------------------------------------------------------------
+
+class TestAgeOutPapersClock:
+    def test_recency_ceiling_measured_from_passed_now(self, db_path):
+        import db as db_mod
+        import prefilter as pf_mod
+
+        conn = db_mod.connect(db_path)
+        _insert_item(conn, "p1", status="candidate", section="papers",
+                     published_at="2026-07-01T00:00:00Z")
+        conn.commit()
+
+        # Same row, two clocks: only the later one is past the ceiling.
+        early = datetime(2026, 7, 2, tzinfo=timezone.utc)
+        assert pf_mod.age_out_papers(conn, early) == (0, 0)
+        late = early + timedelta(days=pf_mod.PAPER_POOL_MAX_AGE_DAYS + 1)
+        assert pf_mod.age_out_papers(conn, late) == (1, 1)
+        status = conn.execute("SELECT status FROM items WHERE id='p1'").fetchone()[0]
+        assert status == "expired_unjudged"
+        conn.close()
+
+    def test_main_defaults_now_to_wall_clock(self, db_path, candidates_out, rubric_file, monkeypatch):
+        import db as db_mod
+        import prefilter as pf_mod
+
+        monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
+        monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
+        monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
+        seen = []
+        real = pf_mod.age_out_papers
+        monkeypatch.setattr(pf_mod, "age_out_papers",
+                            lambda conn, now: seen.append(now) or real(conn, now))
+
+        before = datetime.now(timezone.utc)
+        assert pf_mod.main() == 0
+        assert len(seen) == 1 and before <= seen[0] <= datetime.now(timezone.utc)

@@ -291,3 +291,17 @@ class TestAlreadyFetchedToday:
         result = _already_fetched_today(db)
         # Today is not 2026-05-30, so result should be 0
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# upsert_items — injectable clock
+# ---------------------------------------------------------------------------
+
+class TestUpsertItemsClock:
+    def test_now_stamps_fetched_at(self, db):
+        from datetime import datetime, timezone
+
+        pinned = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
+        upsert_items(db, [_make_item()], now=pinned)
+        row = db.execute("SELECT fetched_at FROM items").fetchone()
+        assert row["fetched_at"] == pinned.isoformat()

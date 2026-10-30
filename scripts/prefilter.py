@@ -232,19 +232,14 @@ def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> l
     return kept
 
 
-def main() -> int:
-    init_db()
-    conn = connect()
-    now = datetime.now(timezone.utc)
+def age_out_papers(conn, now: datetime) -> tuple[int, int]:
+    """Age out papers candidates that hit the competition cap or recency ceiling.
 
-    # Wipe cached papers scores if the rubric changed since the last run.
-    _maybe_invalidate_papers_scores(conn)
-
-    # Age out papers candidates that have hit the per-paper competition cap or
-    # exceeded the recency ceiling. Done up front so they don't appear in
-    # candidates.json this run. Recency passes `now` explicitly (rather than
-    # SQLite's julianday('now')) so tests that freeze the Python clock also
-    # freeze this comparison; production `now` is real UTC time.
+    ``now`` is passed explicitly (rather than SQLite's ``julianday('now')``)
+    so tests and backfills can pin the clock. Commits, and returns
+    ``(aged_out, expired_unjudged)``: the total rows moved out of the pool and
+    how many of those had never been scored.
+    """
     unjudged_before = conn.execute(
         f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
     ).fetchone()[0]
@@ -259,10 +254,31 @@ def main() -> int:
     aged_out = aged.rowcount or 0
     # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
     # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
-    expired_unjudged_now = conn.execute(
+    expired_unjudged = conn.execute(
         f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
     ).fetchone()[0] - unjudged_before
     conn.commit()
+    return aged_out, expired_unjudged
+
+
+def main(now: datetime | None = None) -> int:
+    """Run the prefilter stage.
+
+    ``now`` is the wall-clock instant used for every recency decision in this
+    run (paper age-out, the per-source recency gate, the pre-rank scorer).
+    It defaults to the current UTC time; tests and backfills pass a fixed
+    instant instead of patching ``datetime``.
+    """
+    init_db()
+    conn = connect()
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    # Wipe cached papers scores if the rubric changed since the last run.
+    _maybe_invalidate_papers_scores(conn)
+
+    # Done up front so aged-out papers don't appear in candidates.json this run.
+    aged_out, expired_unjudged_now = age_out_papers(conn, now)
     if aged_out:
         log.info("aged out %d papers candidates (cap or recency)", aged_out)
     log.info(
