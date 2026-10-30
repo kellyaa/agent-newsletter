@@ -217,6 +217,29 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+def count_items_seen_on(conn: sqlite3.Connection, date: str) -> int:
+    """Items whose ``last_seen_date`` is `date`: the run's "items considered".
+
+    fetch (idempotent-skip check), write (issue metadata) and publish (the
+    ``runs`` row) all report this number, so they share one definition.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (date,)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def count_items_in_status(conn: sqlite3.Connection, *statuses: str) -> int:
+    """Items whose ``status`` is any of `statuses` (pass ``models.Status`` values)."""
+    if not statuses:
+        raise ValueError("count_items_in_status needs at least one status")
+    marks = ", ".join("?" * len(statuses))
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM items WHERE status IN ({marks})", tuple(statuses)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def record_stage_stats(
     conn: sqlite3.Connection,
     date: str,

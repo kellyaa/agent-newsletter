@@ -28,6 +28,7 @@ from db import (
     REPO_ROOT, canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
     url_id,
 )
+from db import count_items_seen_on
 from models import Status
 
 logging.basicConfig(
@@ -633,10 +634,7 @@ def _already_fetched_today(conn) -> int:
     today = run_date()
     if get_meta(conn, FETCH_DONE_KEY) != today:
         return 0
-    row = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()
-    return int(row[0]) if row else 0
+    return count_items_seen_on(conn, today)
 
 
 def iter_collectors(sources: dict, http_client: httpx.Client):
