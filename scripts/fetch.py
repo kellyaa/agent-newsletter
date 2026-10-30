@@ -391,6 +391,9 @@ REDDIT_DEFAULT_LIMIT = 10
 REDDIT_REQUEST_DELAY = 2.0  # seconds between subreddit requests (429 avoidance)
 _REDDIT_LINK_RE = re.compile(r'<a\s+href="([^"]+)"[^>]*>\s*\[link\]\s*</a>', re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
+# GitHub owner/repo names: letters, digits, '-', '_', '.'; used to build an API
+# path, so anything else (e.g. '/', '?', '..') must never reach `gh api`.
+_GH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _REDDIT_SUBMITTED_BY_RE = re.compile(r"submitted by\s+/u/\S+")
 
 
@@ -472,6 +475,13 @@ def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterabl
 def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
     for entry in watchlist:
         owner, repo = entry["owner"], entry["repo"]
+        if (
+            not isinstance(owner, str) or not isinstance(repo, str)
+            or not _GH_NAME_RE.match(owner) or not _GH_NAME_RE.match(repo)
+            or repo in (".", "..")
+        ):
+            log.warning("gh: skipping invalid owner/repo %r/%r", owner, repo)
+            continue
         log.info("gh: fetching releases for %s/%s", owner, repo)
         try:
             result = subprocess.run(
