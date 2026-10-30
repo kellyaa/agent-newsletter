@@ -3,7 +3,9 @@ import { getCollection } from "astro:content";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import FeaturedItem from "../../../components/FeaturedItem.astro";
 import AppendixSection from "../../../components/AppendixSection.astro";
-import { loadRegistry, editionOf } from "../../../scripts/editions";
+import ArchiveSidebar from "../../../components/ArchiveSidebar.astro";
+import { loadRegistry, editionOf, issuesFor } from "../../../scripts/editions";
+import { groupByMonth, buildArchive } from "../../../scripts/months";
 
 export async function getStaticPaths() {
   const issues = await getCollection("issues");
@@ -19,6 +21,11 @@ export async function getStaticPaths() {
 
 const { issue, edition } = Astro.props;
 const { date, theme, featured, appendix, metadata } = issue.data;
+const archive = buildArchive(
+  groupByMonth(issuesFor(await getCollection("issues"), edition.slug)),
+  edition.slug,
+  date,
+);
 
 const sectionGroups: {
   key: "papers" | "news" | "blogs";
@@ -37,6 +44,9 @@ const itemsBySection = {
 };
 ---
 <BaseLayout title={`${date} — ${edition.name}`} description={theme || `${edition.name} issue for ${date}`} edition={edition}>
+  <div class="month-view">
+  <ArchiveSidebar months={archive} />
+  <div class="month-view__main">
   <article data-pagefind-body data-pagefind-meta={`date:${date}`} data-pagefind-filter={`edition:${edition.slug}`}>
   <header class="issue-header">
     <div class="issue-header__date">{date}</div>
@@ -65,4 +75,6 @@ const itemsBySection = {
 
   <AppendixSection appendix={appendix} />
   </article>
+  </div>
+  </div>
 </BaseLayout>

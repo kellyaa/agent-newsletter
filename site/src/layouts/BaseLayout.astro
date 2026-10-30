@@ -15,6 +15,7 @@ const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 const brandName = edition?.name ?? UMBRELLA_NAME;
 // Umbrella pages link to the site root exactly as the base was configured;
 // edition pages link to the edition front page.
+const homeHref = baseUrl;
 const brandHref = edition ? `${trimmedBase}/${edition.slug}/` : baseUrl;
 const searchUrl = edition ? `${trimmedBase}/${edition.slug}/search/` : undefined;
 const rssUrl = edition ? `${trimmedBase}/${edition.slug}/rss.xml` : undefined;
@@ -46,6 +47,11 @@ const rssUrl = edition ? `${trimmedBase}/${edition.slug}/rss.xml` : undefined;
   </head>
   <body>
     <header class="site-header">
+      {edition && (
+        <div class="site-header__inner site-header__home-row">
+          <a class="site-header__home" href={homeHref}>← {UMBRELLA_NAME}</a>
+        </div>
+      )}
       <div class="site-header__inner">
         <a class="site-header__brand" href={brandHref}>{brandName}</a>
         <span class="site-header__tagline">{edition?.tagline}</span>
