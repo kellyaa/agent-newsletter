@@ -25,3 +25,27 @@ def test_check_edition_reuses_edition_section_names():
 
 def test_fetch_valid_sections_match_models():
     assert fetch.VALID_SECTIONS == {s.value for s in Section}
+
+
+def test_candidate_buckets_are_sections_plus_prescored(tmp_path):
+    import sqlite3
+
+    import candidates
+
+    conn = sqlite3.connect(tmp_path / "s.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE items (id, source, url, title, author, published_at, raw_text,"
+        " section, section_override, score, tags, why, status)"
+    )
+    try:
+        grouped = candidates.load_candidates_from_db(conn=conn)
+    finally:
+        conn.close()
+    assert set(grouped) == {s.value for s in Section} | {candidates.PAPERS_PRESCORED}
+    assert candidates.PAPERS_PRESCORED == "papers_prescored"
+
+
+def test_section_declaration_order_is_the_issue_order():
+    # replay_writer ranks featured sections by this order; reordering Section changes replays.
+    assert [s.value for s in Section] == ["papers", "news", "blogs"]
