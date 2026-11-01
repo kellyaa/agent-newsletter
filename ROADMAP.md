@@ -11,7 +11,8 @@ Planning artifact from the strategist agent. It proposes priorities and is not a
 ## Near term
 
 1. **Cost control.** `BUDGET_USD` and `runs.cost_usd` are scaffolded but not enforced or populated, and spend now scales with edition count. Tracked in #438.
-2. **CI security scanning.** CodeQL, pip-audit and pnpm audit are proposed in #433 (#425 appears to cover the same ground). The change is a new file under `.github/workflows/`, which agents cannot push, so it needs a human to apply it.
+2. **CI security scanning.** CodeQL, pip-audit and pnpm audit are proposed in #425 and again in #433, which duplicates it. Close #433 and apply the workflow text from #425. The change is a new file under `.github/workflows/`, which agents cannot push, so it needs a human to apply it.
+3. **Refresh SPEC.md "Live status".** It is dated 2026-07-11 and describes a single daily run. Two editions now run in sequence, and the Cost cap decision still says `cost_usd` is not populated. Refresh it with measured per-edition wall time and cost once #441 and #438 land, so the cost-control baseline is current. Tracked in #444.
 
 ## Mid term
 
