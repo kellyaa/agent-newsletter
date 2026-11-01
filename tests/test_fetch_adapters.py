@@ -145,8 +145,7 @@ class TestFetchRss:
             mock_ctx.get.return_value = mock_resp
             mock_client_cls.return_value = mock_ctx
             items = list(fetch_rss(self._source()))
-        assert items[0].raw_text is not None
-        assert "Some summary text" in items[0].raw_text
+        assert items[0].raw_text == "Some summary text"
 
     def test_raw_text_truncated_at_4000(self):
         long_desc = "x" * 5000
