@@ -101,8 +101,7 @@ class TestWriteContentRoot:
         (issues_dir / "2026-06-01.md").write_text("# Previous issue")
 
         result = write.find_previous_newsletter("2026-06-10")
-        assert result is not None
-        assert "Previous issue" in result
+        assert result == "# Previous issue"
 
 
 # ---------------------------------------------------------------------------

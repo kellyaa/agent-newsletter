@@ -32,9 +32,7 @@ class TestToIso:
 
     def test_time_struct_converts(self):
         t = time.gmtime(0)  # 1970-01-01T00:00:00Z
-        result = _to_iso(t)
-        assert result is not None
-        assert "1970" in result
+        assert _to_iso(t) == "1970-01-01T00:00:00+00:00"
 
     def test_invalid_time_struct_returns_none(self):
         # Create an invalid time struct by passing a struct with impossible values
