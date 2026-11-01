@@ -155,6 +155,32 @@ class TestMainFileTooSmall:
 
         assert result == 4
 
+    @pytest.mark.parametrize(
+        "delta, expected",
+        [
+            (-1, 4),  # one byte under the minimum is refused
+            (0, 5),   # exactly the minimum passes the size gate (then hits the empty-issue gate)
+        ],
+    )
+    def test_min_size_boundary_is_inclusive(
+        self, db_path, tmp_path, monkeypatch, delta, expected
+    ):
+        from publish import main as publish_main, MIN_FILE_SIZE_BYTES
+        import publish as publish_mod
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + delta))
+        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+
+        import db as db_mod
+        monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+        monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+
+        monkeypatch.setenv("RUN_DATE", "2026-06-01")
+
+        assert publish_main() == expected
+
 
 # ---------------------------------------------------------------------------
 # main() — empty issue (no featured, no appendix)
