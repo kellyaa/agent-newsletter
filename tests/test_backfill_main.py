@@ -174,15 +174,17 @@ class TestSetupSandbox:
         monkeypatch.setattr("backfill.subprocess.run", fake_subprocess_run)
         monkeypatch.setattr(
             "backfill.find_pre_run_commit",
-            lambda date: "abc1234",
+            lambda date, slug=None: "abc1234",
         )
 
         sandbox_path.mkdir(parents=True)  # pre-create to test wipe
         (sandbox_path / "old_file.txt").write_text("stale")
 
-        result = bf.setup_sandbox.__wrapped__("2026-07-15") if hasattr(bf.setup_sandbox, "__wrapped__") else None
-        # Just test find_pre_run_commit is called — full integration tested separately
-        assert True  # setup_sandbox itself is I/O heavy; key paths exercised via integration
+        result = bf.setup_sandbox("2026-07-15")
+
+        assert result == sandbox_path
+        assert not (sandbox_path / "old_file.txt").exists()
+        assert (sandbox_path / "state.db").read_bytes() == fake_db_content
 
     def test_sandbox_wipes_existing_directory(self, tmp_path, monkeypatch):
         """If sandbox dir already exists, it is wiped before recreating."""
