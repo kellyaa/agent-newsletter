@@ -52,6 +52,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
+from models import Section, Status  # noqa: E402  (needs the sys.path entry above)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -155,7 +157,6 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
     already been promoted by some other path, is left alone.
     """
     import db as db_mod
-    from models import Status
 
     conn = db_mod.connect(live_db or db_mod.db_path())
     try:
@@ -200,11 +201,11 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     import prompts
     import rank as rank_mod
 
-    scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
 
     # Prescored papers: pass through with cached scores (no LLM needed).
     for it in candidates.get("papers_prescored", []):
-        scored_by_section["papers"].append({
+        scored_by_section[Section.PAPERS].append({
             "id": it["id"],
             "score": it["score"],
             "tags": it.get("tags", []),
@@ -213,7 +214,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
 
     # Any section with unscored items needs the LLM.
     rubric = prompts.render("rank", rank_mod.EDITION, template_path=rank_mod.PROMPT_PATH)
-    for section in ("papers", "news", "blogs"):
+    for section in Section:
         items = candidates.get(section, [])
         if not items:
             continue
@@ -235,8 +236,8 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     counts = rank_mod.persist(conn, decisions)
     log.info(
         "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
-        counts.get("featured", 0), counts.get("appendix", 0),
-        counts.get("dropped", 0), counts.get("candidate", 0),
+        counts.get(Status.FEATURED, 0), counts.get(Status.APPENDIX, 0),
+        counts.get(Status.DROPPED, 0), counts.get(Status.CANDIDATE, 0),
     )
     return decisions
 
@@ -346,12 +347,12 @@ def main() -> int:
     candidates = load_candidates_from_db(conn)
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
-        len(candidates.get("papers", [])),
+        len(candidates.get(Section.PAPERS, [])),
         len(candidates.get("papers_prescored", [])),
-        len(candidates.get("news", [])),
-        len(candidates.get("blogs", [])),
+        len(candidates.get(Section.NEWS, [])),
+        len(candidates.get(Section.BLOGS, [])),
     )
-    if candidates.get("news") or candidates.get("blogs"):
+    if candidates.get(Section.NEWS) or candidates.get(Section.BLOGS):
         log.warning(
             "found news/blogs candidates in the snapshot — unusual; backfills "
             "are typically papers-only since news/blogs don't persist."
@@ -367,7 +368,7 @@ def main() -> int:
 
     if args.apply_published:
         featured_ids = [
-            iid for iid, d in decisions.items() if d["status"] == "featured"
+            iid for iid, d in decisions.items() if d["status"] == Status.FEATURED
         ]
         promoted = apply_published_to_live(featured_ids)
         log.info(
