@@ -433,9 +433,9 @@ v1 records token usage (not priced cost); v2 enforces a budget. Scaffolding now 
 - **v1.2 — Path B Stage 2 (shipped):** SSG migration to Astro 5. The writer now emits YAML-frontmatter MD into `site/src/content/issues/`; URLs are spliced from the DB rather than written by the LLM (URL hallucination is mechanically impossible). Site deploys to GitHub Pages on push to `main`.
 - **v1.3 — Unattended delivery (shipped):** `run.sh` orchestrator with `--force` and `--refetch` flags; per-stage idempotency for resume-after-failure; launchd plists for the daily pipeline + hourly watchdog; macOS notifications on failure (no email).
 
-### Live status (as of 2026-07-11)
+### Live status (as of 2026-11-01)
 
-The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. A typical run takes ~10 min wall time, produces 12-17 featured items + ~50-100 appendix items. Cost depends on the configured models; typical per-run cost is ~$0.30-1.20 per ranker section call × 3 sections, plus ~$0.30-0.50 for the writer call (see §LLM API lessons learned for details).
+The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. Two live editions (`agents`, `engineering-with-ai`) run one after another from `run.sh`. Measured over the 6 runs from 2026-10-26 to 2026-11-01 (`runs` table in each edition's `state.db` on the `content` branch): `agents` averages ~270 s per run with ~8 featured items and ~68k input / ~11k output tokens; `engineering-with-ai` averages ~240 s with ~3-4 featured items and ~24k input / ~4k output tokens. Both together are ~8.5 min per day. `duration_seconds` is measured from the start of the edition's `scripts/run_edition.sh`, so it includes fetch. Token usage swings with candidate volume (`agents` input ranged 32k-100k). Dollar cost depends on the configured models; `runs.cost_usd` is not yet populated, so use the token counts as the baseline (see §LLM API lessons learned for per-call details).
 
 ### Up next (unstarted)
 
