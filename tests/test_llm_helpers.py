@@ -83,7 +83,7 @@ class TestCallLlmSuccess:
         with patch("llm._one_shot", return_value={"answer": "ok"}) as mock_shot:
             call_llm("prompt", SCHEMA, "s", model="gpt-4o")
         _, kwargs = mock_shot.call_args
-        assert kwargs.get("model") == "gpt-4o" or mock_shot.call_args[0][0] is not None
+        assert kwargs["model"] == "gpt-4o"
 
     def test_missing_api_key_raises_before_llm_call(self, monkeypatch):
         monkeypatch.delenv("LLM_API_KEY", raising=False)
