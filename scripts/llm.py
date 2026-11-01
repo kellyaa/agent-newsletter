@@ -100,6 +100,36 @@ def _append_usage(label: str, model: str, usage: Any) -> None:
         log.warning("could not append usage to %s: %s", path, e)
 
 
+def _model_prices() -> dict[str, tuple[float, float]]:
+    """Parse MODEL_PRICES_USD: JSON {"<model>": [usd_per_1M_in, usd_per_1M_out]}.
+
+    Unset or malformed gives {}, so cost stays unrecorded rather than guessed.
+    """
+    raw = os.environ.get("MODEL_PRICES_USD", "").strip()
+    if not raw:
+        return {}
+    try:
+        table = json.loads(raw)
+        return {str(m): (float(p[0]), float(p[1])) for m, p in table.items()}
+    except (ValueError, TypeError, IndexError, AttributeError):
+        log.warning("MODEL_PRICES_USD is not a JSON object of [in, out] pairs; ignoring")
+        return {}
+
+
+def _price_usage(by_model: dict[str, list[int | None]]) -> float | None:
+    """USD cost of `by_model` ({model: [in, out]}), or None unless every model is
+    priced and reported both token counts: a partial sum would understate spend."""
+    prices = _model_prices()
+    if not by_model or not prices:
+        return None
+    total = 0.0
+    for model, (tin, tout) in by_model.items():
+        if model not in prices or tin is None or tout is None:
+            return None
+        total += tin * prices[model][0] / 1e6 + tout * prices[model][1] / 1e6
+    return round(total, 6)
+
+
 def usage_totals(path: str | None, attempt: str | None = None) -> dict | None:
     """Sum the per-call lines _append_usage() wrote to `path` (one JSON object each).
 
@@ -112,7 +142,8 @@ def usage_totals(path: str | None, attempt: str | None = None) -> dict | None:
     it, so a missing count is never recorded as zero. `models` is
     "<label>:<model>" pairs, retries folded into their label.
     `tokens_by_model` is "<model>:<in>/<out>" pairs ("?" when unreported), so
-    cost can be priced per model downstream.
+    cost can be priced per model downstream. `cost_usd` is that pricing done
+    from MODEL_PRICES_USD, or None when it is unset or incomplete.
     """
     if not path or not os.path.exists(path):
         return None
@@ -147,6 +178,7 @@ def usage_totals(path: str | None, attempt: str | None = None) -> dict | None:
         "tokens_by_model": ",".join(
             f"{m}:{_n(i)}/{_n(o)}" for m, (i, o) in sorted(by_model.items())
         ),
+        "cost_usd": _price_usage(by_model),
     }
 
 

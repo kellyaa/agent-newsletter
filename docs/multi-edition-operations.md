@@ -105,8 +105,8 @@ to wait and your LLM endpoint's rate and spend limits.
 ### LLM spend
 
 Spend scales roughly linearly with the number of editions, times each edition's
-candidate volume. The repository does not store a price, and `runs.cost_usd` is never
-populated, so compute it from tokens: `run_attempts.tokens_by_model` per edition
+candidate volume. The repository does not store a price, and `runs.cost_usd` is populated only
+when `MODEL_PRICES_USD` is set; otherwise compute it from tokens: `run_attempts.tokens_by_model` per edition
 times your provider's prices. `BUDGET_USD` is not enforced; there is no built-in cap
 across editions, so set spend limits on the provider side.
 

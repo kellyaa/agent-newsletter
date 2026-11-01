@@ -121,8 +121,8 @@ Long prompt fragments (`editions/<slug>/prompts/rank.*.md`) add to every call. T
 ### What is not available
 
 `BUDGET_USD` is documented in the README environment table but is **not enforced**; nothing in the
-pipeline stops a run at a cost limit. Likewise `runs.cost_usd` is never written. Both
-are called out in README and SPEC. Any spending cap has to come from your provider.
+pipeline stops a run at a cost limit. `runs.cost_usd` is written only when `MODEL_PRICES_USD` is set.
+Both are called out in README and SPEC. Any spending cap has to come from your provider.
 
 ## 3. Choosing a trade-off
 
@@ -190,7 +190,7 @@ sqlite3 editions/<slug>/state.db \
    FROM runs ORDER BY date DESC LIMIT 14"
 ```
 
-`notes` carries `llm_calls=` and `models=` for the day. `cost_usd` is empty.
+`notes` carries `llm_calls=` and `models=` for the day. `cost_usd` is set only when `MODEL_PRICES_USD` is configured.
 
 **Per attempt**, including failures and retries by `run.sh`:
 

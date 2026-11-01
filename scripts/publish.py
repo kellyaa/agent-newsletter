@@ -66,9 +66,9 @@ def record_run(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
                           items_papers, items_news, items_blogs,
-                          duration_seconds, tokens_in, tokens_out, notes,
+                          duration_seconds, tokens_in, tokens_out, cost_usd, notes,
                           papers_expired_unjudged, papers_prerank_cut)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
             items_featured = excluded.items_featured,
@@ -78,6 +78,7 @@ def record_run(
             duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
             tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
             tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
+            cost_usd = COALESCE(excluded.cost_usd, runs.cost_usd),
             notes = excluded.notes,
             papers_expired_unjudged = COALESCE(
                 excluded.papers_expired_unjudged, runs.papers_expired_unjudged),
@@ -98,6 +99,7 @@ def record_run(
             duration_s,
             (usage or {}).get("tokens_in"),
             (usage or {}).get("tokens_out"),
+            (usage or {}).get("cost_usd"),
             notes,
             (stage_stats or {}).get("papers_expired_unjudged"),
             (stage_stats or {}).get("papers_prerank_cut"),

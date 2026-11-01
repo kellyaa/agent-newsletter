@@ -83,7 +83,7 @@ class TestUsageTotals:
         path.write_text("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
         assert usage_totals(str(path)) == {
             "tokens_in": 700, "tokens_out": 22, "calls": 3, "models": "papers:r,writer:w",
-            "tokens_by_model": "r:200/22,w:500/?",
+            "tokens_by_model": "r:200/22,w:500/?", "cost_usd": None,
         }
 
     def test_unreported_tokens_stay_none(self, tmp_path):
@@ -92,6 +92,56 @@ class TestUsageTotals:
         path.write_text(json.dumps({"label": "writer", "model": "w", "prompt_tokens": None, "completion_tokens": None}) + "\n")
         totals = usage_totals(str(path))
         assert totals["tokens_in"] is None and totals["tokens_out"] is None and totals["calls"] == 1
+
+
+class TestCostUsd:
+    PRICES = '{"r": [1.0, 2.0], "w": [10.0, 20.0]}'
+
+    def _log(self, tmp_path, rows):
+        path = tmp_path / "usage.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        return str(path)
+
+    def test_priced_per_model_per_million_tokens(self, tmp_path, monkeypatch):
+        from llm import usage_totals
+        monkeypatch.setenv("MODEL_PRICES_USD", self.PRICES)
+        path = self._log(tmp_path, [
+            {"label": "a", "model": "r", "prompt_tokens": 1_000_000, "completion_tokens": 500_000},
+            {"label": "w", "model": "w", "prompt_tokens": 100_000, "completion_tokens": 50_000},
+        ])
+        assert usage_totals(path)["cost_usd"] == 1.0 + 1.0 + 1.0 + 1.0
+
+    def test_none_without_prices(self, tmp_path, monkeypatch):
+        from llm import usage_totals
+        monkeypatch.delenv("MODEL_PRICES_USD", raising=False)
+        path = self._log(tmp_path, [{"label": "w", "model": "w", "prompt_tokens": 1, "completion_tokens": 1}])
+        assert usage_totals(path)["cost_usd"] is None
+
+    def test_none_when_a_model_is_unpriced_or_tokens_missing(self, tmp_path, monkeypatch):
+        from llm import usage_totals
+        monkeypatch.setenv("MODEL_PRICES_USD", self.PRICES)
+        unpriced = self._log(tmp_path, [
+            {"label": "w", "model": "w", "prompt_tokens": 1, "completion_tokens": 1},
+            {"label": "x", "model": "other", "prompt_tokens": 1, "completion_tokens": 1},
+        ])
+        assert usage_totals(unpriced)["cost_usd"] is None
+        missing = self._log(tmp_path, [{"label": "w", "model": "w", "prompt_tokens": 1, "completion_tokens": None}])
+        assert usage_totals(missing)["cost_usd"] is None
+
+    def test_malformed_prices_ignored(self, tmp_path, monkeypatch):
+        from llm import usage_totals
+        monkeypatch.setenv("MODEL_PRICES_USD", "not json")
+        path = self._log(tmp_path, [{"label": "w", "model": "w", "prompt_tokens": 1, "completion_tokens": 1}])
+        assert usage_totals(path)["cost_usd"] is None
+
+    def test_record_run_writes_cost(self, db):
+        from publish import record_run
+        usage = {"tokens_in": 1, "tokens_out": 1, "calls": 1, "models": "writer:w",
+                 "tokens_by_model": "w:1/1", "cost_usd": 0.25}
+        record_run(db, "2026-10-17", {"papers": 1}, 0, 5, usage=usage)
+        assert db.execute("SELECT cost_usd FROM runs").fetchone()[0] == 0.25
+        record_run(db, "2026-10-17", {"papers": 1}, 0, 5)
+        assert db.execute("SELECT cost_usd FROM runs").fetchone()[0] == 0.25
 
 
 class TestRunDuration:

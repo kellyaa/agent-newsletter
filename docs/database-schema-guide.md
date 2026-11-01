@@ -84,7 +84,7 @@ One row per successful published issue, with aggregate metrics.
 | `duration_seconds` | REAL | Wall-clock runtime |
 | `tokens_in` | INTEGER | Total LLM input tokens (summed across ranker × 3 sections + writer) |
 | `tokens_out` | INTEGER | Total LLM output tokens |
-| `cost_usd` | REAL | Estimated cost (currently NULL; cost is priced downstream from tokens) |
+| `cost_usd` | REAL | Estimated cost (from `MODEL_PRICES_USD` when set, else NULL) |
 | `papers_expired_unjudged` | INTEGER | Papers that aged out before the ranker scored them |
 | `papers_prerank_cut` | INTEGER | Unscored papers removed by the `PAPER_PRERANK_CAP` (issue #289) |
 | `notes` | TEXT | JSON object with per-model token breakdown: `{"ranker": {"model": "...", "tokens_in": N, "tokens_out": M}, ...}` |

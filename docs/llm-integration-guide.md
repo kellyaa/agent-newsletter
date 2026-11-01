@@ -261,7 +261,7 @@ File an issue if this is needed.
 2. **Retries are transparent** — if `call_llm()` retries, you won't see it in your code, but it will be in `logs/<slug>/llm-*.log`
 3. **Validation is strict** — if your schema is too narrow, the LLM will retry and eventually fail. Test early with `tests/e2e/`
 4. **Timeouts accumulate** — `RANKER_TIMEOUT_S` is per-call, so 3 ranker calls (papers, news, blogs) can take up to 3× the timeout
-5. **Cost is not computed automatically** — `runs.cost_usd` is NULL; cost is calculated downstream from `tokens_in` and `tokens_out` using your provider's rates
+5. **Cost is not computed automatically** — `runs.cost_usd` is NULL unless `MODEL_PRICES_USD` is set; otherwise cost is calculated downstream from `tokens_in` and `tokens_out` using your provider's rates
 
 ---
 

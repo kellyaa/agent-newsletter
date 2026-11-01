@@ -418,7 +418,7 @@ macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 v1 records token usage (not priced cost); v2 enforces a budget. Scaffolding now so we don't have to retrofit:
 
-- `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns. `tokens_in` / `tokens_out` are populated (see below); `cost_usd` is **not** written by any code path and stays NULL — cost is priced downstream from the per-model tokens in `notes`.
+- `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns. `tokens_in` / `tokens_out` are populated (see below); `cost_usd` is written by `publish.py` only when `MODEL_PRICES_USD` prices every model used that day; otherwise it stays NULL and cost is priced downstream from the per-model tokens in `notes`.
 - `llm.py` appends each response's token usage (`usage.prompt_tokens`, `usage.completion_tokens`), model and run attempt to `logs/usage-<date>.jsonl` (`$LLM_USAGE_LOG`, set by `run.sh`). `publish.py` sums the day's into the `runs` row; `run_attempt.py` sums each attempt's into `run_attempts` (#13).
 - `BUDGET_USD` env var is defined as a future budget cap. **Not yet implemented in `run.sh` or enforced** in v1 — the column scaffolding is in place for when enforcement is added.
 - A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
