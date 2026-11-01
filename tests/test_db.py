@@ -126,3 +126,49 @@ def test_run_date_defaults_to_local_today(monkeypatch):
 
     monkeypatch.delenv("RUN_DATE", raising=False)
     assert run_date() == date.today().isoformat()
+
+
+def test_db_path_resolves_at_call_time(monkeypatch, tmp_path):
+    """db_path() follows the current env; no module reload is needed."""
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    assert db.db_path() == tmp_path / "editions" / "agents" / "state.db"
+    monkeypatch.setenv("EDITION", "engineering-with-ai")
+    assert db.db_path() == (
+        tmp_path / "editions" / "engineering-with-ai" / "state.db"
+    )
+    monkeypatch.delenv("CONTENT_ROOT")
+    assert db.db_path() == db.REPO_ROOT / "editions" / "engineering-with-ai" / "state.db"
+
+
+def test_connect_and_init_db_default_to_db_path(monkeypatch, tmp_path):
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    db.init_db()
+    assert (tmp_path / "editions" / "agents" / "state.db").exists()
+    conn = db.connect()
+    conn.close()
+
+
+def test_db_path_alias_is_lazy_and_unknown_attrs_raise(monkeypatch, tmp_path):
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    assert db.DB_PATH == db.db_path()
+    with pytest.raises(AttributeError):
+        db.NOPE
+
+
+def test_import_db_without_edition_selected():
+    """`import db` must not need EDITION (issue #446)."""
+    import subprocess, sys
+    from pathlib import Path
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    env = {k: v for k, v in __import__("os").environ.items() if k != "EDITION"}
+    r = subprocess.run(
+        [sys.executable, "-c", "import db; print(db.run_date())"],
+        cwd=scripts, env=env, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr

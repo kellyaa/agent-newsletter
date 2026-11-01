@@ -14,9 +14,36 @@ from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 import edition as _edition
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_CONTENT_ROOT_ENV = os.environ.get("CONTENT_ROOT")
-CONTENT_ROOT = Path(_CONTENT_ROOT_ENV) if _CONTENT_ROOT_ENV else REPO_ROOT
-DB_PATH = _edition.runtime_paths(CONTENT_ROOT).state_db
+
+
+def content_root() -> Path:
+    """The content worktree: ``$CONTENT_ROOT`` if set, else the repo root.
+
+    Read from the environment on every call, so it never goes stale.
+    """
+    env = os.environ.get("CONTENT_ROOT")
+    return Path(env) if env else REPO_ROOT
+
+
+def db_path() -> Path:
+    """The selected edition's ``state.db``, resolved from the env at call time.
+
+    Raises :class:`edition.EditionError` when ``EDITION`` is unset. Importing
+    this module does not.
+    """
+    return _edition.runtime_paths(content_root()).state_db
+
+
+# Kept for the stage modules that still bind it at import time.
+CONTENT_ROOT = content_root()
+
+
+def __getattr__(name: str):
+    # Deprecated alias for db_path(): resolved lazily so ``import db`` does not
+    # require an edition to be selected.
+    if name == "DB_PATH":
+        return db_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def run_date() -> str:
@@ -153,11 +180,13 @@ def is_allowed_url(url: str) -> bool:
     return scheme in ALLOWED_URL_SCHEMES
 
 
-def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    """Open the state DB at ``path``, default :func:`db_path`."""
+    path = db_path() if path is None else path
     # Each edition's DB sits in its own editions/<slug>/ folder, which does not
     # exist yet for a brand-new edition.
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=10000")
@@ -165,8 +194,8 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
-    conn = connect(db_path)
+def init_db(path: Path | None = None) -> None:
+    conn = connect(path)
     try:
         conn.executescript(SCHEMA)
         _migrate(conn)
@@ -303,4 +332,4 @@ def url_id(url: str) -> str:
 
 if __name__ == "__main__":
     init_db()
-    print(f"Initialized {DB_PATH}")
+    print(f"Initialized {db_path()}")

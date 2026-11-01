@@ -230,7 +230,7 @@ class TestApplyPublishedToLive:
         assert promoted == 0  # already published, not re-promoted
 
     def test_defaults_to_live_db_path(self, db_path, monkeypatch):
-        """Without live_db, the promotion targets db.DB_PATH (the real state.db)."""
+        """Without live_db, the promotion targets db.db_path() (the real state.db)."""
         import db as db_mod
         import backfill as backfill_mod
 
@@ -246,6 +246,6 @@ class TestApplyPublishedToLive:
         )
         conn.commit()
         conn.close()
-        monkeypatch.setattr(db_mod, "DB_PATH", db_path)
+        monkeypatch.setattr(db_mod, "db_path", lambda: db_path)
 
         assert backfill_mod.apply_published_to_live(["c-1"]) == 1

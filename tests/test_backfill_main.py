@@ -661,7 +661,7 @@ class TestBackfillMain:
         self, tmp_path, monkeypatch,
     ):
         """main() threads a sandbox connection through every stage and never
-        rebinds db.connect/db.init_db/db.DB_PATH, so the live DB stays put."""
+        rebinds db.connect/db.init_db/db.db_path, so the live DB stays put."""
         import backfill as bf
         import db as db_mod
 
@@ -669,7 +669,7 @@ class TestBackfillMain:
         sandbox.mkdir()
         live_db = tmp_path / "live.db"
         _init_db(live_db)
-        monkeypatch.setattr(db_mod, "DB_PATH", live_db)
+        monkeypatch.setattr(db_mod, "db_path", lambda: live_db)
         live_before = live_db.read_bytes()
         connect_before, init_before = db_mod.connect, db_mod.init_db
 
@@ -701,7 +701,7 @@ class TestBackfillMain:
         assert seen == [str(sandbox / "state.db")] * 3
         assert db_mod.connect is connect_before
         assert db_mod.init_db is init_before
-        assert db_mod.DB_PATH == live_db
+        assert db_mod.db_path() == live_db
         assert live_db.read_bytes() == live_before
 
 

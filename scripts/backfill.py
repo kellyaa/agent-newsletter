@@ -9,7 +9,7 @@ What it does, end-to-end:
      dated < --date and extracts the edition's state.db into a sandbox under /tmp/backfill-<date>/.
   2. Opens the sandbox DB by explicit path and threads that connection
      through every stage, so the real state.db is never touched. Nothing is
-     monkey-patched: the db module's connect/init_db/DB_PATH stay as they are.
+     monkey-patched: the db module's connect/init_db stay as they are.
   3. Re-applies prefilter's age-out rule using --date as the synthetic 'now'
      (julianday('now') would otherwise overshoot by however many days are
      between the snapshot and --date).
@@ -147,7 +147,7 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
     state.db. Without this step, those ids stay 'candidate' in the live pool
     and would compete (and could re-feature) on the next normal run.
 
-    ``live_db`` defaults to the edition's real state.db (``db.DB_PATH``). The
+    ``live_db`` defaults to the edition's real state.db (``db.db_path()``). The
     sandbox is never consulted here: the backfill run itself only ever holds a
     connection to the sandbox, opened by explicit path in main().
 
@@ -157,7 +157,7 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
     import db as db_mod
     from models import Status
 
-    conn = db_mod.connect(live_db or db_mod.DB_PATH)
+    conn = db_mod.connect(live_db or db_mod.db_path())
     try:
         placeholders = ",".join("?" * len(featured_ids))
         cur = conn.execute(
@@ -372,7 +372,7 @@ def main() -> int:
         promoted = apply_published_to_live(featured_ids)
         log.info(
             "promoted %d/%d featured ids to status='published' in live %s",
-            promoted, len(featured_ids), db_mod.DB_PATH,
+            promoted, len(featured_ids), db_mod.db_path(),
         )
         if promoted < len(featured_ids):
             log.warning(
