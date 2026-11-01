@@ -19,7 +19,7 @@ import sys
 
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, run_date
+from db import CONTENT_ROOT, REPO_ROOT, connect, count_items_seen_on, init_db, run_date
 from llm import call_llm
 from models import Status
 
@@ -129,9 +129,7 @@ def load_today_items(conn, today: str):
     counts = {"papers": 0, "news": 0, "blogs": 0}
     for it in featured:
         counts[it["section"]] = counts.get(it["section"], 0) + 1
-    items_considered = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()[0]
+    items_considered = count_items_seen_on(conn, today)
     appendix_total = sum(len(v) for v in appendix_by_section.values())
 
     metadata = {
