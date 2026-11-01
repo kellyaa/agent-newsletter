@@ -32,6 +32,34 @@ def test_canonicalize_url_collapses_arxiv_variants(
     assert canonicalize_url(url) == expected
 
 
+def test_canonicalize_url_collapses_arxiv_subdomain_variants() -> None:
+    assert (
+        canonicalize_url("https://export.arxiv.org/pdf/2401.12345v2")
+        == "https://export.arxiv.org/abs/2401.12345"
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://notarxiv.org/pdf/2401.12345.pdf",
+        "https://fakearxiv.org/abs/2401.12345v2",
+        "https://arxiv.org.evil.example/pdf/2401.12345",
+    ],
+)
+def test_canonicalize_url_leaves_lookalike_arxiv_hosts_alone(url: str) -> None:
+    """Only arxiv.org and its subdomains get the abs-form rewrite; a host that
+    merely ends in the same letters must keep its own path, or distinct pages
+    on it would collapse into one dedup key."""
+    assert canonicalize_url(url) == url
+
+
+def test_canonicalize_url_keeps_distinct_pages_on_lookalike_host_distinct() -> None:
+    assert canonicalize_url("https://notarxiv.org/pdf/2401.12345") != canonicalize_url(
+        "https://notarxiv.org/abs/2401.12345"
+    )
+
+
 def test_canonicalize_url_strips_tracking_params_and_preserves_query_order() -> None:
     url = (
         "HTTPS://Example.COM/path/"
