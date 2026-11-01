@@ -7,11 +7,13 @@ import pytest
 from conftest import base_template
 from db import get_meta, set_meta
 
+from gates import (
+    jaccard as _jaccard,
+    normalize_title as _normalize_title,
+    title_tokens as _title_tokens,
+)
 from prefilter import (
     _prerank_score,
-    _normalize_title,
-    _title_tokens,
-    _jaccard,
     _rubric_hash,
     _maybe_invalidate_papers_scores,
     _passes_recency,

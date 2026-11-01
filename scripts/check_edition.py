@@ -32,6 +32,7 @@ from pathlib import Path
 import yaml
 
 import edition as edition_mod
+import gates
 import prompts as prompts_mod
 from edition import Edition, EditionError
 
@@ -205,15 +206,14 @@ def _rows_for(conn: sqlite3.Connection, ids: list[str]) -> list[dict]:
 
 def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
     """Fetch every source into a throwaway DB and apply the recency + keyword gates."""
-    # The stage modules read their edition at import time, so select this one
-    # before importing them. Only the functions are used below, never their
-    # module-level edition constants.
+    # fetch/db read their edition at import time, so select this one before
+    # importing them. The gates come from gates.py, which loads no edition, so
+    # the prefilter stage module is never imported here.
     previous = os.environ.get("EDITION")
     os.environ["EDITION"] = ed.slug
     try:
         import db
         import fetch
-        import prefilter
     finally:
         if previous is None:
             del os.environ["EDITION"]
@@ -247,12 +247,12 @@ def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
                     ids = [db.url_id(it.url) for it in items if db.is_allowed_url(it.url)]
                     rows = _rows_for(conn, ids)
                     count.fetched = len(rows)
-                    kept = [r for r in rows if prefilter._passes_recency(r, now)]
+                    kept = [r for r in rows if gates.passes_recency(r, now)]
                     count.after_recency = len(kept)
-                    kept = [r for r in kept if prefilter.keyword_gate(r, keyword_re)]
+                    kept = [r for r in kept if gates.keyword_gate(r, keyword_re)]
                     count.after_keyword = len(kept)
                     for r in kept:
-                        count.sections[prefilter.assign_section(r["source"], r["section_override"])] += 1
+                        count.sections[gates.assign_section(r["source"], r["section_override"])] += 1
         finally:
             conn.close()
     finally:
