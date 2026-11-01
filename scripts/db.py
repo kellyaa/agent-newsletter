@@ -274,7 +274,9 @@ def canonicalize_url(url: str) -> str:
     netloc = parsed.netloc.lower()
     path = parsed.path or "/"
 
-    if netloc.endswith("arxiv.org"):
+    # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
+    # would also rewrite paths on unrelated hosts such as notarxiv.org.
+    if netloc == "arxiv.org" or netloc.endswith(".arxiv.org"):
         # /pdf/2401.12345.pdf, /pdf/2401.12345v2, /abs/2401.12345v3 → /abs/2401.12345
         import re
         m = re.match(r"^/(?:pdf|abs|html)/([0-9]{4}\.[0-9]{4,5})(?:v\d+)?(?:\.pdf)?/?$", path)
