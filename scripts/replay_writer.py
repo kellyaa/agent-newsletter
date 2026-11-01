@@ -27,6 +27,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prompts  # noqa: E402
 from db import connect, init_db  # noqa: E402
+from models import Section  # noqa: E402
 from write import (  # noqa: E402
     EDITION,
     ISSUES_DIR,
@@ -109,15 +110,16 @@ def load_from_issue_file(conn, date: str):
 
     # Preserve production ordering: within a section, by score desc, then id.
     # Matches scripts/write.py:load_today_items ORDER BY clause.
-    section_rank = {"papers": 0, "news": 1, "blogs": 2}
+    # Declaration order of models.Section: papers, news, blogs.
+    section_rank = {s.value: i for i, s in enumerate(Section)}
     featured.sort(key=lambda it: (
         section_rank.get(it["section"], 99),
         -(it["score"] or 0),
         it["id"],
     ))
 
-    appendix_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
-    for section in ("papers", "news", "blogs"):
+    appendix_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
+    for section in appendix_by_section:
         for entry in (appendix_fm.get(section) or []):
             appendix_by_section[section].append({
                 "id": entry["id"],
@@ -127,7 +129,7 @@ def load_from_issue_file(conn, date: str):
                 "title": entry["title"],
             })
 
-    counts = {"papers": 0, "news": 0, "blogs": 0}
+    counts = {s.value: 0 for s in Section}
     for it in featured:
         counts[it["section"]] = counts.get(it["section"], 0) + 1
     appendix_total = sum(len(v) for v in appendix_by_section.values())

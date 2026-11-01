@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from db import connect
-from models import Status
+from models import Section, Status
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +38,10 @@ log = logging.getLogger(__name__)
 # bind; at 50 it bound on nearly every weekday and starved ~20-45 papers/day
 # until they expired unjudged (see issue #295).
 PAPER_PRERANK_CAP = 100
+
+# Candidate bucket for papers that already carry a cached score. Not a
+# newsletter section: rank.py folds it back into Section.PAPERS.
+PAPERS_PRESCORED = "papers_prescored"
 
 
 def prerank_score(item: dict, now: datetime, keyword_re: re.Pattern[str]) -> float:
@@ -107,12 +111,10 @@ def load_candidates_from_db(
 
 def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]]:
     """Internal: query and group candidates."""
-    grouped: dict[str, list[dict]] = {
-        "papers": [],
-        "papers_prescored": [],
-        "news": [],
-        "blogs": [],
-    }
+    # Every section gets a bucket, plus "papers_prescored" (papers that already
+    # carry a cached score, so the ranker can skip the LLM call for them).
+    grouped: dict[str, list[dict]] = {s.value: [] for s in Section}
+    grouped[PAPERS_PRESCORED] = []
 
     rows = conn.execute(
         f"""
@@ -125,7 +127,7 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
 
     for r in rows:
         d = dict(r)
-        section = d.get("section") or "blogs"
+        section = d.get("section") or Section.BLOGS.value
         emitted: dict[str, Any] = {
             "id": d["id"],
             "source": d["source"],
@@ -135,7 +137,7 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
             "published_at": d["published_at"],
             "raw_text": d["raw_text"],
         }
-        if section == "papers" and d.get("score") is not None:
+        if section == Section.PAPERS and d.get("score") is not None:
             # Prescored paper — carry cached score/tags/why so the ranker
             # can skip the LLM call for this item.
             emitted["score"] = d["score"]
@@ -144,27 +146,23 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
             except (TypeError, ValueError):
                 emitted["tags"] = []
             emitted["why"] = d["why"] or ""
-            grouped["papers_prescored"].append(emitted)
+            grouped[PAPERS_PRESCORED].append(emitted)
         elif section in grouped:
             grouped[section].append(emitted)
         else:
-            grouped["blogs"].append(emitted)
+            grouped[Section.BLOGS.value].append(emitted)
 
     # Apply pre-rank cap to unscored papers if requested.
-    if prerank_cap and len(grouped["papers"]) > prerank_cap:
+    papers = grouped[Section.PAPERS.value]
+    if prerank_cap and len(papers) > prerank_cap:
         if now is None:
             now = datetime.now(timezone.utc)
         if prerank_scorer is not None:
-            before = len(grouped["papers"])
-            grouped["papers"].sort(
-                key=lambda it: prerank_scorer(it, now), reverse=True
-            )
-            grouped["papers"] = grouped["papers"][:prerank_cap]
-            log.info(
-                "papers pre-rank cap: %d unscored → %d",
-                before, len(grouped["papers"]),
-            )
+            before = len(papers)
+            papers.sort(key=lambda it: prerank_scorer(it, now), reverse=True)
+            del papers[prerank_cap:]
+            log.info("papers pre-rank cap: %d unscored → %d", before, len(papers))
             if stats is not None:
-                stats["prerank_cut"] = before - len(grouped["papers"])
+                stats["prerank_cut"] = before - len(papers)
 
     return grouped
