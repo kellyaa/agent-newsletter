@@ -15,7 +15,7 @@ import logging
 import os
 import sys
 
-from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
+from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
 from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
@@ -331,14 +331,14 @@ def main() -> int:
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
     # Items here have score+tags+why already; we skip the LLM and merge them
     # with whatever the LLM returns for the unscored `papers` bucket.
-    BUCKETS = (*(s.value for s in Section), "papers_prescored")
+    BUCKETS = (*(s.value for s in Section), PAPERS_PRESCORED)
 
     # Total count for sanity logging.
     total = sum(len(candidates.get(b, [])) for b in BUCKETS)
     log.info(
         "candidates: papers=%d (prescored=%d) news=%d blogs=%d total=%d",
         len(candidates.get(Section.PAPERS, [])),
-        len(candidates.get("papers_prescored", [])),
+        len(candidates.get(PAPERS_PRESCORED, [])),
         len(candidates.get(Section.NEWS, [])),
         len(candidates.get(Section.BLOGS, [])),
         total,
@@ -352,7 +352,7 @@ def main() -> int:
     # Papers: only invoke the LLM on the unscored bucket. Prescored items
     # already have a score from a prior day's run and bypass the LLM entirely.
     unscored_papers = candidates.get(Section.PAPERS, [])
-    prescored_papers = candidates.get("papers_prescored", [])
+    prescored_papers = candidates.get(PAPERS_PRESCORED, [])
     if unscored_papers:
         scored = rank_section(Section.PAPERS.value, unscored_papers, rubric)
         log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
@@ -388,7 +388,7 @@ def main() -> int:
     # Papers (both unscored + prescored) all collapse to section='papers'.
     by_id_section: dict[str, str] = {}
     for bucket, items in candidates.items():
-        section = Section.PAPERS.value if bucket in (Section.PAPERS, "papers_prescored") else bucket
+        section = Section.PAPERS.value if bucket in (Section.PAPERS, PAPERS_PRESCORED) else bucket
         if section not in SECTION_RULES:
             continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
         for it in items:
