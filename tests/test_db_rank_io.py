@@ -70,7 +70,11 @@ def test_apply_rank_decisions_commits(conn, tmp_path):
 
 
 def test_apply_rank_decisions_empty_is_noop(conn):
-    db_mod.apply_rank_decisions(conn, [])
+    _add(conn, "a", Status.CANDIDATE)
+    before = _row(conn, "a")
+    assert db_mod.apply_rank_decisions(conn, []) is None
+    assert _row(conn, "a") == before
+    assert before["status"] == Status.CANDIDATE
 
 
 def test_bump_times_competed_only_touches_candidates(conn):
