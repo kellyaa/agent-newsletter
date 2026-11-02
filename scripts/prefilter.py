@@ -11,7 +11,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
+from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
 from gates import (  # noqa: F401 — re-exported for tests and tooling
@@ -276,10 +276,10 @@ def main(now: datetime | None = None) -> int:
     log.info(
         "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
         CANDIDATES_OUT,
-        len(grouped["papers"]),
-        len(grouped["papers_prescored"]),
-        len(grouped["news"]),
-        len(grouped["blogs"]),
+        len(grouped[Section.PAPERS]),
+        len(grouped[PAPERS_PRESCORED]),
+        len(grouped[Section.NEWS]),
+        len(grouped[Section.BLOGS]),
     )
 
     conn.close()
