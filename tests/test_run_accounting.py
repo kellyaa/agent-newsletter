@@ -59,7 +59,8 @@ class TestAppendUsage:
     def test_unwritable_path_does_not_raise(self, monkeypatch, tmp_path):
         from llm import _append_usage
         monkeypatch.setenv("LLM_USAGE_LOG", str(tmp_path / "no-such-dir" / "usage.jsonl"))
-        _append_usage("writer", "m", _usage(1, 2))
+        assert _append_usage("writer", "m", _usage(1, 2)) is None
+        assert not (tmp_path / "no-such-dir").exists()
 
 
 # ---------------------------------------------------------------------------

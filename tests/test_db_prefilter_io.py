@@ -65,7 +65,10 @@ def test_promote_to_candidates_sets_status_and_section(conn):
 
 
 def test_promote_to_candidates_empty_is_noop(conn):
-    db_mod.promote_to_candidates(conn, [])
+    _add(conn, "a", Status.NEW)
+    assert db_mod.promote_to_candidates(conn, []) is None
+    assert _row(conn, "a")["status"] == Status.NEW
+    assert _row(conn, "a")["section"] is None
 
 
 def test_drop_items_moves_only_given_ids(conn):

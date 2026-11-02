@@ -410,7 +410,8 @@ def test_no_llm_never_calls_the_llm(editions_dir, monkeypatch):
         raise AssertionError("LLM called")
 
     monkeypatch.setattr(new_edition.llm, "call_llm", boom)
-    new_edition.scaffold("nollm", "No LLM", "", [], use_llm=False)
+    dest = new_edition.scaffold("nollm", "No LLM", "", [], use_llm=False)
+    assert (dest / "edition.yaml").is_file()
 
 
 def test_no_llm_seed_sources_are_validated(editions_dir, net):
