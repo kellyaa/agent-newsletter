@@ -7,7 +7,6 @@ import subprocess
 import time
 from pathlib import Path
 
-import pytest
 
 
 WATCHDOG = Path(__file__).resolve().parents[1] / "watchdog.sh"

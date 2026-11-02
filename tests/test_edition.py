@@ -1,7 +1,5 @@
 """edition.py: loading, strict validation, current()."""
-import copy
 import dataclasses
-from pathlib import Path
 
 import pytest
 import yaml

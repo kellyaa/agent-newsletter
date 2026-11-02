@@ -1,7 +1,6 @@
 """Tests for llm.py: _extra_headers, _one_shot error handling, call_llm retry loop."""
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

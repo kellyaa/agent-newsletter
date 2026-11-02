@@ -9,11 +9,10 @@ Covers:
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -189,7 +188,6 @@ class TestSetupSandbox:
     def test_sandbox_wipes_existing_directory(self, tmp_path, monkeypatch):
         """If sandbox dir already exists, it is wiped before recreating."""
         import backfill as bf
-        import shutil
 
         sandbox_path = tmp_path / "backfill-2026-07-15"
         sandbox_path.mkdir()
@@ -217,7 +215,7 @@ class TestSetupSandbox:
         original_path = bf.Path
         def patched_path(x):
             s = str(x)
-            if s == f"/tmp/backfill-2026-07-15":
+            if s == "/tmp/backfill-2026-07-15":
                 return sandbox_path
             return original_path(x)
         monkeypatch.setattr("backfill.Path", patched_path)
@@ -554,7 +552,6 @@ class TestBackfillMain:
         """main() runs the full pipeline without --apply-published and returns 0."""
         import backfill as bf
         import db as db_mod
-        import write as write_mod
 
         # Set up a minimal sandbox DB in tmp_path
         sandbox_db = tmp_path / "state.db"
