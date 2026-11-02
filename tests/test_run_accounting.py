@@ -200,6 +200,7 @@ class TestRunAttempts:
     def test_finish_failed_records_stage_and_usage(self, db, monkeypatch):
         import run_attempt
         monkeypatch.setattr(run_attempt, "code_state", lambda: (None, None))
+        monkeypatch.setattr(run_attempt, "_now", lambda: "2026-10-17T11:05:00Z")
         n = run_attempt.start(db, "2026-10-17", "2026-10-17T11:00:00Z")
         usage = {"tokens_in": 100, "tokens_out": 10, "calls": 1, "models": "papers:r",
                  "tokens_by_model": "r:100/10"}
@@ -207,7 +208,7 @@ class TestRunAttempts:
         row = db.execute("SELECT * FROM run_attempts").fetchone()
         assert (row["outcome"], row["failed_stage"], row["exit_code"]) == ("failed", "rank", 1)
         assert (row["tokens_in"], row["models"], row["tokens_by_model"]) == (100, "papers:r", "r:100/10")
-        assert row["finished_at"] is not None
+        assert row["finished_at"] == "2026-10-17T11:05:00Z"
 
     def test_finish_ok_drops_stage(self, db, monkeypatch):
         import run_attempt
