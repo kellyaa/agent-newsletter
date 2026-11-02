@@ -103,6 +103,22 @@ class TestCallLlmRetry:
         assert result == expected
         assert mock_shot.call_count == 2
 
+    def test_retries_when_first_response_has_no_choices(self, monkeypatch):
+        _mock_env(monkeypatch)
+        empty = _make_fake_client("{}")
+        empty.chat.completions.create.return_value.choices = []
+        good = _make_fake_client('{"answer": "ok"}')
+        responses = [
+            empty.chat.completions.create.return_value,
+            good.chat.completions.create.return_value,
+        ]
+        client = MagicMock()
+        client.chat.completions.create.side_effect = responses
+        monkeypatch.setattr("llm._client", lambda: client)
+        result = call_llm("p", SCHEMA, "s", model="m", max_attempts=2)
+        assert result == {"answer": "ok"}
+        assert client.chat.completions.create.call_count == 2
+
     def test_raises_after_all_attempts_exhausted(self, monkeypatch):
         _mock_env(monkeypatch)
         with patch("llm._one_shot", side_effect=RuntimeError("parse fail")):
@@ -185,6 +201,25 @@ class TestOneShotMarkdownFence:
         with pytest.raises(ContentFilterError, match="content filter"):
             self._call_one_shot("", finish_reason="content_filter")
         assert not issubclass(ContentFilterError, RuntimeError)
+
+    @pytest.mark.parametrize("choices", [[], None])
+    def test_empty_choices_raises_runtime_error(self, choices):
+        """An HTTP 200 with no choices must raise RuntimeError (retryable by
+        call_llm), not IndexError."""
+        client = _make_fake_client("{}")
+        client.chat.completions.create.return_value.choices = choices
+        with pytest.raises(RuntimeError, match="no choices"):
+            _one_shot(
+                client,
+                prompt="test",
+                schema=SCHEMA,
+                schema_name="test",
+                model="m",
+                timeout_s=10,
+                headers={},
+                max_tokens=None,
+                label="test",
+            )
 
     def test_invalid_json_raises(self):
         with pytest.raises(RuntimeError, match="non-JSON"):
