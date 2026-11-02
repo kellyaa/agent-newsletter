@@ -28,7 +28,7 @@ from db import (
     url_id,
 )
 from db import count_items_seen_on
-from models import Status
+from models import Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -578,7 +578,9 @@ def load_sources() -> dict:
         return yaml.safe_load(f)
 
 
-VALID_SECTIONS = {"papers", "news", "blogs"}
+# Section names come from models.Section so a sources.yaml `section:` override
+# accepted by check_edition is never rejected here (and vice versa).
+VALID_SECTIONS = frozenset(s.value for s in Section)
 
 
 def _validate_section(value, source_id: str) -> str | None:
