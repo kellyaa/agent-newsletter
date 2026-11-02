@@ -25,6 +25,7 @@ EXPECTED_WORKFLOWS = {
     "build.yml",
     "deploy.yml",
     "nightly-compliance.yml",
+    "security.yml",
     "site-tests.yml",
     "tests.yml",
 }
