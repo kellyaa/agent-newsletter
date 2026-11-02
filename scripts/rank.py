@@ -18,7 +18,14 @@ import sys
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import (
+    CONTENT_ROOT,
+    REPO_ROOT,
+    apply_rank_decisions,
+    bump_times_competed,
+    connect,
+    init_db,
+)
 from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem, Section, Status
 
@@ -286,14 +293,12 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
 
 def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
+    rows = []
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
-        conn.execute(
-            "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
-            (d["score"], json.dumps(clean_tags), d["why"], d["status"], item_id),
-        )
+        rows.append((item_id, d["score"], json.dumps(clean_tags), d["why"], d["status"]))
         counts[d["status"]] = counts.get(d["status"], 0) + 1
-    conn.commit()
+    apply_rank_decisions(conn, rows)
     return counts
 
 
@@ -421,16 +426,10 @@ def main() -> int:
         iid for iid, d in decisions.items() if d["section"] == Section.PAPERS
     ]
     if papers_competitors:
-        placeholders = ",".join("?" * len(papers_competitors))
-        bumped = conn.execute(
-            f"UPDATE items SET times_competed = times_competed + 1 "
-            f"WHERE status = '{Status.CANDIDATE}' AND id IN ({placeholders})",
-            papers_competitors,
-        )
-        conn.commit()
+        bumped = bump_times_competed(conn, papers_competitors)
         log.info(
             "papers: bumped times_competed on %d pool items (of %d competitors)",
-            bumped.rowcount or 0, len(papers_competitors),
+            bumped, len(papers_competitors),
         )
     conn.close()
 

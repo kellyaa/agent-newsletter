@@ -346,6 +346,45 @@ def count_never_scored_expired(conn: sqlite3.Connection, section: str) -> int:
     return int(row[0]) if row else 0
 
 
+# --- rank's item-state transitions -------------------------------------------
+# rank.py used to run these statements inline; same rationale as prefilter's
+# helpers above (advisory: "No data access layer").
+def apply_rank_decisions(
+    conn: sqlite3.Connection,
+    rows: list[tuple[str, float | int | None, str, str, str]],
+) -> None:
+    """Write each ``(item_id, score, tags_json, why, status)`` ranker verdict.
+
+    `tags_json` is the already-filtered, JSON-encoded tag list. Commits.
+    """
+    if not rows:
+        return
+    conn.executemany(
+        "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
+        [(score, tags, why, status, item_id)
+         for item_id, score, tags, why, status in rows],
+    )
+    conn.commit()
+
+
+def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Increment ``times_competed`` for `item_ids` still in the ``candidate`` pool.
+
+    Gating on status means sealed (featured/appendix) winners are never
+    inflated. Commits; returns the rows bumped.
+    """
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        "UPDATE items SET times_competed = times_competed + 1 "
+        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
 def record_stage_stats(
     conn: sqlite3.Connection,
     date: str,
