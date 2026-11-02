@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import edition as _edition
+from models import Section, Status
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -265,6 +266,82 @@ def count_items_in_status(conn: sqlite3.Connection, *statuses: str) -> int:
     marks = ", ".join("?" * len(statuses))
     row = conn.execute(
         f"SELECT COUNT(*) FROM items WHERE status IN ({marks})", tuple(statuses)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+# --- prefilter's item-state transitions --------------------------------------
+# prefilter.py used to run these statements inline; they live here so the
+# stage reads as gating logic and the SQL has one home (advisory: "No data
+# access layer"). Column list matches models.PrefilterItem.
+_PREFILTER_COLUMNS = (
+    "id, source, url, canonical_url, title, author, published_at, "
+    "fetched_at, raw_text, status, appearances, section_override, "
+    "keyword_gate_bypass, recency_days_override"
+)
+
+
+def load_prefilter_eligible(
+    conn: sqlite3.Connection, max_appendix_appearances: int
+) -> list[dict]:
+    """Rows prefilter gates this run: every ``new`` item, plus ``appendix``
+    items that have appeared fewer than `max_appendix_appearances` times."""
+    rows = conn.execute(
+        f"SELECT {_PREFILTER_COLUMNS} FROM items "
+        f"WHERE status = '{Status.NEW}' "
+        f"OR (status = '{Status.APPENDIX}' AND appearances < ?)",
+        (max_appendix_appearances,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def promote_to_candidates(
+    conn: sqlite3.Connection, assignments: list[tuple[str, str]]
+) -> None:
+    """Mark each ``(item_id, section)`` as a ``candidate`` in `section`. Commits."""
+    if not assignments:
+        return
+    conn.executemany(
+        f"UPDATE items SET status = '{Status.CANDIDATE}', section = ? WHERE id = ?",
+        [(section, item_id) for item_id, section in assignments],
+    )
+    conn.commit()
+
+
+def drop_items(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Move `item_ids` to ``dropped``. Commits; returns the rows updated."""
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.DROPPED}' WHERE id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def clear_candidate_scores(conn: sqlite3.Connection, section: str) -> int:
+    """NULL the cached score of every scored ``candidate`` in `section`.
+
+    Does not commit: the caller pairs this with the meta write that records
+    why (prefilter's rubric hash), so both land in one transaction.
+    """
+    cur = conn.execute(
+        "UPDATE items SET score = NULL "
+        f"WHERE status = '{Status.CANDIDATE}' AND section = ? AND score IS NOT NULL",
+        (section,),
+    )
+    return cur.rowcount or 0
+
+
+def count_never_scored_expired(conn: sqlite3.Connection, section: str) -> int:
+    """Items in `section` that left the pool (``dropped``/``expired_unjudged``)
+    without ever receiving a score: cumulative, across all runs."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE section = ? AND score IS NULL "
+        f"AND status IN ('{Status.DROPPED}', '{Status.EXPIRED_UNJUDGED}')",
+        (section,),
     ).fetchone()
     return int(row[0]) if row else 0
 

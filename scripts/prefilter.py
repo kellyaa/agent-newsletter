@@ -19,8 +19,9 @@ from gates import (  # noqa: F401 — re-exported for tests and tooling
     collapse_near_dups, keyword_gate, passes_recency as _passes_recency,
 )
 from db import (
-    CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, run_date,
-    set_meta,
+    CONTENT_ROOT, REPO_ROOT, clear_candidate_scores, connect, count_items_in_status,
+    count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
+    promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
 from models import PrefilterItem, Section, Status
 
@@ -113,12 +114,7 @@ def _maybe_invalidate_papers_scores(conn) -> int:
     last = get_meta(conn, RUBRIC_HASH_KEY) or ""
     if last == current:
         return 0
-    cur = conn.execute(
-        "UPDATE items SET score = NULL "
-        f"WHERE status = '{Status.CANDIDATE}' AND section = '{Section.PAPERS}' "
-        "AND score IS NOT NULL"
-    )
-    invalidated = cur.rowcount or 0
+    invalidated = clear_candidate_scores(conn, Section.PAPERS)
     set_meta(conn, RUBRIC_HASH_KEY, current)  # commits, along with the UPDATE above
     if invalidated:
         log.info(
@@ -139,9 +135,7 @@ def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     ``(aged_out, expired_unjudged)``: the total rows moved out of the pool and
     how many of those had never been scored.
     """
-    unjudged_before = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
-    ).fetchone()[0]
+    unjudged_before = count_items_in_status(conn, Status.EXPIRED_UNJUDGED)
     aged = conn.execute(
         PAPER_AGE_OUT_SQL,
         (
@@ -153,9 +147,9 @@ def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     aged_out = aged.rowcount or 0
     # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
     # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
-    expired_unjudged = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
-    ).fetchone()[0] - unjudged_before
+    expired_unjudged = (
+        count_items_in_status(conn, Status.EXPIRED_UNJUDGED) - unjudged_before
+    )
     conn.commit()
     return aged_out, expired_unjudged
 
@@ -185,26 +179,11 @@ def main(now: datetime | None = None) -> int:
         expired_unjudged_now, aged_out - expired_unjudged_now,
     )
 
-    unjudged = conn.execute(
-        "SELECT COUNT(*) FROM items "
-        f"WHERE section = '{Section.PAPERS}' AND score IS NULL "
-        f"AND status IN ('{Status.DROPPED}', '{Status.EXPIRED_UNJUDGED}')"
-    ).fetchone()[0]
+    unjudged = count_never_scored_expired(conn, Section.PAPERS)
     log.info("papers expired without ever being scored (cumulative): %d", unjudged)
 
     # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
-    rows = conn.execute(
-        f"""
-        SELECT id, source, url, canonical_url, title, author, published_at,
-               fetched_at, raw_text, status, appearances, section_override,
-               keyword_gate_bypass, recency_days_override
-        FROM items
-        WHERE status = '{Status.NEW}'
-           OR (status = '{Status.APPENDIX}' AND appearances < ?)
-        """,
-        (APPENDIX_MAX_APPEARANCES,),
-    ).fetchall()
-    items = [dict(r) for r in rows]
+    items = load_prefilter_eligible(conn, APPENDIX_MAX_APPEARANCES)
     log.info("loaded %d items eligible for prefilter", len(items))
 
     if items:
@@ -229,11 +208,7 @@ def main(now: datetime | None = None) -> int:
     if candidate_ids:
         for it in after_dedup:
             it["section"] = assign_section(it["source"], it.get("section_override"))
-        conn.executemany(
-            f"UPDATE items SET status = '{Status.CANDIDATE}', section = ? WHERE id = ?",
-            [(it["section"], it["id"]) for it in after_dedup],
-        )
-        conn.commit()
+        promote_to_candidates(conn, [(it["id"], it["section"]) for it in after_dedup])
 
     # Demote new-but-rejected to 'dropped' so they don't re-enter the pipeline.
     rejected_ids = [
@@ -241,12 +216,7 @@ def main(now: datetime | None = None) -> int:
         if it["status"] == Status.NEW and it["id"] not in set(candidate_ids)
     ]
     if rejected_ids:
-        placeholders = ",".join("?" * len(rejected_ids))
-        conn.execute(
-            f"UPDATE items SET status = '{Status.DROPPED}' WHERE id IN ({placeholders})",
-            rejected_ids,
-        )
-        conn.commit()
+        drop_items(conn, rejected_ids)
         log.info("dropped %d items that failed prefilter", len(rejected_ids))
 
     # Load the candidate pool from DB using the shared query function.
