@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from replay_writer import parse_issue_frontmatter, load_from_issue_file
 
@@ -38,7 +37,7 @@ def _write_issue(issues_dir: Path, date: str, featured_ids: list[str],
     for item_id in featured_ids:
         lines += [
             f"- id: {item_id}",
-            f"  source: arxiv:cs.AI",
+            "  source: arxiv:cs.AI",
             f"  url: https://arxiv.org/abs/{item_id}",
             f"  title: Title for {item_id}",
         ]
@@ -328,7 +327,6 @@ class TestLoadFromIssueFile:
     def test_malformed_tags_json_falls_back_to_empty(self, db, tmp_path, monkeypatch):
         """json.JSONDecodeError for tags falls back to [] (lines 88-89)."""
         import replay_writer as rw_mod
-        import sqlite3
 
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()

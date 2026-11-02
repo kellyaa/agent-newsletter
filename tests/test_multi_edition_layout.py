@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -532,7 +531,7 @@ class TestRunAttemptLatest:
 
     def test_cli_latest_without_db_prints_none_and_creates_nothing(self, tmp_path, monkeypatch, capsys):
         import run_attempt
-        monkeypatch.setattr(run_attempt, "DB_PATH", tmp_path / "editions" / "x" / "state.db")
+        monkeypatch.setattr(run_attempt, "db_path", lambda: tmp_path / "editions" / "x" / "state.db")
         assert run_attempt.main(["latest"]) == 0
         assert capsys.readouterr().out.strip() == "none"
         assert not (tmp_path / "editions").exists()
@@ -541,7 +540,7 @@ class TestRunAttemptLatest:
         import run_attempt
         p = tmp_path / "state.db"
         db_mod.init_db(p)
-        monkeypatch.setattr(run_attempt, "DB_PATH", p)
+        monkeypatch.setattr(run_attempt, "db_path", lambda: p)
         monkeypatch.setattr(run_attempt, "connect", lambda: db_mod.connect(p))
         monkeypatch.setenv("RUN_DATE", "2026-10-22")
         conn = db_mod.connect(p)

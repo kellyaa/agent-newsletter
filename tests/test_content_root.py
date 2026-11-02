@@ -20,13 +20,10 @@ Fix (issue #64):
 from __future__ import annotations
 
 import importlib
-import os
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -101,8 +98,7 @@ class TestWriteContentRoot:
         (issues_dir / "2026-06-01.md").write_text("# Previous issue")
 
         result = write.find_previous_newsletter("2026-06-10")
-        assert result is not None
-        assert "Previous issue" in result
+        assert result == "# Previous issue"
 
 
 # ---------------------------------------------------------------------------

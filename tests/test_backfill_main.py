@@ -9,11 +9,10 @@ Covers:
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -174,20 +173,21 @@ class TestSetupSandbox:
         monkeypatch.setattr("backfill.subprocess.run", fake_subprocess_run)
         monkeypatch.setattr(
             "backfill.find_pre_run_commit",
-            lambda date: "abc1234",
+            lambda date, slug=None: "abc1234",
         )
 
         sandbox_path.mkdir(parents=True)  # pre-create to test wipe
         (sandbox_path / "old_file.txt").write_text("stale")
 
-        result = bf.setup_sandbox.__wrapped__("2026-07-15") if hasattr(bf.setup_sandbox, "__wrapped__") else None
-        # Just test find_pre_run_commit is called — full integration tested separately
-        assert True  # setup_sandbox itself is I/O heavy; key paths exercised via integration
+        result = bf.setup_sandbox("2026-07-15")
+
+        assert result == sandbox_path
+        assert not (sandbox_path / "old_file.txt").exists()
+        assert (sandbox_path / "state.db").read_bytes() == fake_db_content
 
     def test_sandbox_wipes_existing_directory(self, tmp_path, monkeypatch):
         """If sandbox dir already exists, it is wiped before recreating."""
         import backfill as bf
-        import shutil
 
         sandbox_path = tmp_path / "backfill-2026-07-15"
         sandbox_path.mkdir()
@@ -215,7 +215,7 @@ class TestSetupSandbox:
         original_path = bf.Path
         def patched_path(x):
             s = str(x)
-            if s == f"/tmp/backfill-2026-07-15":
+            if s == "/tmp/backfill-2026-07-15":
                 return sandbox_path
             return original_path(x)
         monkeypatch.setattr("backfill.Path", patched_path)
@@ -552,7 +552,6 @@ class TestBackfillMain:
         """main() runs the full pipeline without --apply-published and returns 0."""
         import backfill as bf
         import db as db_mod
-        import write as write_mod
 
         # Set up a minimal sandbox DB in tmp_path
         sandbox_db = tmp_path / "state.db"
@@ -661,7 +660,7 @@ class TestBackfillMain:
         self, tmp_path, monkeypatch,
     ):
         """main() threads a sandbox connection through every stage and never
-        rebinds db.connect/db.init_db/db.DB_PATH, so the live DB stays put."""
+        rebinds db.connect/db.init_db/db.db_path, so the live DB stays put."""
         import backfill as bf
         import db as db_mod
 
@@ -669,7 +668,7 @@ class TestBackfillMain:
         sandbox.mkdir()
         live_db = tmp_path / "live.db"
         _init_db(live_db)
-        monkeypatch.setattr(db_mod, "DB_PATH", live_db)
+        monkeypatch.setattr(db_mod, "db_path", lambda: live_db)
         live_before = live_db.read_bytes()
         connect_before, init_before = db_mod.connect, db_mod.init_db
 
@@ -701,7 +700,7 @@ class TestBackfillMain:
         assert seen == [str(sandbox / "state.db")] * 3
         assert db_mod.connect is connect_before
         assert db_mod.init_db is init_before
-        assert db_mod.DB_PATH == live_db
+        assert db_mod.db_path() == live_db
         assert live_db.read_bytes() == live_before
 
 

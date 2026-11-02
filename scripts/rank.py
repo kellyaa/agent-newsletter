@@ -15,10 +15,17 @@ import logging
 import os
 import sys
 
-from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
+from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db
+from db import (
+    CONTENT_ROOT,
+    REPO_ROOT,
+    apply_rank_decisions,
+    bump_times_competed,
+    connect,
+    init_db,
+)
 from llm import ContentFilterError, call_llm
 from models import RankDecision, ScoredItem, Section, Status
 
@@ -286,14 +293,12 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
 
 def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
+    rows = []
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
-        conn.execute(
-            "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
-            (d["score"], json.dumps(clean_tags), d["why"], d["status"], item_id),
-        )
+        rows.append((item_id, d["score"], json.dumps(clean_tags), d["why"], d["status"]))
         counts[d["status"]] = counts.get(d["status"], 0) + 1
-    conn.commit()
+    apply_rank_decisions(conn, rows)
     return counts
 
 
@@ -331,38 +336,38 @@ def main() -> int:
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
     # Items here have score+tags+why already; we skip the LLM and merge them
     # with whatever the LLM returns for the unscored `papers` bucket.
-    BUCKETS = ("papers", "papers_prescored", "news", "blogs")
+    BUCKETS = (*(s.value for s in Section), PAPERS_PRESCORED)
 
     # Total count for sanity logging.
     total = sum(len(candidates.get(b, [])) for b in BUCKETS)
     log.info(
         "candidates: papers=%d (prescored=%d) news=%d blogs=%d total=%d",
-        len(candidates.get("papers", [])),
-        len(candidates.get("papers_prescored", [])),
-        len(candidates.get("news", [])),
-        len(candidates.get("blogs", [])),
+        len(candidates.get(Section.PAPERS, [])),
+        len(candidates.get(PAPERS_PRESCORED, [])),
+        len(candidates.get(Section.NEWS, [])),
+        len(candidates.get(Section.BLOGS, [])),
         total,
     )
     if total == 0:
         log.warning("no candidates to rank; exiting cleanly")
         return 0
 
-    scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
 
     # Papers: only invoke the LLM on the unscored bucket. Prescored items
     # already have a score from a prior day's run and bypass the LLM entirely.
-    unscored_papers = candidates.get("papers", [])
-    prescored_papers = candidates.get("papers_prescored", [])
+    unscored_papers = candidates.get(Section.PAPERS, [])
+    prescored_papers = candidates.get(PAPERS_PRESCORED, [])
     if unscored_papers:
-        scored = rank_section("papers", unscored_papers, rubric)
+        scored = rank_section(Section.PAPERS.value, unscored_papers, rubric)
         log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
-        scored_by_section["papers"].extend(scored)
+        scored_by_section[Section.PAPERS].extend(scored)
     else:
         log.info("papers: no unscored items, skipping LLM call")
     # Merge in prescored items (they pass through assign_statuses with their
     # cached score and compete head-to-head with the freshly-scored ones).
     for it in prescored_papers:
-        scored_by_section["papers"].append({
+        scored_by_section[Section.PAPERS].append({
             "id": it["id"],
             "score": it["score"],
             "tags": it.get("tags", []),
@@ -372,7 +377,7 @@ def main() -> int:
         log.info("papers: merged %d prescored items from the multi-day pool", len(prescored_papers))
 
     # News + blogs unchanged.
-    for section in ("news", "blogs"):
+    for section in (Section.NEWS.value, Section.BLOGS.value):
         items = candidates.get(section, [])
         if not items:
             continue
@@ -388,7 +393,7 @@ def main() -> int:
     # Papers (both unscored + prescored) all collapse to section='papers'.
     by_id_section: dict[str, str] = {}
     for bucket, items in candidates.items():
-        section = "papers" if bucket in ("papers", "papers_prescored") else bucket
+        section = Section.PAPERS.value if bucket in (Section.PAPERS, PAPERS_PRESCORED) else bucket
         if section not in SECTION_RULES:
             continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
         for it in items:
@@ -404,7 +409,7 @@ def main() -> int:
         log.warning("%d candidates not scored → fallback to appendix", len(missing))
         for iid in missing:
             decisions[iid] = {
-                "status": "appendix",
+                "status": Status.APPENDIX,
                 "score": 0,
                 "tags": [],
                 "why": "fallback: ranker did not return a score",
@@ -418,28 +423,22 @@ def main() -> int:
     # on status='candidate' makes the increment a no-op for sealed items, so
     # featured/appendix winners can't have their counter inflated.
     papers_competitors = [
-        iid for iid, d in decisions.items() if d["section"] == "papers"
+        iid for iid, d in decisions.items() if d["section"] == Section.PAPERS
     ]
     if papers_competitors:
-        placeholders = ",".join("?" * len(papers_competitors))
-        bumped = conn.execute(
-            f"UPDATE items SET times_competed = times_competed + 1 "
-            f"WHERE status = '{Status.CANDIDATE}' AND id IN ({placeholders})",
-            papers_competitors,
-        )
-        conn.commit()
+        bumped = bump_times_competed(conn, papers_competitors)
         log.info(
             "papers: bumped times_competed on %d pool items (of %d competitors)",
-            bumped.rowcount or 0, len(papers_competitors),
+            bumped, len(papers_competitors),
         )
     conn.close()
 
     log.info(
         "DONE: featured=%d appendix=%d dropped=%d candidate=%d",
-        counts.get("featured", 0),
-        counts.get("appendix", 0),
-        counts.get("dropped", 0),
-        counts.get("candidate", 0),
+        counts.get(Status.FEATURED, 0),
+        counts.get(Status.APPENDIX, 0),
+        counts.get(Status.DROPPED, 0),
+        counts.get(Status.CANDIDATE, 0),
     )
     return 0
 

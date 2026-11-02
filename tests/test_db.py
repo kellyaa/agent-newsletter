@@ -32,6 +32,34 @@ def test_canonicalize_url_collapses_arxiv_variants(
     assert canonicalize_url(url) == expected
 
 
+def test_canonicalize_url_collapses_arxiv_subdomain_variants() -> None:
+    assert (
+        canonicalize_url("https://export.arxiv.org/pdf/2401.12345v2")
+        == "https://export.arxiv.org/abs/2401.12345"
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://notarxiv.org/pdf/2401.12345.pdf",
+        "https://fakearxiv.org/abs/2401.12345v2",
+        "https://arxiv.org.evil.example/pdf/2401.12345",
+    ],
+)
+def test_canonicalize_url_leaves_lookalike_arxiv_hosts_alone(url: str) -> None:
+    """Only arxiv.org and its subdomains get the abs-form rewrite; a host that
+    merely ends in the same letters must keep its own path, or distinct pages
+    on it would collapse into one dedup key."""
+    assert canonicalize_url(url) == url
+
+
+def test_canonicalize_url_keeps_distinct_pages_on_lookalike_host_distinct() -> None:
+    assert canonicalize_url("https://notarxiv.org/pdf/2401.12345") != canonicalize_url(
+        "https://notarxiv.org/abs/2401.12345"
+    )
+
+
 def test_canonicalize_url_strips_tracking_params_and_preserves_query_order() -> None:
     url = (
         "HTTPS://Example.COM/path/"
@@ -126,3 +154,49 @@ def test_run_date_defaults_to_local_today(monkeypatch):
 
     monkeypatch.delenv("RUN_DATE", raising=False)
     assert run_date() == date.today().isoformat()
+
+
+def test_db_path_resolves_at_call_time(monkeypatch, tmp_path):
+    """db_path() follows the current env; no module reload is needed."""
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    assert db.db_path() == tmp_path / "editions" / "agents" / "state.db"
+    monkeypatch.setenv("EDITION", "engineering-with-ai")
+    assert db.db_path() == (
+        tmp_path / "editions" / "engineering-with-ai" / "state.db"
+    )
+    monkeypatch.delenv("CONTENT_ROOT")
+    assert db.db_path() == db.REPO_ROOT / "editions" / "engineering-with-ai" / "state.db"
+
+
+def test_connect_and_init_db_default_to_db_path(monkeypatch, tmp_path):
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    db.init_db()
+    assert (tmp_path / "editions" / "agents" / "state.db").exists()
+    conn = db.connect()
+    conn.close()
+
+
+def test_db_path_alias_is_lazy_and_unknown_attrs_raise(monkeypatch, tmp_path):
+    import db
+    monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
+    monkeypatch.setenv("EDITION", "agents")
+    assert db.DB_PATH == db.db_path()
+    with pytest.raises(AttributeError):
+        db.NOPE
+
+
+def test_import_db_without_edition_selected():
+    """`import db` must not need EDITION (issue #446)."""
+    import subprocess, sys
+    from pathlib import Path
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    env = {k: v for k, v in __import__("os").environ.items() if k != "EDITION"}
+    r = subprocess.run(
+        [sys.executable, "-c", "import db; print(db.run_date())"],
+        cwd=scripts, env=env, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr

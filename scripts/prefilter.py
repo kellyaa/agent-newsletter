@@ -8,16 +8,20 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from candidates import PAPER_PRERANK_CAP, load_candidates_from_db, prerank_score
+from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
+from gates import (  # noqa: F401 — re-exported for tests and tooling
+    RECENCY_DAYS, SECTION_BY_FAMILY, SOURCE_PRIORITY, assign_section,
+    collapse_near_dups, keyword_gate, passes_recency as _passes_recency,
+)
 from db import (
-    CONTENT_ROOT, REPO_ROOT, connect, get_meta, init_db, record_stage_stats, run_date,
-    set_meta,
+    CONTENT_ROOT, REPO_ROOT, clear_candidate_scores, connect, count_items_in_status,
+    count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
+    promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
 from models import PrefilterItem, Section, Status
 
@@ -37,46 +41,8 @@ EDITION = edition.current()
 KEYWORDS = EDITION.keyword_regexes()
 KEYWORD_RE = EDITION.keyword_re()
 
-# Recency windows by source family. RSS is wide because practitioner blogs
-# publish weekly-or-monthly; the cross-day dedup layer (status >= 'ranked' is
-# sealed) prevents stale republishing once an item has been seen.
-RECENCY_DAYS = {
-    "arxiv": 7,
-    "rss": 30,
-    "hn": 3,
-    "reddit": 3,
-    "gh": 14,
-    "html": 30,
-    "default": 3,
-}
-
-# Source priority for cross-source collapse (higher beats lower).
-SOURCE_PRIORITY = {
-    "arxiv": 5,
-    "rss": 4,
-    "html": 4,
-    "gh": 3,
-    "hn": 2,
-    "reddit": 1,
-}
-
-# Source family → output section. See SPEC.md "Section assignment".
-SECTION_BY_FAMILY = {
-    "arxiv": "papers",
-    "gh": "news",
-    "hn": "news",
-    "reddit": "news",
-    "html": "news",
-    "rss": "blogs",
-}
-
-
-def assign_section(source: str, override: str | None = None) -> str:
-    """Per-source override (from sources.yaml) wins over the family default."""
-    if override in {"papers", "news", "blogs"}:
-        return override
-    family = _source_family(source)
-    return SECTION_BY_FAMILY.get(family, "blogs")
+# Recency windows, source priority and section-by-family live in gates.py
+# alongside the pure gate functions; re-exported here for existing callers.
 
 # Featured items are sealed; appendix items get up to 2 chances total.
 APPENDIX_MAX_APPEARANCES = 2
@@ -120,55 +86,8 @@ RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
 RUBRIC_HASH_KEY = "rubric_hash"  # key in the edition's state.db `meta` table
 
 
-def _source_family(source: str) -> str:
-    return source.split(":", 1)[0]
-
-
-def _passes_recency(item: PrefilterItem, now: datetime) -> bool:
-    family = _source_family(item["source"])
-    override = item.get("recency_days_override")
-    if isinstance(override, int) and override > 0:
-        window = override
-    else:
-        window = RECENCY_DAYS.get(family, RECENCY_DAYS["default"])
-    pub = item.get("published_at")
-    if not pub:
-        # No publication timestamp — fall back to fetched_at (always present).
-        pub = item["fetched_at"]
-    try:
-        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        return True  # don't drop things we can't parse; let the LLM judge
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return (now - dt) <= timedelta(days=window)
-
-
-def keyword_gate(item: PrefilterItem, keyword_re: re.Pattern[str]) -> bool:
-    """The keyword gate for an arbitrary compiled pattern (scripts/check_edition.py
-    uses it to evaluate an edition without importing it as the current one)."""
-    if item.get("keyword_gate_bypass"):
-        return True
-    haystack = (item.get("title") or "") + "\n" + (item.get("raw_text") or "")
-    return bool(keyword_re.search(haystack))
-
-
 def _passes_keyword_gate(item: PrefilterItem) -> bool:
     return keyword_gate(item, KEYWORD_RE)
-
-
-def _normalize_title(title: str) -> str:
-    return re.sub(r"[^a-z0-9 ]+", "", title.lower()).strip()
-
-
-def _title_tokens(title: str) -> set[str]:
-    return set(_normalize_title(title).split())
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
 
 
 def _prerank_score(item: PrefilterItem, now: datetime) -> float:
@@ -195,12 +114,7 @@ def _maybe_invalidate_papers_scores(conn) -> int:
     last = get_meta(conn, RUBRIC_HASH_KEY) or ""
     if last == current:
         return 0
-    cur = conn.execute(
-        "UPDATE items SET score = NULL "
-        f"WHERE status = '{Status.CANDIDATE}' AND section = '{Section.PAPERS}' "
-        "AND score IS NOT NULL"
-    )
-    invalidated = cur.rowcount or 0
+    invalidated = clear_candidate_scores(conn, Section.PAPERS)
     set_meta(conn, RUBRIC_HASH_KEY, current)  # commits, along with the UPDATE above
     if invalidated:
         log.info(
@@ -213,25 +127,6 @@ def _maybe_invalidate_papers_scores(conn) -> int:
     return invalidated
 
 
-def collapse_near_dups(items: list[PrefilterItem], threshold: float = 0.85) -> list[PrefilterItem]:
-    """Within this run, drop items whose title is ~the same as a higher-priority one."""
-    sorted_items = sorted(
-        items,
-        key=lambda it: SOURCE_PRIORITY.get(_source_family(it["source"]), 0),
-        reverse=True,
-    )
-    kept: list[dict] = []
-    kept_tokens: list[set[str]] = []
-    for it in sorted_items:
-        toks = _title_tokens(it["title"])
-        if any(_jaccard(toks, prev) >= threshold for prev in kept_tokens):
-            log.debug("dedup: collapsing %r", it["title"])
-            continue
-        kept.append(it)
-        kept_tokens.append(toks)
-    return kept
-
-
 def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     """Age out papers candidates that hit the competition cap or recency ceiling.
 
@@ -240,9 +135,7 @@ def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     ``(aged_out, expired_unjudged)``: the total rows moved out of the pool and
     how many of those had never been scored.
     """
-    unjudged_before = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
-    ).fetchone()[0]
+    unjudged_before = count_items_in_status(conn, Status.EXPIRED_UNJUDGED)
     aged = conn.execute(
         PAPER_AGE_OUT_SQL,
         (
@@ -254,9 +147,9 @@ def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     aged_out = aged.rowcount or 0
     # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
     # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
-    expired_unjudged = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.EXPIRED_UNJUDGED}'"
-    ).fetchone()[0] - unjudged_before
+    expired_unjudged = (
+        count_items_in_status(conn, Status.EXPIRED_UNJUDGED) - unjudged_before
+    )
     conn.commit()
     return aged_out, expired_unjudged
 
@@ -286,26 +179,11 @@ def main(now: datetime | None = None) -> int:
         expired_unjudged_now, aged_out - expired_unjudged_now,
     )
 
-    unjudged = conn.execute(
-        "SELECT COUNT(*) FROM items "
-        f"WHERE section = '{Section.PAPERS}' AND score IS NULL "
-        f"AND status IN ('{Status.DROPPED}', '{Status.EXPIRED_UNJUDGED}')"
-    ).fetchone()[0]
+    unjudged = count_never_scored_expired(conn, Section.PAPERS)
     log.info("papers expired without ever being scored (cumulative): %d", unjudged)
 
     # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
-    rows = conn.execute(
-        f"""
-        SELECT id, source, url, canonical_url, title, author, published_at,
-               fetched_at, raw_text, status, appearances, section_override,
-               keyword_gate_bypass, recency_days_override
-        FROM items
-        WHERE status = '{Status.NEW}'
-           OR (status = '{Status.APPENDIX}' AND appearances < ?)
-        """,
-        (APPENDIX_MAX_APPEARANCES,),
-    ).fetchall()
-    items = [dict(r) for r in rows]
+    items = load_prefilter_eligible(conn, APPENDIX_MAX_APPEARANCES)
     log.info("loaded %d items eligible for prefilter", len(items))
 
     if items:
@@ -330,11 +208,7 @@ def main(now: datetime | None = None) -> int:
     if candidate_ids:
         for it in after_dedup:
             it["section"] = assign_section(it["source"], it.get("section_override"))
-        conn.executemany(
-            f"UPDATE items SET status = '{Status.CANDIDATE}', section = ? WHERE id = ?",
-            [(it["section"], it["id"]) for it in after_dedup],
-        )
-        conn.commit()
+        promote_to_candidates(conn, [(it["id"], it["section"]) for it in after_dedup])
 
     # Demote new-but-rejected to 'dropped' so they don't re-enter the pipeline.
     rejected_ids = [
@@ -342,12 +216,7 @@ def main(now: datetime | None = None) -> int:
         if it["status"] == Status.NEW and it["id"] not in set(candidate_ids)
     ]
     if rejected_ids:
-        placeholders = ",".join("?" * len(rejected_ids))
-        conn.execute(
-            f"UPDATE items SET status = '{Status.DROPPED}' WHERE id IN ({placeholders})",
-            rejected_ids,
-        )
-        conn.commit()
+        drop_items(conn, rejected_ids)
         log.info("dropped %d items that failed prefilter", len(rejected_ids))
 
     # Load the candidate pool from DB using the shared query function.
@@ -377,10 +246,10 @@ def main(now: datetime | None = None) -> int:
     log.info(
         "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
         CANDIDATES_OUT,
-        len(grouped["papers"]),
-        len(grouped["papers_prescored"]),
-        len(grouped["news"]),
-        len(grouped["blogs"]),
+        len(grouped[Section.PAPERS]),
+        len(grouped[PAPERS_PRESCORED]),
+        len(grouped[Section.NEWS]),
+        len(grouped[Section.BLOGS]),
     )
 
     conn.close()

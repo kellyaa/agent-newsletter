@@ -2,7 +2,6 @@
 import copy
 import shutil
 
-import feedparser
 import httpx
 import pytest
 import yaml

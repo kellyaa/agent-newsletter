@@ -28,7 +28,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from db import DB_PATH, REPO_ROOT, connect, init_db, run_date
+from db import REPO_ROOT, connect, db_path, init_db, run_date
 from llm import usage_totals
 
 logging.basicConfig(
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     date = run_date()
     if args.cmd == "latest":
         # Read-only: never create an edition's DB just to ask about it.
-        if not DB_PATH.exists():
+        if not db_path().exists():
             print("none")
             return 0
         conn = connect()

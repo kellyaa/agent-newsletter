@@ -438,9 +438,7 @@ def test_normalize_date_non_iso_human_string_uses_dateutil_fallback():
     import fetch
 
     result = fetch._normalize_date("July 13, 2026")
-    assert result is not None
-    assert result.startswith("2026-07-13")
-    assert result.endswith("+00:00")
+    assert result == "2026-07-13T00:00:00+00:00"
 
 
 def test_normalize_date_dateutil_rejects_unparseable_text():

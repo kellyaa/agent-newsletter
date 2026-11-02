@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -145,8 +143,7 @@ class TestFetchRss:
             mock_ctx.get.return_value = mock_resp
             mock_client_cls.return_value = mock_ctx
             items = list(fetch_rss(self._source()))
-        assert items[0].raw_text is not None
-        assert "Some summary text" in items[0].raw_text
+        assert items[0].raw_text == "Some summary text"
 
     def test_raw_text_truncated_at_4000(self):
         long_desc = "x" * 5000
@@ -184,7 +181,6 @@ class TestFetchRss:
 
     def test_bozo_feed_with_no_entries_raises(self):
         """feedparser bozo with no entries → RuntimeError."""
-        import feedparser
 
         bozo_result = MagicMock()
         bozo_result.bozo = True

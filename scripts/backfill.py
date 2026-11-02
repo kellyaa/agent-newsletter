@@ -9,7 +9,7 @@ What it does, end-to-end:
      dated < --date and extracts the edition's state.db into a sandbox under /tmp/backfill-<date>/.
   2. Opens the sandbox DB by explicit path and threads that connection
      through every stage, so the real state.db is never touched. Nothing is
-     monkey-patched: the db module's connect/init_db/DB_PATH stay as they are.
+     monkey-patched: the db module's connect/init_db stay as they are.
   3. Re-applies prefilter's age-out rule using --date as the synthetic 'now'
      (julianday('now') would otherwise overshoot by however many days are
      between the snapshot and --date).
@@ -51,6 +51,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+
+from models import Section, Status  # noqa: E402  (needs the sys.path entry above)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -147,7 +149,7 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
     state.db. Without this step, those ids stay 'candidate' in the live pool
     and would compete (and could re-feature) on the next normal run.
 
-    ``live_db`` defaults to the edition's real state.db (``db.DB_PATH``). The
+    ``live_db`` defaults to the edition's real state.db (``db.db_path()``). The
     sandbox is never consulted here: the backfill run itself only ever holds a
     connection to the sandbox, opened by explicit path in main().
 
@@ -155,9 +157,8 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
     already been promoted by some other path, is left alone.
     """
     import db as db_mod
-    from models import Status
 
-    conn = db_mod.connect(live_db or db_mod.DB_PATH)
+    conn = db_mod.connect(live_db or db_mod.db_path())
     try:
         placeholders = ",".join("?" * len(featured_ids))
         cur = conn.execute(
@@ -199,12 +200,13 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     """
     import prompts
     import rank as rank_mod
+    from candidates import PAPERS_PRESCORED
 
-    scored_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
 
     # Prescored papers: pass through with cached scores (no LLM needed).
-    for it in candidates.get("papers_prescored", []):
-        scored_by_section["papers"].append({
+    for it in candidates.get(PAPERS_PRESCORED, []):
+        scored_by_section[Section.PAPERS].append({
             "id": it["id"],
             "score": it["score"],
             "tags": it.get("tags", []),
@@ -213,7 +215,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
 
     # Any section with unscored items needs the LLM.
     rubric = prompts.render("rank", rank_mod.EDITION, template_path=rank_mod.PROMPT_PATH)
-    for section in ("papers", "news", "blogs"):
+    for section in Section:
         items = candidates.get(section, [])
         if not items:
             continue
@@ -235,8 +237,8 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     counts = rank_mod.persist(conn, decisions)
     log.info(
         "rank decisions: featured=%d appendix=%d dropped=%d candidate=%d",
-        counts.get("featured", 0), counts.get("appendix", 0),
-        counts.get("dropped", 0), counts.get("candidate", 0),
+        counts.get(Status.FEATURED, 0), counts.get(Status.APPENDIX, 0),
+        counts.get(Status.DROPPED, 0), counts.get(Status.CANDIDATE, 0),
     )
     return decisions
 
@@ -325,7 +327,7 @@ def main() -> int:
         return 2
 
     import db as db_mod
-    from candidates import load_candidates_from_db
+    from candidates import PAPERS_PRESCORED, load_candidates_from_db
 
     sandbox = setup_sandbox(args.date)
     sandbox_db = sandbox / "state.db"
@@ -346,12 +348,12 @@ def main() -> int:
     candidates = load_candidates_from_db(conn)
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
-        len(candidates.get("papers", [])),
-        len(candidates.get("papers_prescored", [])),
-        len(candidates.get("news", [])),
-        len(candidates.get("blogs", [])),
+        len(candidates.get(Section.PAPERS, [])),
+        len(candidates.get(PAPERS_PRESCORED, [])),
+        len(candidates.get(Section.NEWS, [])),
+        len(candidates.get(Section.BLOGS, [])),
     )
-    if candidates.get("news") or candidates.get("blogs"):
+    if candidates.get(Section.NEWS) or candidates.get(Section.BLOGS):
         log.warning(
             "found news/blogs candidates in the snapshot — unusual; backfills "
             "are typically papers-only since news/blogs don't persist."
@@ -367,12 +369,12 @@ def main() -> int:
 
     if args.apply_published:
         featured_ids = [
-            iid for iid, d in decisions.items() if d["status"] == "featured"
+            iid for iid, d in decisions.items() if d["status"] == Status.FEATURED
         ]
         promoted = apply_published_to_live(featured_ids)
         log.info(
             "promoted %d/%d featured ids to status='published' in live %s",
-            promoted, len(featured_ids), db_mod.DB_PATH,
+            promoted, len(featured_ids), db_mod.db_path(),
         )
         if promoted < len(featured_ids):
             log.warning(

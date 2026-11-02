@@ -12,11 +12,39 @@ from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import edition as _edition
+from models import Section, Status
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_CONTENT_ROOT_ENV = os.environ.get("CONTENT_ROOT")
-CONTENT_ROOT = Path(_CONTENT_ROOT_ENV) if _CONTENT_ROOT_ENV else REPO_ROOT
-DB_PATH = _edition.runtime_paths(CONTENT_ROOT).state_db
+
+
+def content_root() -> Path:
+    """The content worktree: ``$CONTENT_ROOT`` if set, else the repo root.
+
+    Read from the environment on every call, so it never goes stale.
+    """
+    env = os.environ.get("CONTENT_ROOT")
+    return Path(env) if env else REPO_ROOT
+
+
+def db_path() -> Path:
+    """The selected edition's ``state.db``, resolved from the env at call time.
+
+    Raises :class:`edition.EditionError` when ``EDITION`` is unset. Importing
+    this module does not.
+    """
+    return _edition.runtime_paths(content_root()).state_db
+
+
+# Kept for the stage modules that still bind it at import time.
+CONTENT_ROOT = content_root()
+
+
+def __getattr__(name: str):
+    # Deprecated alias for db_path(): resolved lazily so ``import db`` does not
+    # require an edition to be selected.
+    if name == "DB_PATH":
+        return db_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def run_date() -> str:
@@ -153,11 +181,13 @@ def is_allowed_url(url: str) -> bool:
     return scheme in ALLOWED_URL_SCHEMES
 
 
-def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    """Open the state DB at ``path``, default :func:`db_path`."""
+    path = db_path() if path is None else path
     # Each edition's DB sits in its own editions/<slug>/ folder, which does not
     # exist yet for a brand-new edition.
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=10000")
@@ -165,8 +195,8 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
-    conn = connect(db_path)
+def init_db(path: Path | None = None) -> None:
+    conn = connect(path)
     try:
         conn.executescript(SCHEMA)
         _migrate(conn)
@@ -215,6 +245,144 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
         (key, value),
     )
     conn.commit()
+
+
+def count_items_seen_on(conn: sqlite3.Connection, date: str) -> int:
+    """Items whose ``last_seen_date`` is `date`: the run's "items considered".
+
+    fetch (idempotent-skip check), write (issue metadata) and publish (the
+    ``runs`` row) all report this number, so they share one definition.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (date,)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def count_items_in_status(conn: sqlite3.Connection, *statuses: str) -> int:
+    """Items whose ``status`` is any of `statuses` (pass ``models.Status`` values)."""
+    if not statuses:
+        raise ValueError("count_items_in_status needs at least one status")
+    marks = ", ".join("?" * len(statuses))
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM items WHERE status IN ({marks})", tuple(statuses)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+# --- prefilter's item-state transitions --------------------------------------
+# prefilter.py used to run these statements inline; they live here so the
+# stage reads as gating logic and the SQL has one home (advisory: "No data
+# access layer"). Column list matches models.PrefilterItem.
+_PREFILTER_COLUMNS = (
+    "id, source, url, canonical_url, title, author, published_at, "
+    "fetched_at, raw_text, status, appearances, section_override, "
+    "keyword_gate_bypass, recency_days_override"
+)
+
+
+def load_prefilter_eligible(
+    conn: sqlite3.Connection, max_appendix_appearances: int
+) -> list[dict]:
+    """Rows prefilter gates this run: every ``new`` item, plus ``appendix``
+    items that have appeared fewer than `max_appendix_appearances` times."""
+    rows = conn.execute(
+        f"SELECT {_PREFILTER_COLUMNS} FROM items "
+        f"WHERE status = '{Status.NEW}' "
+        f"OR (status = '{Status.APPENDIX}' AND appearances < ?)",
+        (max_appendix_appearances,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def promote_to_candidates(
+    conn: sqlite3.Connection, assignments: list[tuple[str, str]]
+) -> None:
+    """Mark each ``(item_id, section)`` as a ``candidate`` in `section`. Commits."""
+    if not assignments:
+        return
+    conn.executemany(
+        f"UPDATE items SET status = '{Status.CANDIDATE}', section = ? WHERE id = ?",
+        [(section, item_id) for item_id, section in assignments],
+    )
+    conn.commit()
+
+
+def drop_items(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Move `item_ids` to ``dropped``. Commits; returns the rows updated."""
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.DROPPED}' WHERE id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def clear_candidate_scores(conn: sqlite3.Connection, section: str) -> int:
+    """NULL the cached score of every scored ``candidate`` in `section`.
+
+    Does not commit: the caller pairs this with the meta write that records
+    why (prefilter's rubric hash), so both land in one transaction.
+    """
+    cur = conn.execute(
+        "UPDATE items SET score = NULL "
+        f"WHERE status = '{Status.CANDIDATE}' AND section = ? AND score IS NOT NULL",
+        (section,),
+    )
+    return cur.rowcount or 0
+
+
+def count_never_scored_expired(conn: sqlite3.Connection, section: str) -> int:
+    """Items in `section` that left the pool (``dropped``/``expired_unjudged``)
+    without ever receiving a score: cumulative, across all runs."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE section = ? AND score IS NULL "
+        f"AND status IN ('{Status.DROPPED}', '{Status.EXPIRED_UNJUDGED}')",
+        (section,),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+# --- rank's item-state transitions -------------------------------------------
+# rank.py used to run these statements inline; same rationale as prefilter's
+# helpers above (advisory: "No data access layer").
+def apply_rank_decisions(
+    conn: sqlite3.Connection,
+    rows: list[tuple[str, float | int | None, str, str, str]],
+) -> None:
+    """Write each ``(item_id, score, tags_json, why, status)`` ranker verdict.
+
+    `tags_json` is the already-filtered, JSON-encoded tag list. Commits.
+    """
+    if not rows:
+        return
+    conn.executemany(
+        "UPDATE items SET score = ?, tags = ?, why = ?, status = ? WHERE id = ?",
+        [(score, tags, why, status, item_id)
+         for item_id, score, tags, why, status in rows],
+    )
+    conn.commit()
+
+
+def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Increment ``times_competed`` for `item_ids` still in the ``candidate`` pool.
+
+    Gating on status means sealed (featured/appendix) winners are never
+    inflated. Commits; returns the rows bumped.
+    """
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        "UPDATE items SET times_competed = times_competed + 1 "
+        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
 
 
 def record_stage_stats(
@@ -274,7 +442,9 @@ def canonicalize_url(url: str) -> str:
     netloc = parsed.netloc.lower()
     path = parsed.path or "/"
 
-    if netloc.endswith("arxiv.org"):
+    # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
+    # would also rewrite paths on unrelated hosts such as notarxiv.org.
+    if netloc == "arxiv.org" or netloc.endswith(".arxiv.org"):
         # /pdf/2401.12345.pdf, /pdf/2401.12345v2, /abs/2401.12345v3 → /abs/2401.12345
         import re
         m = re.match(r"^/(?:pdf|abs|html)/([0-9]{4}\.[0-9]{4,5})(?:v\d+)?(?:\.pdf)?/?$", path)
@@ -303,4 +473,4 @@ def url_id(url: str) -> str:
 
 if __name__ == "__main__":
     init_db()
-    print(f"Initialized {DB_PATH}")
+    print(f"Initialized {db_path()}")

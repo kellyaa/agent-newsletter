@@ -23,11 +23,13 @@ import httpx
 import yaml
 
 import edition
+from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
     url_id,
 )
-from models import Status
+from db import count_items_seen_on
+from models import Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -577,7 +579,9 @@ def load_sources() -> dict:
         return yaml.safe_load(f)
 
 
-VALID_SECTIONS = {"papers", "news", "blogs"}
+# Section names come from models.Section so a sources.yaml `section:` override
+# accepted by check_edition is never rejected here (and vice versa).
+VALID_SECTIONS = frozenset(s.value for s in Section)
 
 
 def _validate_section(value, source_id: str) -> str | None:
@@ -635,7 +639,7 @@ def _stamp_overrides(
 # clears it. The skip check keys off this marker, not off item dates, because
 # fetch bumps last_seen_date on re-surfaced older items, so item dates can't
 # tell "fetched today" from "re-surfaced today" (#321).
-FETCH_DONE_KEY = "fetch_completed_date"
+FETCH_DONE_KEY = MetaKey.FETCH_DONE
 
 
 def _already_fetched_today(conn) -> int:
@@ -648,10 +652,7 @@ def _already_fetched_today(conn) -> int:
     today = run_date()
     if get_meta(conn, FETCH_DONE_KEY) != today:
         return 0
-    row = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()
-    return int(row[0]) if row else 0
+    return count_items_seen_on(conn, today)
 
 
 def iter_collectors(sources: dict, http_client: httpx.Client):

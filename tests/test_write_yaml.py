@@ -7,7 +7,6 @@ import yaml  # PyYAML for round-trip validation
 from write import (
     _yaml_str,
     _yaml_value,
-    _emit_dict,
     emit_yaml_frontmatter,
     assemble_issue,
 )

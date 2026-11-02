@@ -19,9 +19,9 @@ import sys
 
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, init_db, run_date
+from db import CONTENT_ROOT, REPO_ROOT, connect, count_items_seen_on, init_db, run_date
 from llm import call_llm
-from models import Status
+from models import Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,9 +115,9 @@ def load_today_items(conn, today: str):
             "why": r["why"],
         })
 
-    appendix_by_section: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    appendix_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
     for r in appendix_rows:
-        section = r["section"] or "blogs"
+        section = r["section"] or Section.BLOGS.value
         appendix_by_section.setdefault(section, []).append({
             "id": r["id"],
             "section": section,
@@ -126,20 +126,18 @@ def load_today_items(conn, today: str):
             "title": r["title"],
         })
 
-    counts = {"papers": 0, "news": 0, "blogs": 0}
+    counts = {s.value: 0 for s in Section}
     for it in featured:
         counts[it["section"]] = counts.get(it["section"], 0) + 1
-    items_considered = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()[0]
+    items_considered = count_items_seen_on(conn, today)
     appendix_total = sum(len(v) for v in appendix_by_section.values())
 
     metadata = {
         "items_considered": int(items_considered),
         "items_featured_total": len(featured),
-        "items_featured_papers": counts["papers"],
-        "items_featured_news": counts["news"],
-        "items_featured_blogs": counts["blogs"],
+        "items_featured_papers": counts[Section.PAPERS],
+        "items_featured_news": counts[Section.NEWS],
+        "items_featured_blogs": counts[Section.BLOGS],
         "items_appendix": appendix_total,
     }
     return featured, appendix_by_section, metadata
@@ -344,7 +342,7 @@ def assemble_issue(
         log.warning("writer missing summaries for %d items: %s",
                     len(missing_summaries), missing_summaries[:3])
 
-    appendix_for_fm: dict[str, list[dict]] = {"papers": [], "news": [], "blogs": []}
+    appendix_for_fm: dict[str, list[dict]] = {s.value: [] for s in Section}
     for sec, items in appendix_by_section.items():
         for it in items:
             appendix_for_fm[sec].append({

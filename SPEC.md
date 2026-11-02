@@ -100,7 +100,7 @@ raw_text (abstract/summary/first N chars), fetched_at, status
 
 Cheap deterministic triage before we spend LLM tokens. Drops ~70-80% of items.
 
-Rules (all configurable in `scripts/prefilter.py`):
+Rules (gate functions and their tables live in `scripts/gates.py`; pool/age-out constants in `scripts/prefilter.py`):
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `editions/agents/sources.yaml`); Reddit is the top-N of the day per subreddit (`limit`, default 10; the Atom feed carries no score); arXiv papers need an abstract (not just title).
@@ -185,9 +185,9 @@ The writer produces:
 3. **Appendix** — single bulleted list `[Title](url) — source` for uncertain items, regardless of section. No summaries.
 4. **Footer** — run metadata (items considered, items featured per section, LLM cost if available).
 
-**Section assignment** is done deterministically in `prefilter.py` based on the source family — *before* the ranker runs. The ranker then receives three already-bucketed candidate lists and ranks each independently. No LLM judgment on which bucket an item belongs to; the source decides.
+**Section assignment** is done deterministically in `prefilter.py` (via `gates.assign_section`) based on the source family — *before* the ranker runs. The ranker then receives three already-bucketed candidate lists and ranks each independently. No LLM judgment on which bucket an item belongs to; the source decides.
 
-Source-family → section default mapping (in `scripts/prefilter.py` `SECTION_BY_FAMILY`):
+Source-family → section default mapping (in `scripts/gates.py` `SECTION_BY_FAMILY`):
 
 | Source family | Default section |
 |---|---|
@@ -354,7 +354,8 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 │   └── write.md               ← writer base template ({{slots}} for edition wording) + JSON output schema
 ├── scripts/
 │   ├── fetch.py               ← collectors (no LLM)
-│   ├── prefilter.py           ← recency + keyword + dedup gates
+│   ├── prefilter.py           ← prefilter stage: apply gates, promote candidates, age out papers
+│   ├── gates.py               ← pure recency + keyword + section + near-dup gate functions
 │   ├── candidates.py          ← shared candidate pool query (DB → grouped dict)
 │   ├── rank.py                ← per-section LLM ranker (3× calls via llm.py)
 │   ├── write.py               ← LLM writer (1× call via llm.py)
@@ -432,9 +433,9 @@ v1 records token usage (not priced cost); v2 enforces a budget. Scaffolding now 
 - **v1.2 — Path B Stage 2 (shipped):** SSG migration to Astro 5. The writer now emits YAML-frontmatter MD into `site/src/content/issues/`; URLs are spliced from the DB rather than written by the LLM (URL hallucination is mechanically impossible). Site deploys to GitHub Pages on push to `main`.
 - **v1.3 — Unattended delivery (shipped):** `run.sh` orchestrator with `--force` and `--refetch` flags; per-stage idempotency for resume-after-failure; launchd plists for the daily pipeline + hourly watchdog; macOS notifications on failure (no email).
 
-### Live status (as of 2026-07-11)
+### Live status (as of 2026-11-01)
 
-The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. A typical run takes ~10 min wall time, produces 12-17 featured items + ~50-100 appendix items. Cost depends on the configured models; typical per-run cost is ~$0.30-1.20 per ranker section call × 3 sections, plus ~$0.30-0.50 for the writer call (see §LLM API lessons learned for details).
+The pipeline is running daily. Site is live at `https://kellyaa.github.io/agent-newsletter/`. Two live editions (`agents`, `engineering-with-ai`) run one after another from `run.sh`. Measured over the 6 runs from 2026-10-26 to 2026-11-01 (`runs` table in each edition's `state.db` on the `content` branch): `agents` averages ~270 s per run with ~8 featured items and ~68k input / ~11k output tokens; `engineering-with-ai` averages ~240 s with ~3-4 featured items and ~24k input / ~4k output tokens. Both together are ~8.5 min per day. `duration_seconds` is measured from the start of the edition's `scripts/run_edition.sh`, so it includes fetch. Token usage swings with candidate volume (`agents` input ranged 32k-100k). Dollar cost depends on the configured models; `runs.cost_usd` is not yet populated, so use the token counts as the baseline (see §LLM API lessons learned for per-call details).
 
 ### Up next (unstarted)
 

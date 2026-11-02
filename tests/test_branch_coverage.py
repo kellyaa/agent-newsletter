@@ -13,8 +13,6 @@ All 9 partial branches from --cov-branch analysis:
 """
 from __future__ import annotations
 
-import json
-import sqlite3
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -100,7 +98,9 @@ class TestSetupSandboxFreshRun:
         assert sandbox_path.is_dir()
         assert (sandbox_path / "state.db").exists()
         # git show was called (to extract state.db)
-        assert len(writes) >= 1
+        assert len(writes) == 1
+        assert writes[0][:2] == ["git", "show"]
+        assert writes[0][2].startswith("abc1234:")
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 import edition
 from db import CONTENT_ROOT, connect, init_db, load_stage_stats, run_date
+from db import count_items_in_status, count_items_seen_on
 from llm import usage_totals
 from models import Status
 
@@ -44,6 +45,10 @@ def run_duration_s(started_at: str | None, now: datetime | None = None) -> int |
         start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if start.tzinfo is None:
+        # A zone-less timestamp is documented as UTC; subtracting it from an
+        # aware ``now`` would otherwise raise TypeError and abort publish.
+        start = start.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
     return max(0, int((now - start).total_seconds()))
 
@@ -126,9 +131,7 @@ def main() -> int:
     runs_row = conn.execute(
         "SELECT items_featured FROM runs WHERE date = ?", (today,)
     ).fetchone()
-    pending = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')"
-    ).fetchone()[0]
+    pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
     if runs_row is not None and pending == 0:
         log.info(
             "publish: skip — already published for %s (runs.items_featured=%d)",
@@ -143,12 +146,8 @@ def main() -> int:
     for r in rows:
         s = r["section"]
         featured_counts[s] = featured_counts.get(s, 0) + 1
-    appendix_count = conn.execute(
-        f"SELECT COUNT(*) FROM items WHERE status = '{Status.APPENDIX}'"
-    ).fetchone()[0]
-    items_considered = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE last_seen_date = ?", (today,)
-    ).fetchone()[0]
+    appendix_count = count_items_in_status(conn, Status.APPENDIX)
+    items_considered = count_items_seen_on(conn, today)
 
     total_featured = sum(featured_counts.values())
     if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:

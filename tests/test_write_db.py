@@ -4,7 +4,6 @@ deterministic — DB queries and file-system reads."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -358,13 +357,13 @@ class TestBuildWriterInput:
         )
         assert len(result["previous_newsletter"]) == PREV_NEWSLETTER_MAX
 
-    def test_reader_profile_is_non_empty_string(self):
+    def test_reader_profile_comes_from_edition_config(self):
         result = build_writer_input(
             "2026-06-01", self._make_featured(),
             self._make_appendix(), self._make_metadata(), None
         )
-        assert isinstance(result["reader_profile"], str)
-        assert len(result["reader_profile"]) > 0
+        assert result["reader_profile"] == READER_PROFILE
+        assert READER_PROFILE.strip()
 
     def test_featured_and_appendix_passed_through(self):
         featured = self._make_featured()
