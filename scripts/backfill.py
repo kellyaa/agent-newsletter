@@ -200,11 +200,12 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     """
     import prompts
     import rank as rank_mod
+    from candidates import PAPERS_PRESCORED
 
     scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
 
     # Prescored papers: pass through with cached scores (no LLM needed).
-    for it in candidates.get("papers_prescored", []):
+    for it in candidates.get(PAPERS_PRESCORED, []):
         scored_by_section[Section.PAPERS].append({
             "id": it["id"],
             "score": it["score"],
@@ -326,7 +327,7 @@ def main() -> int:
         return 2
 
     import db as db_mod
-    from candidates import load_candidates_from_db
+    from candidates import PAPERS_PRESCORED, load_candidates_from_db
 
     sandbox = setup_sandbox(args.date)
     sandbox_db = sandbox / "state.db"
@@ -348,7 +349,7 @@ def main() -> int:
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
         len(candidates.get(Section.PAPERS, [])),
-        len(candidates.get("papers_prescored", [])),
+        len(candidates.get(PAPERS_PRESCORED, [])),
         len(candidates.get(Section.NEWS, [])),
         len(candidates.get(Section.BLOGS, [])),
     )
