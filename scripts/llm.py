@@ -246,6 +246,9 @@ def _one_shot(
         )
     _append_usage(label, model, usage)
 
+    if not getattr(resp, "choices", None):
+        raise RuntimeError(f"llm response had no choices for {label}")
+
     finish = getattr(resp.choices[0], "finish_reason", None)
     content = resp.choices[0].message.content or ""
     txt = content.strip()
