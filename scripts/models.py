@@ -42,6 +42,13 @@ class Section(StrEnum):
     BLOGS = "blogs"
 
 
+class MetaKey(StrEnum):
+    """Keys in the state.db `meta` table that more than one module reads or writes."""
+
+    # Run date for which fetch completed; fetch sets it, reset_day --refetch clears it.
+    FETCH_DONE = "fetch_completed_date"
+
+
 # ---------------------------------------------------------------------------
 # TypedDicts
 # ---------------------------------------------------------------------------
