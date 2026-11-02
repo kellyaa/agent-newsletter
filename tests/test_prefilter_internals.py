@@ -16,7 +16,6 @@ from prefilter import (
     _prerank_score,
     _rubric_hash,
     _maybe_invalidate_papers_scores,
-    _passes_recency,
 )
 
 
@@ -240,7 +239,6 @@ class TestMaybeInvalidatePapersScores:
     def test_hash_file_updated_after_invalidation(self, db_with_scored_papers, monkeypatch):
         conn, tmp_path = db_with_scored_papers
         import prefilter as pf_mod
-        import hashlib
 
         rubric = tmp_path / "rank.md"
         rubric.write_text(base_template("rank"))
@@ -272,7 +270,6 @@ class TestMaybeInvalidatePapersScores:
     def test_first_run_records_hash_without_invalidation(self, db_with_scored_papers, monkeypatch):
         """Line 215: when hash changed but no scored papers exist, logs 'rubric hash recorded'."""
         import prefilter as pf_mod
-        import hashlib
         import db as db_mod
         tmp_path = db_with_scored_papers[1]  # only use tmp_path, not the scored-papers conn
 

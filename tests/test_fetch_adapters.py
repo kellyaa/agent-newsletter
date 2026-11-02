@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -183,7 +181,6 @@ class TestFetchRss:
 
     def test_bozo_feed_with_no_entries_raises(self):
         """feedparser bozo with no entries → RuntimeError."""
-        import feedparser
 
         bozo_result = MagicMock()
         bozo_result.bozo = True

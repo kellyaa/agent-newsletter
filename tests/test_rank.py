@@ -1,7 +1,6 @@
 """Tests for rank.py: assign_statuses, effective_cap, build_prompt."""
 from __future__ import annotations
 
-import json
 import pytest
 
 from rank import assign_statuses, effective_cap, build_prompt, SECTION_RULES
