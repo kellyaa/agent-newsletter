@@ -45,6 +45,10 @@ def run_duration_s(started_at: str | None, now: datetime | None = None) -> int |
         start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if start.tzinfo is None:
+        # A zone-less timestamp is documented as UTC; subtracting it from an
+        # aware ``now`` would otherwise raise TypeError and abort publish.
+        start = start.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
     return max(0, int((now - start).total_seconds()))
 
