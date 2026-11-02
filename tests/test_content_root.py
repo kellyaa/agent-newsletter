@@ -20,13 +20,10 @@ Fix (issue #64):
 from __future__ import annotations
 
 import importlib
-import os
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))

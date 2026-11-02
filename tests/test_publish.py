@@ -12,8 +12,6 @@ def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
     importlib.reload(publish)
     assert publish.ISSUES_DIR == tmp_path / "editions" / "agents" / "issues"
 
-import sqlite3
-from pathlib import Path
 
 import pytest
 

@@ -17,7 +17,6 @@ candidates module tests.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -96,7 +95,6 @@ class TestAgeOutForSyntheticDate:
 
     def test_drops_papers_too_old(self, db):
         from backfill import age_out_for_synthetic_date
-        from prefilter import PAPER_POOL_MAX_AGE_DAYS
 
         # Published much older than PAPER_POOL_MAX_AGE_DAYS before the synthetic date
         very_old = "2026-05-01T00:00:00Z"
