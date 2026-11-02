@@ -10,9 +10,9 @@ Planning artifact from the strategist agent. It proposes priorities and is not a
 
 ## Near term
 
-1. **Cost control.** `BUDGET_USD` and `runs.cost_usd` are scaffolded but not enforced or populated, and spend now scales with edition count. Tracked in #438.
-2. **CI security scanning.** CodeQL, pip-audit and pnpm audit are specified with full workflow text in #425. #463 and #468 re-file the same requirement and are listed in #466 as duplicates to close in favour of #425. #433 is closed. The change is a new file under `.github/workflows/`, which agents cannot push, so a human has to apply it. #465 only documents that requirement.
-3. **Finish the SPEC.md cost wording.** The "Live status" refresh with measured per-edition baselines has merged (#462). The cost wording is still stale: the risk table, Cost Budget bullets and the Cost cap decision say `cost_usd` is not populated. Update them after #441 and the #438 decision land. Tracked in #444.
+1. **Cost visibility, not a cap.** The maintainer decided on #438 not to cap costs for now, so `BUDGET_USD` stays unenforced. What remains is recording priced cost: `runs.cost_usd` is still NULL until #441 (held) lands. Tracked in #438.
+2. **Close out security scanning.** The CodeQL, pip-audit and pnpm audit workflow merged in #484 (`.github/workflows/security.yml`). The parked issues #425 and #468 (and the tracker #466) still ask for the same thing and need a maintainer to confirm and close them. #463, #433 and #465 are already closed.
+3. **Finish the SPEC.md cost wording.** The "Live status" refresh with measured per-edition baselines has merged (#462). The cost wording is still stale: the risk table, Cost Budget bullets and the Cost cap decision say `cost_usd` is not populated, and "Cost cap" should record the #438 decision. Update them after #441 lands. Tracked in #444.
 
 ## Mid term
 
@@ -21,8 +21,8 @@ Planning artifact from the strategist agent. It proposes priorities and is not a
 
 ## Open questions for maintainers
 
-- Should a budget cap apply per run, per edition, or per day across editions?
-- Is there a planned third edition? That would raise the priority of cost control and runtime.
+- Is there a planned third edition? That would raise the priority of cost visibility and runtime.
+- Revisit the decision not to cap costs if spend grows with edition count (answered for now on #438; a cap would also need a scope: per run, per edition, or per day).
 
 ## Out of scope here
 
