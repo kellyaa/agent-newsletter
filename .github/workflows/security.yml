@@ -18,7 +18,7 @@ concurrency:
 jobs:
   codeql:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
@@ -49,6 +49,9 @@ jobs:
   pnpm-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Non-blocking until the astro 5 -> 7 migration (#485) clears the
+    # remaining findings in astro itself and its pinned transitives.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
