@@ -19,9 +19,18 @@ import sys
 
 import edition
 import prompts
-from db import CONTENT_ROOT, REPO_ROOT, connect, count_items_seen_on, init_db, run_date
+from db import (
+    CONTENT_ROOT,
+    REPO_ROOT,
+    connect,
+    count_items_seen_on,
+    init_db,
+    load_appendix_items,
+    load_featured_items,
+    run_date,
+)
 from llm import call_llm
-from models import Section, Status
+from models import Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,24 +82,8 @@ WRITER_SCHEMA = {
 
 
 def load_today_items(conn, today: str):
-    featured_rows = conn.execute(
-        f"""
-        SELECT id, source, url, canonical_url, title, author, published_at, raw_text,
-               score, tags, why, section
-        FROM items
-        WHERE status = '{Status.FEATURED}'
-        ORDER BY section, score DESC, id
-        """
-    ).fetchall()
-
-    appendix_rows = conn.execute(
-        f"""
-        SELECT id, source, url, canonical_url, title, section
-        FROM items
-        WHERE status = '{Status.APPENDIX}'
-        ORDER BY section, id
-        """
-    ).fetchall()
+    featured_rows = load_featured_items(conn)
+    appendix_rows = load_appendix_items(conn)
 
     featured: list[dict] = []
     for r in featured_rows:

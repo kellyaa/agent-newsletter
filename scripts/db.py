@@ -385,6 +385,33 @@ def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
     return cur.rowcount or 0
 
 
+# --- write's issue-assembly reads --------------------------------------------
+# write.py used to run these SELECTs inline (advisory: "No data access layer").
+_FEATURED_COLUMNS = (
+    "id, source, url, canonical_url, title, author, published_at, raw_text, "
+    "score, tags, why, section"
+)
+_APPENDIX_COLUMNS = "id, source, url, canonical_url, title, section"
+
+
+def load_featured_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Rows in ``featured`` status, ordered by section, score desc, id."""
+    return conn.execute(
+        f"SELECT {_FEATURED_COLUMNS} FROM items "
+        f"WHERE status = '{Status.FEATURED}' "
+        "ORDER BY section, score DESC, id"
+    ).fetchall()
+
+
+def load_appendix_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Rows in ``appendix`` status, ordered by section, id."""
+    return conn.execute(
+        f"SELECT {_APPENDIX_COLUMNS} FROM items "
+        f"WHERE status = '{Status.APPENDIX}' "
+        "ORDER BY section, id"
+    ).fetchall()
+
+
 def record_stage_stats(
     conn: sqlite3.Connection,
     date: str,
