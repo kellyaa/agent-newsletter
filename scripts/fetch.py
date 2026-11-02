@@ -23,6 +23,7 @@ import httpx
 import yaml
 
 import edition
+from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
     url_id,
@@ -636,7 +637,7 @@ def _stamp_overrides(
 # clears it. The skip check keys off this marker, not off item dates, because
 # fetch bumps last_seen_date on re-surfaced older items, so item dates can't
 # tell "fetched today" from "re-surfaced today" (#321).
-FETCH_DONE_KEY = "fetch_completed_date"
+FETCH_DONE_KEY = MetaKey.FETCH_DONE
 
 
 def _already_fetched_today(conn) -> int:

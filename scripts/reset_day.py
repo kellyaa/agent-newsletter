@@ -19,10 +19,10 @@ from pathlib import Path
 
 import edition
 from db import CONTENT_ROOT, connect, run_date
-from models import Status
+from models import MetaKey, Status
 
-# Keep in sync with fetch.FETCH_DONE_KEY (not imported: fetch pulls in httpx etc.).
-FETCH_DONE_KEY = "fetch_completed_date"
+# Shared with fetch.FETCH_DONE_KEY via models (fetch itself is not imported: it pulls in httpx etc.).
+FETCH_DONE_KEY = MetaKey.FETCH_DONE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("reset_day")
