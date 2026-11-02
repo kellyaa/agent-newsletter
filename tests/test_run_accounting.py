@@ -100,6 +100,21 @@ class TestRunDuration:
         now = datetime(2026, 10, 17, 11, 4, 5, tzinfo=timezone.utc)
         assert run_duration_s("2026-10-17T11:00:00Z", now) == 245
 
+    def test_zone_less_start_is_treated_as_utc(self):
+        from publish import run_duration_s
+        now = datetime(2026, 10, 17, 11, 4, 5, tzinfo=timezone.utc)
+        assert run_duration_s("2026-10-17T11:00:00", now) == 245
+
+    def test_non_utc_offset_start_is_honoured(self):
+        from publish import run_duration_s
+        now = datetime(2026, 10, 17, 11, 4, 5, tzinfo=timezone.utc)
+        assert run_duration_s("2026-10-17T07:00:00-04:00", now) == 245
+
+    def test_future_start_clamps_to_zero(self):
+        from publish import run_duration_s
+        now = datetime(2026, 10, 17, 11, 0, 0, tzinfo=timezone.utc)
+        assert run_duration_s("2026-10-17T11:05:00Z", now) == 0
+
     def test_missing_or_bad_start_is_none(self):
         from publish import run_duration_s
         assert run_duration_s(None) is None
