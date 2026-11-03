@@ -270,6 +270,33 @@ def count_items_in_status(conn: sqlite3.Connection, *statuses: str) -> int:
     return int(row[0]) if row else 0
 
 
+# --- shared item reads: candidate pool and lookup by id ---------------------
+# candidates.py and replay_writer.py used to run these SELECTs inline
+# (advisory: "No data access layer").
+_CANDIDATE_COLUMNS = (
+    "id, source, url, title, author, published_at, raw_text, "
+    "section, section_override, score, tags, why"
+)
+_ITEM_LOOKUP_COLUMNS = (
+    "id, source, url, canonical_url, title, author, published_at, raw_text, "
+    "score, tags, why, section"
+)
+
+
+def load_candidate_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every row in ``candidate`` status (the pool rank judges), unordered."""
+    return conn.execute(
+        f"SELECT {_CANDIDATE_COLUMNS} FROM items "
+        f"WHERE status = '{Status.CANDIDATE}'"
+    ).fetchall()
+
+
+def load_item_by_id(conn: sqlite3.Connection, item_id: str) -> sqlite3.Row | None:
+    """The item with id `item_id` in any status, or None if it isn't stored."""
+    return conn.execute(
+        f"SELECT {_ITEM_LOOKUP_COLUMNS} FROM items WHERE id = ?", (item_id,)
+    ).fetchone()
+
 # --- prefilter's item-state transitions --------------------------------------
 # prefilter.py used to run these statements inline; they live here so the
 # stage reads as gating logic and the SQL has one home (advisory: "No data
