@@ -511,7 +511,7 @@ class TestRunWriterForDate:
         out_path.write_text("old content")
 
         fake_output = {"theme": "New AI theme for testing",
-                       "items": [{"id": "feat1", "prose": "New prose."}]}
+                       "items": [{"id": "feat1", "summary": "New prose."}]}
         monkeypatch.setattr(write_mod, "invoke_writer", lambda prompt: fake_output)
 
         import backfill
@@ -523,8 +523,11 @@ class TestRunWriterForDate:
         conn.close()
 
         assert result is not None
+        assert result == out_path
         content = result.read_text()
         assert "old content" not in content
+        assert "New AI theme for testing" in content
+        assert "New prose." in content
 
 
 # ---------------------------------------------------------------------------
