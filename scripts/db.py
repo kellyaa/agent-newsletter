@@ -385,6 +385,70 @@ def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
     return cur.rowcount or 0
 
 
+# --- papers-pool age-out and backfill promotion ------------------------------
+# prefilter.py and backfill.py used to run these UPDATEs inline (advisory: "No
+# data access layer"). The age-out statement is shared by both so they can't
+# drift.
+#
+# Papers leave the pool when they hit the competition cap or pass the recency
+# ceiling. A paper never sent to the ranker (times_competed = 0, score IS NULL)
+# because PAPER_PRERANK_CAP kept truncating it is NOT marked 'dropped': an
+# unscored expiry is indistinguishable from an editorial rejection, so it gets
+# the distinct terminal status 'expired_unjudged'. Expiring it at all keeps the
+# pool (and the per-run work in candidates._load) bounded when daily inflow
+# exceeds the prerank cap (issue #289). Parameters: (max_competes, now,
+# max_age_days).
+PAPER_AGE_OUT_SQL = f"""
+    UPDATE items
+    SET status = CASE
+        WHEN times_competed = 0 AND score IS NULL THEN '{Status.EXPIRED_UNJUDGED}'
+        ELSE '{Status.DROPPED}'
+    END
+    WHERE status = '{Status.CANDIDATE}'
+      AND section = '{Section.PAPERS}'
+      AND (times_competed >= ?
+           OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
+"""
+
+
+def age_out_papers_pool(
+    conn: sqlite3.Connection,
+    *,
+    max_competes: int,
+    now: str,
+    max_age_days: int,
+    commit: bool = True,
+) -> int:
+    """Move papers candidates past the competition cap or age ceiling out of the pool.
+
+    ``now`` is an SQLite-parsable timestamp (``julianday(now)``), passed in so
+    callers can pin the clock. Returns the rows moved. ``commit=False`` lets
+    the caller read the post-update state before committing.
+    """
+    cur = conn.execute(PAPER_AGE_OUT_SQL, (max_competes, now, max_age_days))
+    if commit:
+        conn.commit()
+    return cur.rowcount or 0
+
+
+def mark_candidates_published(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Promote `item_ids` still in ``candidate`` status to ``published``.
+
+    Gated on status so re-runs (or rows promoted by another path) are left
+    alone. Commits; returns the rows promoted.
+    """
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.PUBLISHED}' "
+        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
 # --- write's issue-assembly reads --------------------------------------------
 # write.py used to run these SELECTs inline (advisory: "No data access layer").
 _FEATURED_COLUMNS = (

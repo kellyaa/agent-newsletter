@@ -160,14 +160,7 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
 
     conn = db_mod.connect(live_db or db_mod.db_path())
     try:
-        placeholders = ",".join("?" * len(featured_ids))
-        cur = conn.execute(
-            f"UPDATE items SET status = '{Status.PUBLISHED}' "
-            f"WHERE status = '{Status.CANDIDATE}' AND id IN ({placeholders})",
-            featured_ids,
-        )
-        conn.commit()
-        return cur.rowcount or 0
+        return db_mod.mark_candidates_published(conn, featured_ids)
     finally:
         conn.close()
 
@@ -178,17 +171,14 @@ def age_out_for_synthetic_date(conn, target_date: str) -> int:
     Without this, papers that were live on the snapshot day but should have
     aged out by the target date would still appear in the candidate pool.
     """
+    import db as db_mod
     import prefilter as prefilter_mod
-    cur = conn.execute(
-        prefilter_mod.PAPER_AGE_OUT_SQL,
-        (
-            prefilter_mod.PAPER_POOL_MAX_COMPETES,
-            target_date,
-            prefilter_mod.PAPER_POOL_MAX_AGE_DAYS,
-        ),
+    return db_mod.age_out_papers_pool(
+        conn,
+        max_competes=prefilter_mod.PAPER_POOL_MAX_COMPETES,
+        now=target_date,
+        max_age_days=prefilter_mod.PAPER_POOL_MAX_AGE_DAYS,
     )
-    conn.commit()
-    return cur.rowcount or 0
 
 
 def rank_with_optional_llm(conn, candidates: dict) -> dict:
