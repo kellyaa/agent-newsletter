@@ -459,7 +459,7 @@ def load_stage_stats(conn: sqlite3.Connection, date: str) -> dict[str, int] | No
 def canonicalize_url(url: str) -> str:
     """Return a normalized URL safe to use as a dedup key.
 
-    - Lowercase scheme + host
+    - Lowercase scheme + host; drop an explicit default port (:80 / :443)
     - Strip tracking query params
     - Strip trailing slash on path
     - Resolve arxiv pdf/abs/v<N> variants to the abs form
@@ -467,6 +467,11 @@ def canonicalize_url(url: str) -> str:
     parsed = urlparse(url.strip())
     scheme = (parsed.scheme or "https").lower()
     netloc = parsed.netloc.lower()
+    # An explicit default port names the same resource as the bare host, and
+    # would otherwise defeat both dedup and the arxiv host match below.
+    default_port = {"http": ":80", "https": ":443"}.get(scheme)
+    if default_port and netloc.endswith(default_port):
+        netloc = netloc[: -len(default_port)]
     path = parsed.path or "/"
 
     # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
@@ -479,7 +484,7 @@ def canonicalize_url(url: str) -> str:
             path = f"/abs/{m.group(1)}"
 
     if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
+        path = path.rstrip("/") or "/"
 
     kept = []
     for k, v in parse_qsl(parsed.query, keep_blank_values=False):
