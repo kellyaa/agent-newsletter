@@ -23,7 +23,7 @@ from db import (
     count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
     promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
-from models import PrefilterItem, Section, Status
+from models import ExitCode, PrefilterItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -253,7 +253,7 @@ def main(now: datetime | None = None) -> int:
     )
 
     conn.close()
-    return 0
+    return ExitCode.OK
 
 
 if __name__ == "__main__":

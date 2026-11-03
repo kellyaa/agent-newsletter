@@ -29,7 +29,7 @@ from db import (
     url_id,
 )
 from db import count_items_seen_on
-from models import Section, Status
+from models import ExitCode, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -710,7 +710,7 @@ def main() -> int:
             existing,
         )
         conn.close()
-        return 0
+        return ExitCode.OK
 
     total_seen = total_inserted = 0
     errors = 0
@@ -746,8 +746,8 @@ def main() -> int:
     # taints an otherwise-successful 400+-item fetch.
     if total_seen == 0 and errors > 0:
         log.error("fetch: ALL collectors failed; aborting")
-        return 1
-    return 0
+        return ExitCode.NO_DATA
+    return ExitCode.OK
 
 
 if __name__ == "__main__":

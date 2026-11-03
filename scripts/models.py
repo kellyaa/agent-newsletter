@@ -13,7 +13,7 @@ Import from here in prefilter, rank, write, backfill, replay_writer.
 """
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from typing import TypedDict
 
 
@@ -47,6 +47,24 @@ class MetaKey(StrEnum):
 
     # Run date for which fetch completed; fetch sets it, reset_day --refetch clears it.
     FETCH_DONE = "fetch_completed_date"
+
+
+class ExitCode(IntEnum):
+    """Process exit codes shared by the pipeline stages (fetch → publish).
+
+    run_edition.sh treats any non-zero code as a stage failure and records it
+    in run_attempts.exit_code; these names say what each number means.
+    """
+
+    OK = 0
+    # Every source failed, so the stage produced nothing (fetch).
+    NO_DATA = 1
+    # A file the stage needs is missing: a prompt, or the issue from write.
+    MISSING_INPUT = 2
+    # publish: the issue file is too small to be a real issue.
+    ISSUE_TOO_SMALL = 4
+    # publish: no featured and no appendix items, so the issue would be empty.
+    EMPTY_ISSUE = 5
 
 
 # ---------------------------------------------------------------------------
