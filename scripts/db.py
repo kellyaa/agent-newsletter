@@ -412,6 +412,51 @@ def load_appendix_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# --- reset_day's forced re-run resets ----------------------------------------
+# reset_day.py used to run these statements inline (advisory: "No data access
+# layer").
+
+
+def delete_meta(conn: sqlite3.Connection, key: str) -> None:
+    """Remove a ``meta`` row (no-op when absent); counterpart of set_meta."""
+    conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+    conn.commit()
+
+
+def delete_items_first_seen_on(conn: sqlite3.Connection, date: str) -> int:
+    """Delete every item first fetched on ``date``; returns rows deleted."""
+    cur = conn.execute("DELETE FROM items WHERE first_seen_date = ?", (date,))
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def reset_processed_items_for(conn: sqlite3.Connection, date: str) -> int:
+    """Send ``date``'s featured/appendix/published items back to ``candidate``.
+
+    Clears score/tags/why/published_date so rank and write re-run from
+    scratch. ``new`` and ``dropped`` rows are left alone. Matches on
+    first_seen_date (not last_seen_date, which fetch bumps for re-surfaced
+    older items, #321) or published_date (multi-day pool papers first seen
+    earlier that won a slot on ``date``, #326). Returns rows reset.
+    """
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.CANDIDATE}', score = NULL, tags = NULL, "
+        "why = NULL, published_date = NULL "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}', '{Status.PUBLISHED}') "
+        "AND (first_seen_date = ? OR published_date = ?)",
+        (date, date),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def delete_run(conn: sqlite3.Connection, date: str) -> int:
+    """Delete the ``runs`` row for ``date``; returns rows deleted."""
+    cur = conn.execute("DELETE FROM runs WHERE date = ?", (date,))
+    conn.commit()
+    return cur.rowcount or 0
+
+
 def record_stage_stats(
     conn: sqlite3.Connection,
     date: str,
