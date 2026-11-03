@@ -54,8 +54,10 @@ class TestUpsertItemsInsert:
         item = _make_item(url="https://example.com/article-42")
         upsert_items(db, [item])
         expected_id = url_id(item.url)
-        row = db.execute("SELECT id FROM items WHERE id = ?", (expected_id,)).fetchone()
-        assert row is not None
+        row = db.execute("SELECT id, url FROM items WHERE id = ?", (expected_id,)).fetchone()
+        assert row["id"] == expected_id
+        assert row["url"] == item.url
+        assert db.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 1
 
     def test_multiple_items_all_inserted(self, db):
         items = [

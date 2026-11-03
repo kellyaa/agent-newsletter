@@ -84,8 +84,7 @@ def test_fetch_html_happy_path():
     it = items[0]
     assert it.source == "html:anthropic-news"
     assert it.title == "Claude 4 is out"
-    assert it.published_at is not None
-    assert "2026-07-10" in it.published_at
+    assert it.published_at.startswith("2026-07-10")
     assert "Better tool use" in it.raw_text
 
 
