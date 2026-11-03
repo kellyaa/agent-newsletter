@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
@@ -307,11 +308,20 @@ def _prerank_scorer(item: dict, now) -> float:
     return prerank_score(item, now, KEYWORD_RE)
 
 
-def main() -> int:
+def main(now: datetime | None = None) -> int:
+    """Run the rank stage.
+
+    ``now`` is the wall-clock instant the papers pre-rank cap scores recency
+    against. It defaults to the current UTC time; tests and backfills pass a
+    fixed instant instead of patching ``datetime`` (same contract as
+    ``prefilter.main``).
+    """
     init_db()
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
         return ExitCode.MISSING_INPUT
+    if now is None:
+        now = datetime.now(timezone.utc)
 
     rubric = prompts.render_and_log("rank", EDITION, template_path=PROMPT_PATH)
 
@@ -331,6 +341,7 @@ def main() -> int:
     candidates = load_candidates_from_db(
         prerank_cap=PAPER_PRERANK_CAP,
         prerank_scorer=_prerank_scorer,
+        now=now,
     )
 
     # `papers_prescored` is the multi-day pool's cached-score bucket (issue #16).
