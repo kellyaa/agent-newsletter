@@ -250,7 +250,7 @@ class TestFetchRedditNoCreatedUtc:
 
 
 # ---------------------------------------------------------------------------
-# fetch.py:271->241 — upsert_items() rowcount/lastrowid false path
+# fetch.py upsert_items() — db.upsert_item() reported-no-row false path
 # (Note: this is structurally unreachable with real SQLite ON CONFLICT DO UPDATE
 # but the test documents the observed behavior and exercises the code path)
 # ---------------------------------------------------------------------------

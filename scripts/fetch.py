@@ -29,10 +29,10 @@ import edition
 from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
-    url_id,
+    upsert_item, url_id,
 )
 from db import count_items_seen_on
-from models import ExitCode, Section, Status
+from models import ExitCode, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -573,33 +573,16 @@ def upsert_items(
             continue
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
-        cur = conn.execute(
-            f"""
-            INSERT INTO items (id, source, url, canonical_url, title, author,
-                               published_at, fetched_at, raw_text, status,
-                               section_override, keyword_gate_bypass,
-                               recency_days_override,
-                               first_seen_date, last_seen_date, appearances)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
-            ON CONFLICT(id) DO UPDATE SET
-                last_seen_date = excluded.last_seen_date,
-                appearances = items.appearances + 1,
-                section_override = COALESCE(excluded.section_override,
-                                            items.section_override),
-                keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
-                                          items.keyword_gate_bypass),
-                recency_days_override = COALESCE(excluded.recency_days_override,
-                                                 items.recency_days_override)
-            """,
-            (
-                item_id, it.source, it.url, canonical, it.title, it.author,
-                it.published_at, fetched_at, it.raw_text,
-                it.section_override, 1 if it.keyword_gate_bypass else 0,
-                it.recency_days_override,
-                today, today,
-            ),
-        )
-        if cur.rowcount and cur.lastrowid:  # pragma: no cover — ON CONFLICT DO UPDATE always sets both
+        if upsert_item(  # pragma: no cover — ON CONFLICT DO UPDATE always reports a row
+            conn,
+            item_id=item_id, source=it.source, url=it.url, canonical_url=canonical,
+            title=it.title, author=it.author, published_at=it.published_at,
+            fetched_at=fetched_at, raw_text=it.raw_text,
+            section_override=it.section_override,
+            keyword_gate_bypass=it.keyword_gate_bypass,
+            recency_days_override=it.recency_days_override,
+            seen_date=today,
+        ):
             inserted += 1
     conn.commit()
     return seen, inserted

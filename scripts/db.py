@@ -707,6 +707,60 @@ def load_gate_rows(conn: sqlite3.Connection, item_ids: list[str]) -> list[dict]:
         )
     return rows
 
+
+# --- fetch's item upsert -------------------------------------------------------
+# fetch.upsert_items used to run this INSERT inline (advisory: "No data access
+# layer"). URL vetting and id/canonical derivation stay in fetch; this is only
+# the statement.
+_UPSERT_ITEM_SQL = f"""
+    INSERT INTO items (id, source, url, canonical_url, title, author,
+                       published_at, fetched_at, raw_text, status,
+                       section_override, keyword_gate_bypass,
+                       recency_days_override,
+                       first_seen_date, last_seen_date, appearances)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+        last_seen_date = excluded.last_seen_date,
+        appearances = items.appearances + 1,
+        section_override = COALESCE(excluded.section_override,
+                                    items.section_override),
+        keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
+                                  items.keyword_gate_bypass),
+        recency_days_override = COALESCE(excluded.recency_days_override,
+                                         items.recency_days_override)
+"""
+
+
+def upsert_item(
+    conn: sqlite3.Connection, *, item_id: str, source: str, url: str,
+    canonical_url: str, title: str, author: str | None, published_at: str | None,
+    fetched_at: str, raw_text: str | None, section_override: str | None,
+    keyword_gate_bypass: bool, recency_days_override: int | None, seen_date: str,
+) -> bool:
+    """Insert a new ``items`` row (status ``new``) or refresh a re-seen one.
+
+    A new row gets ``first_seen_date = last_seen_date = seen_date`` and
+    ``appearances = 1``. A re-seen id bumps ``appearances``, moves
+    ``last_seen_date`` and merges the per-source overrides (a set override wins
+    over NULL; ``keyword_gate_bypass`` is sticky once on). Everything else on
+    the stored row is left alone.
+
+    Does not commit (the caller commits once per batch). Returns whether SQLite
+    reported a written row (rowcount and lastrowid both set).
+    """
+    cur = conn.execute(
+        _UPSERT_ITEM_SQL,
+        (
+            item_id, source, url, canonical_url, title, author,
+            published_at, fetched_at, raw_text,
+            section_override, 1 if keyword_gate_bypass else 0,
+            recency_days_override,
+            seen_date, seen_date,
+        ),
+    )
+    return bool(cur.rowcount and cur.lastrowid)
+
+
 if __name__ == "__main__":
     init_db()
     print(f"Initialized {db_path()}")
