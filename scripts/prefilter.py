@@ -19,8 +19,8 @@ from gates import (  # noqa: F401 — re-exported for tests and tooling
     collapse_near_dups, keyword_gate, passes_recency as _passes_recency,
 )
 from db import (
-    CONTENT_ROOT, REPO_ROOT, clear_candidate_scores, connect, count_items_in_status,
-    count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
+    CONTENT_ROOT, REPO_ROOT, age_out_papers_pool, clear_candidate_scores, connect,
+    count_items_in_status, count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
     promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
 from models import ExitCode, PrefilterItem, Section, Status
@@ -58,26 +58,8 @@ APPENDIX_MAX_APPEARANCES = 2
 PAPER_POOL_MAX_COMPETES = 7
 PAPER_POOL_MAX_AGE_DAYS = 7
 
-# Age-out for the papers candidate pool. Shared with backfill.py so the two
-# can't drift. Papers leave the pool when they hit the competition cap or when
-# they pass the recency ceiling. A paper that was never sent to the ranker
-# (times_competed = 0, score IS NULL) because PAPER_PRERANK_CAP kept truncating
-# it is NOT marked 'dropped': an unscored expiry is indistinguishable from an
-# editorial rejection, so it gets the distinct terminal status
-# 'expired_unjudged'. Expiring it at all keeps the pool (and the per-run work in
-# candidates._load) bounded when daily inflow exceeds the prerank cap (issue #289).
-# Parameters: (max_competes, now, max_age_days).
-PAPER_AGE_OUT_SQL = f"""
-    UPDATE items
-    SET status = CASE
-        WHEN times_competed = 0 AND score IS NULL THEN '{Status.EXPIRED_UNJUDGED}'
-        ELSE '{Status.DROPPED}'
-    END
-    WHERE status = '{Status.CANDIDATE}'
-      AND section = '{Section.PAPERS}'
-      AND (times_competed >= ?
-           OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
-"""
+# The age-out UPDATE itself lives in db.age_out_papers_pool(), shared with
+# backfill.py so the two can't drift.
 
 # Cached rubric hash. When prompts/rank.md changes, all cached papers scores
 # become stale (they were assigned under a different rubric), so we wipe them
@@ -136,15 +118,13 @@ def age_out_papers(conn, now: datetime) -> tuple[int, int]:
     how many of those had never been scored.
     """
     unjudged_before = count_items_in_status(conn, Status.EXPIRED_UNJUDGED)
-    aged = conn.execute(
-        PAPER_AGE_OUT_SQL,
-        (
-            PAPER_POOL_MAX_COMPETES,
-            now.strftime("%Y-%m-%d %H:%M:%S"),
-            PAPER_POOL_MAX_AGE_DAYS,
-        ),
+    aged_out = age_out_papers_pool(
+        conn,
+        max_competes=PAPER_POOL_MAX_COMPETES,
+        now=now.strftime("%Y-%m-%d %H:%M:%S"),
+        max_age_days=PAPER_POOL_MAX_AGE_DAYS,
+        commit=False,
     )
-    aged_out = aged.rowcount or 0
     # Only this UPDATE moves rows into 'expired_unjudged', so the delta is this
     # run's never-judged expiries; the rest of the rowcount went to 'dropped'.
     expired_unjudged = (
