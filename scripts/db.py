@@ -498,6 +498,74 @@ def url_id(url: str) -> str:
     return hashlib.sha256(canonicalize_url(url).encode("utf-8")).hexdigest()
 
 
+# --- run_attempts bookkeeping and check_edition's dry-run read ---------------
+# run_attempt.py and check_edition.py used to run these statements inline
+# (advisory: "No data access layer").
+def next_attempt_number(conn: sqlite3.Connection, date: str) -> int:
+    """1 + the highest ``run_attempts.attempt`` recorded for `date` (1 if none)."""
+    return conn.execute(
+        "SELECT COALESCE(MAX(attempt), 0) + 1 FROM run_attempts WHERE date = ?", (date,)
+    ).fetchone()[0]
+
+
+def insert_run_attempt(
+    conn: sqlite3.Connection, date: str, attempt: int, started_at: str,
+    code_commit: str | None, code_dirty: int | None, host: str,
+) -> None:
+    """Record attempt `attempt` of `date` with outcome ``started``. Commits."""
+    conn.execute(
+        "INSERT INTO run_attempts (date, attempt, started_at, outcome, code_commit, code_dirty, host)"
+        " VALUES (?, ?, ?, 'started', ?, ?, ?)",
+        (date, attempt, started_at, code_commit, code_dirty, host),
+    )
+    conn.commit()
+
+
+def finish_run_attempt(
+    conn: sqlite3.Connection, date: str, attempt: int, *, finished_at: str,
+    outcome: str, failed_stage: str | None, exit_code: int | None, usage: dict,
+) -> int:
+    """Close out attempt `attempt` of `date`. Commits; returns the rows updated."""
+    cur = conn.execute(
+        "UPDATE run_attempts SET finished_at = ?, outcome = ?, failed_stage = ?, exit_code = ?,"
+        " llm_calls = ?, tokens_in = ?, tokens_out = ?, models = ?, tokens_by_model = ?"
+        " WHERE date = ? AND attempt = ?",
+        (finished_at, outcome, failed_stage, exit_code,
+         usage.get("calls"), usage.get("tokens_in"), usage.get("tokens_out"),
+         usage.get("models"), usage.get("tokens_by_model"), date, attempt),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def latest_attempt_outcome(conn: sqlite3.Connection, date: str) -> str | None:
+    """Outcome of the highest-numbered attempt for `date`, or None if none."""
+    row = conn.execute(
+        "SELECT outcome FROM run_attempts WHERE date = ? ORDER BY attempt DESC LIMIT 1", (date,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+_GATE_COLUMNS = (
+    "id, source, url, title, published_at, fetched_at, raw_text, "
+    "section_override, keyword_gate_bypass, recency_days_override"
+)
+_IN_CHUNK = 400  # stay well under SQLite's bound-parameter limit
+
+
+def load_gate_rows(conn: sqlite3.Connection, item_ids: list[str]) -> list[dict]:
+    """The columns the prefilter gates read, for each stored id in `item_ids`."""
+    rows: list[dict] = []
+    for i in range(0, len(item_ids), _IN_CHUNK):
+        chunk = item_ids[i:i + _IN_CHUNK]
+        marks = ",".join("?" * len(chunk))
+        rows.extend(
+            dict(r) for r in conn.execute(
+                f"SELECT {_GATE_COLUMNS} FROM items WHERE id IN ({marks})", chunk
+            )
+        )
+    return rows
+
 if __name__ == "__main__":
     init_db()
     print(f"Initialized {db_path()}")

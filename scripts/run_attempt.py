@@ -28,7 +28,10 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from db import REPO_ROOT, connect, db_path, init_db, run_date
+from db import (
+    REPO_ROOT, connect, db_path, finish_run_attempt, init_db, insert_run_attempt,
+    latest_attempt_outcome, next_attempt_number, run_date,
+)
 from llm import usage_totals
 
 logging.basicConfig(
@@ -58,40 +61,26 @@ def code_state() -> tuple[str | None, int | None]:
 
 
 def start(conn, date: str, started_at: str) -> int:
-    attempt = conn.execute(
-        "SELECT COALESCE(MAX(attempt), 0) + 1 FROM run_attempts WHERE date = ?", (date,)
-    ).fetchone()[0]
+    attempt = next_attempt_number(conn, date)
     commit, dirty = code_state()
-    conn.execute(
-        "INSERT INTO run_attempts (date, attempt, started_at, outcome, code_commit, code_dirty, host)"
-        " VALUES (?, ?, ?, 'started', ?, ?, ?)",
-        (date, attempt, started_at, commit, dirty, socket.gethostname()),
-    )
-    conn.commit()
+    insert_run_attempt(conn, date, attempt, started_at, commit, dirty, socket.gethostname())
     return attempt
 
 
 def finish(conn, date: str, attempt: int, outcome: str, stage: str | None,
            exit_code: int | None, usage: dict | None) -> None:
-    usage = usage or {}
-    cur = conn.execute(
-        "UPDATE run_attempts SET finished_at = ?, outcome = ?, failed_stage = ?, exit_code = ?,"
-        " llm_calls = ?, tokens_in = ?, tokens_out = ?, models = ?, tokens_by_model = ?"
-        " WHERE date = ? AND attempt = ?",
-        (_now(), outcome, stage if outcome == "failed" else None, exit_code,
-         usage.get("calls"), usage.get("tokens_in"), usage.get("tokens_out"),
-         usage.get("models"), usage.get("tokens_by_model"), date, attempt),
+    updated = finish_run_attempt(
+        conn, date, attempt, finished_at=_now(), outcome=outcome,
+        failed_stage=stage if outcome == "failed" else None,
+        exit_code=exit_code, usage=usage or {},
     )
-    conn.commit()
-    if cur.rowcount == 0:
+    if updated == 0:
         log.warning("no run_attempts row for %s attempt %d; nothing updated", date, attempt)
 
 
 def latest_outcome(conn, date: str) -> str:
-    row = conn.execute(
-        "SELECT outcome FROM run_attempts WHERE date = ? ORDER BY attempt DESC LIMIT 1", (date,)
-    ).fetchone()
-    return row[0] if row else "none"
+    outcome = latest_attempt_outcome(conn, date)
+    return "none" if outcome is None else outcome
 
 
 def main(argv: list[str] | None = None) -> int:
