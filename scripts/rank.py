@@ -27,7 +27,7 @@ from db import (
     init_db,
 )
 from llm import ContentFilterError, call_llm
-from models import RankDecision, ScoredItem, Section, Status
+from models import ExitCode, RankDecision, ScoredItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -311,7 +311,7 @@ def main() -> int:
     init_db()
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
-        return 2
+        return ExitCode.MISSING_INPUT
 
     rubric = prompts.render_and_log("rank", EDITION, template_path=PROMPT_PATH)
 
@@ -350,7 +350,7 @@ def main() -> int:
     )
     if total == 0:
         log.warning("no candidates to rank; exiting cleanly")
-        return 0
+        return ExitCode.OK
 
     scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
 
@@ -440,7 +440,7 @@ def main() -> int:
         counts.get(Status.DROPPED, 0),
         counts.get(Status.CANDIDATE, 0),
     )
-    return 0
+    return ExitCode.OK
 
 
 if __name__ == "__main__":
