@@ -1020,4 +1020,6 @@ class TestRunWriterForDateContentRoot:
 
         assert result is not None
         assert result == existing
-        assert "stale content" not in result.read_text(), "File should have been overwritten"
+        rewritten = result.read_text()
+        assert "stale content" not in rewritten, "File should have been overwritten"
+        assert "New theme" in rewritten
