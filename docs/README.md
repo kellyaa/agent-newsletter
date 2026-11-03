@@ -37,6 +37,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | Guide | Purpose |
 |-------|---------|
 | [operations-and-maintenance.md](operations-and-maintenance.md) | Daily checks, run model, where things live, when to investigate |
+| [ai-ops-runbook.md](ai-ops-runbook.md) | Index for incidents: pipeline health, recovery, cost, and handling agent-authored changes |
 | [debugging-guide.md](debugging-guide.md) | Stage-by-stage failure diagnosis, common errors, recovery steps |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
 | [performance-and-cost-guide.md](performance-and-cost-guide.md) | Where tokens and wall time go; cost measurement and tracking |
