@@ -69,6 +69,35 @@ def test_canonicalize_url_strips_tracking_params_and_preserves_query_order() -> 
     assert canonicalize_url(url) == "https://example.com/path?b=2&a=1"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://Example.com:443/a", "https://example.com/a"),
+        ("http://example.com:80/a", "http://example.com/a"),
+        # A port that is not the scheme's default is significant.
+        ("https://example.com:8443/a", "https://example.com:8443/a"),
+        ("http://example.com:443/a", "http://example.com:443/a"),
+        ("https://example.com:80/a", "https://example.com:80/a"),
+    ],
+)
+def test_canonicalize_url_drops_only_the_default_port(url: str, expected: str) -> None:
+    assert canonicalize_url(url) == expected
+
+
+def test_canonicalize_url_collapses_arxiv_variant_with_default_port() -> None:
+    assert (
+        canonicalize_url("https://arxiv.org:443/pdf/2401.12345v2")
+        == "https://arxiv.org/abs/2401.12345"
+    )
+
+
+def test_canonicalize_url_slash_only_path_stays_root() -> None:
+    assert canonicalize_url("https://example.com//") == "https://example.com/"
+    assert canonicalize_url("https://example.com//") == canonicalize_url(
+        "https://example.com/"
+    )
+
+
 def test_url_id_is_stable_for_same_canonical_url() -> None:
     first = "https://example.com/items/42?utm_source=feed&b=2"
     second = "HTTPS://EXAMPLE.COM/items/42/?b=2&fbclid=abc"
