@@ -5,9 +5,12 @@ No LLM calls. Per-source errors are logged and don't abort the run.
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
 import logging
+import os
 import re
+import socket
 import ssl
 import subprocess
 import sys
@@ -65,6 +68,35 @@ def _make_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+def _reject_non_public_target(request: httpx.Request) -> None:
+    """httpx request hook: refuse requests aimed at non-public addresses.
+
+    httpx runs request hooks for every hop, so a public feed URL that redirects
+    to loopback, RFC-1918, link-local (cloud metadata at 169.254.169.254) or
+    other non-global addresses is stopped before the connection is made. A host
+    that does not resolve is let through; the request itself then fails.
+    Set FETCH_ALLOW_PRIVATE_HOSTS=1 to disable the check (local test feeds,
+    self-hosted internal sources).
+    """
+    if os.environ.get("FETCH_ALLOW_PRIVATE_HOSTS") == "1":
+        return
+    host = request.url.host
+    try:
+        addrs = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return
+        addrs = [ipaddress.ip_address(info[4][0].split("%", 1)[0]) for info in infos]
+    for addr in addrs:
+        if not addr.is_global:
+            raise httpx.RequestError(
+                f"refusing to fetch {host}: resolves to non-public address {addr}",
+                request=request,
+            )
+
+
 def _make_http_client() -> httpx.Client:
     """Create a shared HTTP client with connection pooling.
 
@@ -77,6 +109,7 @@ def _make_http_client() -> httpx.Client:
         timeout=HTTP_TIMEOUT,
         headers={"User-Agent": USER_AGENT},
         follow_redirects=True,
+        event_hooks={"request": [_reject_non_public_target]},
         verify=_make_ssl_context(),
     )
 
