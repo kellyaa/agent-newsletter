@@ -713,8 +713,16 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
             yield label, with_override(entry, fetch_github_releases([entry]))
 
 
-def main() -> int:
+def main(now: datetime | None = None) -> int:
+    """Run the fetch stage.
+
+    ``now`` stamps ``fetched_at`` on every row inserted this run. It defaults
+    to the current UTC time; tests and backfills pass a fixed instant instead
+    of patching ``datetime`` (same contract as ``prefilter.main``).
+    """
     init_db()
+    if now is None:
+        now = datetime.now(timezone.utc)
     sources = load_sources()
     conn = connect()
 
@@ -739,7 +747,7 @@ def main() -> int:
             log.exception("%s: collector failed: %s", label, e)
             errors += 1
             return
-        seen, inserted = upsert_items(conn, items)
+        seen, inserted = upsert_items(conn, items, now=now)
         log.info("%s: seen=%d new=%d", label, seen, inserted)
         total_seen += seen
         total_inserted += inserted
