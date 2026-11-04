@@ -270,6 +270,33 @@ def count_items_in_status(conn: sqlite3.Connection, *statuses: str) -> int:
     return int(row[0]) if row else 0
 
 
+# --- shared item reads: candidate pool and lookup by id ---------------------
+# candidates.py and replay_writer.py used to run these SELECTs inline
+# (advisory: "No data access layer").
+_CANDIDATE_COLUMNS = (
+    "id, source, url, title, author, published_at, raw_text, "
+    "section, section_override, score, tags, why"
+)
+_ITEM_LOOKUP_COLUMNS = (
+    "id, source, url, canonical_url, title, author, published_at, raw_text, "
+    "score, tags, why, section"
+)
+
+
+def load_candidate_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every row in ``candidate`` status (the pool rank judges), unordered."""
+    return conn.execute(
+        f"SELECT {_CANDIDATE_COLUMNS} FROM items "
+        f"WHERE status = '{Status.CANDIDATE}'"
+    ).fetchall()
+
+
+def load_item_by_id(conn: sqlite3.Connection, item_id: str) -> sqlite3.Row | None:
+    """The item with id `item_id` in any status, or None if it isn't stored."""
+    return conn.execute(
+        f"SELECT {_ITEM_LOOKUP_COLUMNS} FROM items WHERE id = ?", (item_id,)
+    ).fetchone()
+
 # --- prefilter's item-state transitions --------------------------------------
 # prefilter.py used to run these statements inline; they live here so the
 # stage reads as gating logic and the SQL has one home (advisory: "No data
@@ -385,6 +412,70 @@ def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
     return cur.rowcount or 0
 
 
+# --- papers-pool age-out and backfill promotion ------------------------------
+# prefilter.py and backfill.py used to run these UPDATEs inline (advisory: "No
+# data access layer"). The age-out statement is shared by both so they can't
+# drift.
+#
+# Papers leave the pool when they hit the competition cap or pass the recency
+# ceiling. A paper never sent to the ranker (times_competed = 0, score IS NULL)
+# because PAPER_PRERANK_CAP kept truncating it is NOT marked 'dropped': an
+# unscored expiry is indistinguishable from an editorial rejection, so it gets
+# the distinct terminal status 'expired_unjudged'. Expiring it at all keeps the
+# pool (and the per-run work in candidates._load) bounded when daily inflow
+# exceeds the prerank cap (issue #289). Parameters: (max_competes, now,
+# max_age_days).
+PAPER_AGE_OUT_SQL = f"""
+    UPDATE items
+    SET status = CASE
+        WHEN times_competed = 0 AND score IS NULL THEN '{Status.EXPIRED_UNJUDGED}'
+        ELSE '{Status.DROPPED}'
+    END
+    WHERE status = '{Status.CANDIDATE}'
+      AND section = '{Section.PAPERS}'
+      AND (times_competed >= ?
+           OR julianday(?) - julianday(COALESCE(published_at, fetched_at)) >= ?)
+"""
+
+
+def age_out_papers_pool(
+    conn: sqlite3.Connection,
+    *,
+    max_competes: int,
+    now: str,
+    max_age_days: int,
+    commit: bool = True,
+) -> int:
+    """Move papers candidates past the competition cap or age ceiling out of the pool.
+
+    ``now`` is an SQLite-parsable timestamp (``julianday(now)``), passed in so
+    callers can pin the clock. Returns the rows moved. ``commit=False`` lets
+    the caller read the post-update state before committing.
+    """
+    cur = conn.execute(PAPER_AGE_OUT_SQL, (max_competes, now, max_age_days))
+    if commit:
+        conn.commit()
+    return cur.rowcount or 0
+
+
+def mark_candidates_published(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Promote `item_ids` still in ``candidate`` status to ``published``.
+
+    Gated on status so re-runs (or rows promoted by another path) are left
+    alone. Commits; returns the rows promoted.
+    """
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.PUBLISHED}' "
+        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
 # --- write's issue-assembly reads --------------------------------------------
 # write.py used to run these SELECTs inline (advisory: "No data access layer").
 _FEATURED_COLUMNS = (
@@ -410,6 +501,51 @@ def load_appendix_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         f"WHERE status = '{Status.APPENDIX}' "
         "ORDER BY section, id"
     ).fetchall()
+
+
+# --- reset_day's forced re-run resets ----------------------------------------
+# reset_day.py used to run these statements inline (advisory: "No data access
+# layer").
+
+
+def delete_meta(conn: sqlite3.Connection, key: str) -> None:
+    """Remove a ``meta`` row (no-op when absent); counterpart of set_meta."""
+    conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+    conn.commit()
+
+
+def delete_items_first_seen_on(conn: sqlite3.Connection, date: str) -> int:
+    """Delete every item first fetched on ``date``; returns rows deleted."""
+    cur = conn.execute("DELETE FROM items WHERE first_seen_date = ?", (date,))
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def reset_processed_items_for(conn: sqlite3.Connection, date: str) -> int:
+    """Send ``date``'s featured/appendix/published items back to ``candidate``.
+
+    Clears score/tags/why/published_date so rank and write re-run from
+    scratch. ``new`` and ``dropped`` rows are left alone. Matches on
+    first_seen_date (not last_seen_date, which fetch bumps for re-surfaced
+    older items, #321) or published_date (multi-day pool papers first seen
+    earlier that won a slot on ``date``, #326). Returns rows reset.
+    """
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.CANDIDATE}', score = NULL, tags = NULL, "
+        "why = NULL, published_date = NULL "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}', '{Status.PUBLISHED}') "
+        "AND (first_seen_date = ? OR published_date = ?)",
+        (date, date),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def delete_run(conn: sqlite3.Connection, date: str) -> int:
+    """Delete the ``runs`` row for ``date``; returns rows deleted."""
+    cur = conn.execute("DELETE FROM runs WHERE date = ?", (date,))
+    conn.commit()
+    return cur.rowcount or 0
 
 
 def record_stage_stats(
@@ -459,7 +595,7 @@ def load_stage_stats(conn: sqlite3.Connection, date: str) -> dict[str, int] | No
 def canonicalize_url(url: str) -> str:
     """Return a normalized URL safe to use as a dedup key.
 
-    - Lowercase scheme + host
+    - Lowercase scheme + host; drop an explicit default port (:80 / :443)
     - Strip tracking query params
     - Strip trailing slash on path
     - Resolve arxiv pdf/abs/v<N> variants to the abs form
@@ -467,6 +603,11 @@ def canonicalize_url(url: str) -> str:
     parsed = urlparse(url.strip())
     scheme = (parsed.scheme or "https").lower()
     netloc = parsed.netloc.lower()
+    # An explicit default port names the same resource as the bare host, and
+    # would otherwise defeat both dedup and the arxiv host match below.
+    default_port = {"http": ":80", "https": ":443"}.get(scheme)
+    if default_port and netloc.endswith(default_port):
+        netloc = netloc[: -len(default_port)]
     path = parsed.path or "/"
 
     # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
@@ -479,7 +620,7 @@ def canonicalize_url(url: str) -> str:
             path = f"/abs/{m.group(1)}"
 
     if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
+        path = path.rstrip("/") or "/"
 
     kept = []
     for k, v in parse_qsl(parsed.query, keep_blank_values=False):
@@ -496,6 +637,128 @@ def canonicalize_url(url: str) -> str:
 
 def url_id(url: str) -> str:
     return hashlib.sha256(canonicalize_url(url).encode("utf-8")).hexdigest()
+
+
+# --- run_attempts bookkeeping and check_edition's dry-run read ---------------
+# run_attempt.py and check_edition.py used to run these statements inline
+# (advisory: "No data access layer").
+def next_attempt_number(conn: sqlite3.Connection, date: str) -> int:
+    """1 + the highest ``run_attempts.attempt`` recorded for `date` (1 if none)."""
+    return conn.execute(
+        "SELECT COALESCE(MAX(attempt), 0) + 1 FROM run_attempts WHERE date = ?", (date,)
+    ).fetchone()[0]
+
+
+def insert_run_attempt(
+    conn: sqlite3.Connection, date: str, attempt: int, started_at: str,
+    code_commit: str | None, code_dirty: int | None, host: str,
+) -> None:
+    """Record attempt `attempt` of `date` with outcome ``started``. Commits."""
+    conn.execute(
+        "INSERT INTO run_attempts (date, attempt, started_at, outcome, code_commit, code_dirty, host)"
+        " VALUES (?, ?, ?, 'started', ?, ?, ?)",
+        (date, attempt, started_at, code_commit, code_dirty, host),
+    )
+    conn.commit()
+
+
+def finish_run_attempt(
+    conn: sqlite3.Connection, date: str, attempt: int, *, finished_at: str,
+    outcome: str, failed_stage: str | None, exit_code: int | None, usage: dict,
+) -> int:
+    """Close out attempt `attempt` of `date`. Commits; returns the rows updated."""
+    cur = conn.execute(
+        "UPDATE run_attempts SET finished_at = ?, outcome = ?, failed_stage = ?, exit_code = ?,"
+        " llm_calls = ?, tokens_in = ?, tokens_out = ?, models = ?, tokens_by_model = ?"
+        " WHERE date = ? AND attempt = ?",
+        (finished_at, outcome, failed_stage, exit_code,
+         usage.get("calls"), usage.get("tokens_in"), usage.get("tokens_out"),
+         usage.get("models"), usage.get("tokens_by_model"), date, attempt),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def latest_attempt_outcome(conn: sqlite3.Connection, date: str) -> str | None:
+    """Outcome of the highest-numbered attempt for `date`, or None if none."""
+    row = conn.execute(
+        "SELECT outcome FROM run_attempts WHERE date = ? ORDER BY attempt DESC LIMIT 1", (date,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+_GATE_COLUMNS = (
+    "id, source, url, title, published_at, fetched_at, raw_text, "
+    "section_override, keyword_gate_bypass, recency_days_override"
+)
+_IN_CHUNK = 400  # stay well under SQLite's bound-parameter limit
+
+
+def load_gate_rows(conn: sqlite3.Connection, item_ids: list[str]) -> list[dict]:
+    """The columns the prefilter gates read, for each stored id in `item_ids`."""
+    rows: list[dict] = []
+    for i in range(0, len(item_ids), _IN_CHUNK):
+        chunk = item_ids[i:i + _IN_CHUNK]
+        marks = ",".join("?" * len(chunk))
+        rows.extend(
+            dict(r) for r in conn.execute(
+                f"SELECT {_GATE_COLUMNS} FROM items WHERE id IN ({marks})", chunk
+            )
+        )
+    return rows
+
+
+# --- fetch's item upsert -------------------------------------------------------
+# fetch.upsert_items used to run this INSERT inline (advisory: "No data access
+# layer"). URL vetting and id/canonical derivation stay in fetch; this is only
+# the statement.
+_UPSERT_ITEM_SQL = f"""
+    INSERT INTO items (id, source, url, canonical_url, title, author,
+                       published_at, fetched_at, raw_text, status,
+                       section_override, keyword_gate_bypass,
+                       recency_days_override,
+                       first_seen_date, last_seen_date, appearances)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+        last_seen_date = excluded.last_seen_date,
+        appearances = items.appearances + 1,
+        section_override = COALESCE(excluded.section_override,
+                                    items.section_override),
+        keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
+                                  items.keyword_gate_bypass),
+        recency_days_override = COALESCE(excluded.recency_days_override,
+                                         items.recency_days_override)
+"""
+
+
+def upsert_item(
+    conn: sqlite3.Connection, *, item_id: str, source: str, url: str,
+    canonical_url: str, title: str, author: str | None, published_at: str | None,
+    fetched_at: str, raw_text: str | None, section_override: str | None,
+    keyword_gate_bypass: bool, recency_days_override: int | None, seen_date: str,
+) -> bool:
+    """Insert a new ``items`` row (status ``new``) or refresh a re-seen one.
+
+    A new row gets ``first_seen_date = last_seen_date = seen_date`` and
+    ``appearances = 1``. A re-seen id bumps ``appearances``, moves
+    ``last_seen_date`` and merges the per-source overrides (a set override wins
+    over NULL; ``keyword_gate_bypass`` is sticky once on). Everything else on
+    the stored row is left alone.
+
+    Does not commit (the caller commits once per batch). Returns whether SQLite
+    reported a written row (rowcount and lastrowid both set).
+    """
+    cur = conn.execute(
+        _UPSERT_ITEM_SQL,
+        (
+            item_id, source, url, canonical_url, title, author,
+            published_at, fetched_at, raw_text,
+            section_override, 1 if keyword_gate_bypass else 0,
+            recency_days_override,
+            seen_date, seen_date,
+        ),
+    )
+    return bool(cur.rowcount and cur.lastrowid)
 
 
 if __name__ == "__main__":

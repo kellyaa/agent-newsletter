@@ -26,8 +26,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from db import connect
-from models import Section, Status
+from db import connect, load_candidate_rows
+from models import Section
 
 log = logging.getLogger(__name__)
 
@@ -116,14 +116,7 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
     grouped: dict[str, list[dict]] = {s.value: [] for s in Section}
     grouped[PAPERS_PRESCORED] = []
 
-    rows = conn.execute(
-        f"""
-        SELECT id, source, url, title, author, published_at, raw_text,
-               section, section_override, score, tags, why
-        FROM items
-        WHERE status = '{Status.CANDIDATE}'
-        """
-    ).fetchall()
+    rows = load_candidate_rows(conn)
 
     for r in rows:
         d = dict(r)

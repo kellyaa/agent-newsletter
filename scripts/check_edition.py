@@ -21,7 +21,6 @@ import argparse
 import os
 import re
 import shutil
-import sqlite3
 import sys
 import tempfile
 from collections import Counter
@@ -188,22 +187,6 @@ def lint(slug: str) -> LintResult:
 
 # ------------------------------------------------------------- dry run
 
-def _rows_for(conn: sqlite3.Connection, ids: list[str]) -> list[dict]:
-    rows: list[dict] = []
-    for i in range(0, len(ids), 400):
-        chunk = ids[i:i + 400]
-        marks = ",".join("?" * len(chunk))
-        rows.extend(
-            dict(r) for r in conn.execute(
-                f"""SELECT id, source, url, title, published_at, fetched_at, raw_text,
-                           section_override, keyword_gate_bypass, recency_days_override
-                    FROM items WHERE id IN ({marks})""",
-                chunk,
-            )
-        )
-    return rows
-
-
 def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
     """Fetch every source into a throwaway DB and apply the recency + keyword gates."""
     # fetch/db read their edition at import time, so select this one before
@@ -245,7 +228,7 @@ def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
                         continue
                     fetch.upsert_items(conn, items)
                     ids = [db.url_id(it.url) for it in items if db.is_allowed_url(it.url)]
-                    rows = _rows_for(conn, ids)
+                    rows = db.load_gate_rows(conn, ids)
                     count.fetched = len(rows)
                     kept = [r for r in rows if gates.passes_recency(r, now)]
                     count.after_recency = len(kept)

@@ -5,9 +5,12 @@ No LLM calls. Per-source errors are logged and don't abort the run.
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
 import logging
+import os
 import re
+import socket
 import ssl
 import subprocess
 import sys
@@ -26,10 +29,10 @@ import edition
 from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
-    url_id,
+    upsert_item, url_id,
 )
 from db import count_items_seen_on
-from models import Section, Status
+from models import ExitCode, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +68,35 @@ def _make_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+def _reject_non_public_target(request: httpx.Request) -> None:
+    """httpx request hook: refuse requests aimed at non-public addresses.
+
+    httpx runs request hooks for every hop, so a public feed URL that redirects
+    to loopback, RFC-1918, link-local (cloud metadata at 169.254.169.254) or
+    other non-global addresses is stopped before the connection is made. A host
+    that does not resolve is let through; the request itself then fails.
+    Set FETCH_ALLOW_PRIVATE_HOSTS=1 to disable the check (local test feeds,
+    self-hosted internal sources).
+    """
+    if os.environ.get("FETCH_ALLOW_PRIVATE_HOSTS") == "1":
+        return
+    host = request.url.host
+    try:
+        addrs = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return
+        addrs = [ipaddress.ip_address(info[4][0].split("%", 1)[0]) for info in infos]
+    for addr in addrs:
+        if not addr.is_global:
+            raise httpx.RequestError(
+                f"refusing to fetch {host}: resolves to non-public address {addr}",
+                request=request,
+            )
+
+
 def _make_http_client() -> httpx.Client:
     """Create a shared HTTP client with connection pooling.
 
@@ -77,6 +109,7 @@ def _make_http_client() -> httpx.Client:
         timeout=HTTP_TIMEOUT,
         headers={"User-Agent": USER_AGENT},
         follow_redirects=True,
+        event_hooks={"request": [_reject_non_public_target]},
         verify=_make_ssl_context(),
     )
 
@@ -540,33 +573,16 @@ def upsert_items(
             continue
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
-        cur = conn.execute(
-            f"""
-            INSERT INTO items (id, source, url, canonical_url, title, author,
-                               published_at, fetched_at, raw_text, status,
-                               section_override, keyword_gate_bypass,
-                               recency_days_override,
-                               first_seen_date, last_seen_date, appearances)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
-            ON CONFLICT(id) DO UPDATE SET
-                last_seen_date = excluded.last_seen_date,
-                appearances = items.appearances + 1,
-                section_override = COALESCE(excluded.section_override,
-                                            items.section_override),
-                keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
-                                          items.keyword_gate_bypass),
-                recency_days_override = COALESCE(excluded.recency_days_override,
-                                                 items.recency_days_override)
-            """,
-            (
-                item_id, it.source, it.url, canonical, it.title, it.author,
-                it.published_at, fetched_at, it.raw_text,
-                it.section_override, 1 if it.keyword_gate_bypass else 0,
-                it.recency_days_override,
-                today, today,
-            ),
-        )
-        if cur.rowcount and cur.lastrowid:  # pragma: no cover — ON CONFLICT DO UPDATE always sets both
+        if upsert_item(  # pragma: no cover — ON CONFLICT DO UPDATE always reports a row
+            conn,
+            item_id=item_id, source=it.source, url=it.url, canonical_url=canonical,
+            title=it.title, author=it.author, published_at=it.published_at,
+            fetched_at=fetched_at, raw_text=it.raw_text,
+            section_override=it.section_override,
+            keyword_gate_bypass=it.keyword_gate_bypass,
+            recency_days_override=it.recency_days_override,
+            seen_date=today,
+        ):
             inserted += 1
     conn.commit()
     return seen, inserted
@@ -697,8 +713,16 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
             yield label, with_override(entry, fetch_github_releases([entry]))
 
 
-def main() -> int:
+def main(now: datetime | None = None) -> int:
+    """Run the fetch stage.
+
+    ``now`` stamps ``fetched_at`` on every row inserted this run. It defaults
+    to the current UTC time; tests and backfills pass a fixed instant instead
+    of patching ``datetime`` (same contract as ``prefilter.main``).
+    """
     init_db()
+    if now is None:
+        now = datetime.now(timezone.utc)
     sources = load_sources()
     conn = connect()
 
@@ -710,7 +734,7 @@ def main() -> int:
             existing,
         )
         conn.close()
-        return 0
+        return ExitCode.OK
 
     total_seen = total_inserted = 0
     errors = 0
@@ -723,7 +747,7 @@ def main() -> int:
             log.exception("%s: collector failed: %s", label, e)
             errors += 1
             return
-        seen, inserted = upsert_items(conn, items)
+        seen, inserted = upsert_items(conn, items, now=now)
         log.info("%s: seen=%d new=%d", label, seen, inserted)
         total_seen += seen
         total_inserted += inserted
@@ -746,8 +770,8 @@ def main() -> int:
     # taints an otherwise-successful 400+-item fetch.
     if total_seen == 0 and errors > 0:
         log.error("fetch: ALL collectors failed; aborting")
-        return 1
-    return 0
+        return ExitCode.NO_DATA
+    return ExitCode.OK
 
 
 if __name__ == "__main__":

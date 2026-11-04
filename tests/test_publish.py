@@ -90,8 +90,9 @@ class TestRecordRun:
 
         record_run(db, "2026-06-15", {}, 0, 0)
         row = db.execute("SELECT * FROM runs WHERE date = '2026-06-15'").fetchone()
-        assert row is not None
         assert row["items_featured"] == 0
+        assert row["items_candidate"] == 0
+        assert row["items_fetched"] == 0
 
     def test_appendix_count_included_in_total(self, db):
         from publish import record_run

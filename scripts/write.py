@@ -30,7 +30,7 @@ from db import (
     run_date,
 )
 from llm import call_llm
-from models import Section
+from models import ExitCode, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -372,7 +372,7 @@ def main() -> int:
     init_db()
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
-        return 2
+        return ExitCode.MISSING_INPUT
 
     today = run_date()
     out_path = ISSUES_DIR / f"{today}.md"
@@ -381,7 +381,7 @@ def main() -> int:
             "write: skip — %s already exists (%d bytes); delete to rerun",
             out_path, out_path.stat().st_size,
         )
-        return 0
+        return ExitCode.OK
 
     conn = connect()
     featured, appendix_by_section, metadata = load_today_items(conn, today)
@@ -398,7 +398,7 @@ def main() -> int:
     )
     if not featured and not appendix_total:
         log.warning("nothing to publish for %s; skipping", today)
-        return 0
+        return ExitCode.OK
 
     prev = find_previous_newsletter(today)
     payload = build_writer_input(today, featured, appendix_by_section, metadata, prev)
@@ -419,7 +419,7 @@ def main() -> int:
     out_path = ISSUES_DIR / f"{today}.md"
     out_path.write_text(issue_md)
     log.info("wrote %s (%d bytes)", out_path, len(issue_md))
-    return 0
+    return ExitCode.OK
 
 
 if __name__ == "__main__":
