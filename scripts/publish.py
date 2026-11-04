@@ -21,9 +21,16 @@ from datetime import datetime, timezone
 
 import edition
 from db import CONTENT_ROOT, connect, init_db, load_stage_stats, run_date
-from db import count_items_in_status, count_items_seen_on
+from db import (
+    count_featured_by_section,
+    count_items_in_status,
+    count_items_seen_on,
+    load_run_featured_count,
+    publish_selected_items,
+    upsert_run,
+)
 from llm import usage_totals
-from models import ExitCode, Status
+from models import ExitCode, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,49 +74,27 @@ def record_run(
     if usage is not None:
         notes += (f" llm_calls={usage['calls']} models={usage['models']}"
                   f" tokens_by_model={usage['tokens_by_model']}")
-    conn.execute(
-        """
-        INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
-                          items_papers, items_news, items_blogs,
-                          duration_seconds, tokens_in, tokens_out, notes,
-                          papers_expired_unjudged, papers_prerank_cut)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(date) DO UPDATE SET
-            items_fetched = excluded.items_fetched,
-            items_candidate = excluded.items_candidate,
-            items_featured = excluded.items_featured,
-            items_papers = excluded.items_papers,
-            items_news = excluded.items_news,
-            items_blogs = excluded.items_blogs,
-            duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
-            tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
-            tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
-            notes = excluded.notes,
-            papers_expired_unjudged = COALESCE(
-                excluded.papers_expired_unjudged, runs.papers_expired_unjudged),
-            papers_prerank_cut = COALESCE(
-                excluded.papers_prerank_cut, runs.papers_prerank_cut)
-        """,
-        (
-            today,
-            items_considered,
-            featured_counts.get("papers", 0)
-                + featured_counts.get("news", 0)
-                + featured_counts.get("blogs", 0)
-                + appendix_count,
-            sum(featured_counts.values()),
-            featured_counts.get("papers", 0),
-            featured_counts.get("news", 0),
-            featured_counts.get("blogs", 0),
-            duration_s,
-            (usage or {}).get("tokens_in"),
-            (usage or {}).get("tokens_out"),
-            notes,
-            (stage_stats or {}).get("papers_expired_unjudged"),
-            (stage_stats or {}).get("papers_prerank_cut"),
-        ),
+    usage = usage or {}
+    stage_stats = stage_stats or {}
+    papers = featured_counts.get(Section.PAPERS, 0)
+    news = featured_counts.get(Section.NEWS, 0)
+    blogs = featured_counts.get(Section.BLOGS, 0)
+    upsert_run(
+        conn,
+        today,
+        items_fetched=items_considered,
+        items_candidate=papers + news + blogs + appendix_count,
+        items_featured=sum(featured_counts.values()),
+        items_papers=papers,
+        items_news=news,
+        items_blogs=blogs,
+        notes=notes,
+        duration_seconds=duration_s,
+        tokens_in=usage.get("tokens_in"),
+        tokens_out=usage.get("tokens_out"),
+        papers_expired_unjudged=stage_stats.get("papers_expired_unjudged"),
+        papers_prerank_cut=stage_stats.get("papers_prerank_cut"),
     )
-    conn.commit()
 
 
 def main() -> int:
@@ -129,24 +114,16 @@ def main() -> int:
 
     # Idempotent skip: if a runs row exists for today AND no featured/appendix
     # items remain in candidate-of-publish state, this run already finished.
-    runs_row = conn.execute(
-        "SELECT items_featured FROM runs WHERE date = ?", (today,)
-    ).fetchone()
+    published_featured = load_run_featured_count(conn, today)
     pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
-    if runs_row is not None and pending == 0:
+    if published_featured is not None and pending == 0:
         log.info(
             "publish: skip — already published for %s (runs.items_featured=%d)",
-            today, runs_row[0] or 0,
+            today, published_featured,
         )
         conn.close()
         return ExitCode.OK
-    rows = conn.execute(
-        f"SELECT section FROM items WHERE status = '{Status.FEATURED}'"
-    ).fetchall()
-    featured_counts: dict[str, int] = {}
-    for r in rows:
-        s = r["section"]
-        featured_counts[s] = featured_counts.get(s, 0) + 1
+    featured_counts = count_featured_by_section(conn)
     appendix_count = count_items_in_status(conn, Status.APPENDIX)
     items_considered = count_items_seen_on(conn, today)
 
@@ -158,18 +135,13 @@ def main() -> int:
         conn.close()
         return ExitCode.EMPTY_ISSUE
 
-    conn.execute(
-        f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
-        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
-        (today,),
-    )
-    conn.commit()
+    publish_selected_items(conn, today)
     log.info(
         "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
         total_featured,
-        featured_counts.get("papers", 0),
-        featured_counts.get("news", 0),
-        featured_counts.get("blogs", 0),
+        featured_counts.get(Section.PAPERS, 0),
+        featured_counts.get(Section.NEWS, 0),
+        featured_counts.get(Section.BLOGS, 0),
         appendix_count,
     )
 

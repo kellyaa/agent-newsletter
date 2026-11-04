@@ -44,6 +44,7 @@ import edition as edition_mod
 import llm
 import net
 from edition import EditionError
+from models import EditionStatus
 
 TEMPLATE_SLUG = "_template"
 ARXIV_API = "https://export.arxiv.org/api/query"
@@ -444,7 +445,7 @@ def render_edition_yaml(slug: str, name: str, order: int, v: Validated, sections
         f"# Field reference: editions/_template/edition.yaml.\n"
     )
     body = _dump({
-        "slug": slug, "name": name, "tagline": v.tagline, "status": "draft", "order": order,
+        "slug": slug, "name": name, "tagline": v.tagline, "status": EditionStatus.DRAFT.value, "order": order,
         "reader_profile": v.reader_profile, "downweighted": v.downweighted,
         "keywords": v.keywords, "tags": v.tags,
     })
