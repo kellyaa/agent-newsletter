@@ -34,6 +34,7 @@ import edition as edition_mod
 import gates
 import prompts as prompts_mod
 from edition import Edition, EditionError
+from models import EditionStatus
 
 FAMILIES = ("rss", "arxiv", "hn", "reddit", "html", "github_releases")
 REQUIRED_KEYS = {
@@ -137,7 +138,7 @@ def _check_sources(sources: dict, result: LintResult) -> None:
 
 
 def _is_live(result: LintResult) -> bool:
-    return result.edition is not None and result.edition.status == "live"
+    return result.edition is not None and result.edition.status == EditionStatus.LIVE
 
 
 def _scan_todos(root: Path) -> list[str]:
@@ -181,7 +182,7 @@ def lint(slug: str) -> LintResult:
     todos = _scan_todos(ed.paths().root)
     if todos:
         msg = f"unfinished TODO placeholders from the template in: {', '.join(todos)}"
-        (result.errors if ed.status == "live" else result.warnings).append(msg)
+        (result.errors if ed.status == EditionStatus.LIVE else result.warnings).append(msg)
     return result
 
 

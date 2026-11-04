@@ -42,6 +42,18 @@ class Section(StrEnum):
     BLOGS = "blogs"
 
 
+class EditionStatus(StrEnum):
+    """Edition lifecycle states. Values match edition.yaml `status`.
+
+    run.sh / watchdog.sh run draft and live editions and skip paused ones;
+    check_edition treats lint warnings as errors for a live edition.
+    """
+
+    DRAFT = "draft"
+    LIVE = "live"
+    PAUSED = "paused"
+
+
 class MetaKey(StrEnum):
     """Keys in the state.db `meta` table that more than one module reads or writes."""
 
