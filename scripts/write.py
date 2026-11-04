@@ -31,7 +31,7 @@ from db import (
     run_date,
 )
 from llm import call_llm
-from models import ExitCode, Section
+from models import AppendixItem, ExitCode, FeaturedItem, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,11 +82,18 @@ WRITER_SCHEMA = {
 }
 
 
-def load_today_items(conn, today: str):
+def load_today_items(
+    conn, today: str
+) -> tuple[list[FeaturedItem], dict[str, list[AppendixItem]], dict[str, int]]:
+    """Featured items, appendix items grouped by section, and run metadata.
+
+    Item shapes are bound to models.FeaturedItem / models.AppendixItem
+    (pinned by tests/test_writer_item_contract.py).
+    """
     featured_rows = load_featured_items(conn)
     appendix_rows = load_appendix_items(conn)
 
-    featured: list[dict] = []
+    featured: list[FeaturedItem] = []
     for r in featured_rows:
         try:
             tags = json.loads(r["tags"]) if r["tags"] else []
@@ -95,30 +102,30 @@ def load_today_items(conn, today: str):
         raw = r["raw_text"] or ""
         if len(raw) > RAW_TEXT_MAX:
             raw = raw[:RAW_TEXT_MAX] + "\n...[truncated]"
-        featured.append({
-            "id": r["id"],
-            "section": r["section"],
-            "source": r["source"],
-            "url": r["url"],
-            "title": r["title"],
-            "author": r["author"],
-            "published_at": r["published_at"],
-            "raw_text": raw,
-            "score": r["score"],
-            "tags": tags,
-            "why": r["why"],
-        })
+        featured.append(FeaturedItem(
+            id=r["id"],
+            section=r["section"],
+            source=r["source"],
+            url=r["url"],
+            title=r["title"],
+            author=r["author"],
+            published_at=r["published_at"],
+            raw_text=raw,
+            score=r["score"],
+            tags=tags,
+            why=r["why"],
+        ))
 
-    appendix_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
+    appendix_by_section: dict[str, list[AppendixItem]] = {s.value: [] for s in Section}
     for r in appendix_rows:
         section = r["section"] or Section.BLOGS.value
-        appendix_by_section.setdefault(section, []).append({
-            "id": r["id"],
-            "section": section,
-            "source": r["source"],
-            "url": r["url"],
-            "title": r["title"],
-        })
+        appendix_by_section.setdefault(section, []).append(AppendixItem(
+            id=r["id"],
+            section=section,
+            source=r["source"],
+            url=r["url"],
+            title=r["title"],
+        ))
 
     counts = {s.value: 0 for s in Section}
     for it in featured:
