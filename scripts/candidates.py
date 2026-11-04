@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from db import connect, load_candidate_rows
-from models import Section
+from models import CandidateItem, Section
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +75,12 @@ def load_candidates_from_db(
     prerank_scorer: Any | None = None,
     now: datetime | None = None,
     stats: dict[str, int] | None = None,
-) -> dict[str, list[dict]]:
+) -> dict[str, list[CandidateItem]]:
     """Load the current candidate pool from state.db, grouped by section.
 
-    Returns a dict with keys: papers, papers_prescored, news, blogs.
+    Returns a dict with keys: papers, papers_prescored, news, blogs. Each item
+    is a :class:`models.CandidateItem`; only ``papers_prescored`` items carry
+    ``score``/``tags``/``why``.
 
     Parameters
     ----------
@@ -109,11 +111,11 @@ def load_candidates_from_db(
             conn.close()
 
 
-def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]]:
+def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[CandidateItem]]:
     """Internal: query and group candidates."""
     # Every section gets a bucket, plus "papers_prescored" (papers that already
     # carry a cached score, so the ranker can skip the LLM call for them).
-    grouped: dict[str, list[dict]] = {s.value: [] for s in Section}
+    grouped: dict[str, list[CandidateItem]] = {s.value: [] for s in Section}
     grouped[PAPERS_PRESCORED] = []
 
     rows = load_candidate_rows(conn)
@@ -121,7 +123,7 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[dict]
     for r in rows:
         d = dict(r)
         section = d.get("section") or Section.BLOGS.value
-        emitted: dict[str, Any] = {
+        emitted: CandidateItem = {
             "id": d["id"],
             "source": d["source"],
             "url": d["url"],
