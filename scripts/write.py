@@ -368,13 +368,20 @@ def assemble_issue(
     return fm + body
 
 
-def main() -> int:
+def main(today: str | None = None) -> int:
+    """Write the issue for ``today`` (``YYYY-MM-DD``; defaults to :func:`db.run_date`).
+
+    ``today`` is injectable so tests and backfills pin the run date instead of
+    setting ``RUN_DATE`` in the environment, matching fetch/prefilter/rank's
+    ``main(now=...)``.
+    """
     init_db()
     if not PROMPT_PATH.exists():
         log.error("missing %s", PROMPT_PATH)
         return ExitCode.MISSING_INPUT
 
-    today = run_date()
+    if today is None:
+        today = run_date()
     out_path = ISSUES_DIR / f"{today}.md"
     if out_path.exists():
         log.info(
