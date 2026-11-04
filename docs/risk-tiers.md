@@ -1,6 +1,6 @@
 # Change risk tiers
 
-How much review a change needs, by what it touches. Reviewers and automated contributors use this to decide how carefully to look and what to flag. (ACMM `acmm:tier-classifier`.)
+How much review a change needs, by what it touches. Reviewers and automated contributors use this to decide how carefully to look and what to flag. (ACMM `acmm:tier-classifier`.) The machine-readable form is `.claude/risk-config.json` (ACMM `acmm:risk-assessment-config`); `tests/test_risk_config.py` keeps the two in sync.
 
 | Tier | Touches | Review expected |
 |------|---------|-----------------|
