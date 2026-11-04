@@ -237,6 +237,41 @@ class TestRunAttempts:
         monkeypatch.setattr(run_attempt.subprocess, "run", boom)
         assert run_attempt.code_state() == (None, None)
 
+    def test_code_state_reports_commit_and_dirtiness(self, tmp_path, monkeypatch):
+        """Clean -> 0, edited tracked file -> 1, untracked-only -> still 0."""
+        import subprocess
+        import run_attempt
+        monkeypatch.setattr(run_attempt, "REPO_ROOT", tmp_path)
+
+        def git(*args):
+            subprocess.run(
+                ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@example.com",
+                 "-c", "commit.gpgsign=false", *args],
+                check=True, capture_output=True,
+            )
+
+        git("init", "-q")
+        (tmp_path / "a.txt").write_text("one\n")
+        git("add", "a.txt")
+        git("commit", "-q", "-m", "init")
+        head = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+        assert run_attempt.code_state() == (head, 0)
+        (tmp_path / "untracked.txt").write_text("x\n")
+        assert run_attempt.code_state() == (head, 0)
+        (tmp_path / "a.txt").write_text("two\n")
+        assert run_attempt.code_state() == (head, 1)
+
+    def test_code_state_empty_output_maps_to_none_commit(self, monkeypatch):
+        """Empty `rev-parse` output becomes None, not '' (the column is nullable)."""
+        import run_attempt
+        monkeypatch.setattr(
+            run_attempt.subprocess, "run",
+            lambda *a, **k: SimpleNamespace(stdout="\n"),
+        )
+        assert run_attempt.code_state() == (None, 0)
+
     def test_main_start_then_finish(self, tmp_path, monkeypatch, capsys):
         import db as db_mod
         import run_attempt
