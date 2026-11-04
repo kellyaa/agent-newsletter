@@ -26,7 +26,7 @@ from typing import Any
 
 import yaml
 
-from models import Section
+from models import EditionStatus, Section
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EDITIONS_DIR = REPO_ROOT / "editions"
@@ -34,7 +34,8 @@ EDITIONS_DIR = REPO_ROOT / "editions"
 # Module-level so tests can point it at a tmp dir and never write into logs/.
 LOGS_ROOT = REPO_ROOT / "logs"
 
-STATUSES = ("draft", "live", "paused")
+# Plain strings, like SECTION_NAMES, so error messages list "draft", not enum reprs.
+STATUSES = tuple(s.value for s in EditionStatus)
 # Plain strings (not Section members) so error messages print "papers", not "<Section.PAPERS ...>".
 SECTION_NAMES = tuple(s.value for s in Section)
 
