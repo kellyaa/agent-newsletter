@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "description": "Machine-readable change risk tiers. Human-readable counterpart: docs/risk-tiers.md (kept in sync by tests/test_risk_config.py).",
+  "rule": "A change takes the highest tier of any file it touches.",
+  "tiers": [
+    {
+      "tier": 0,
+      "name": "low",
+      "paths": ["docs/**", "*.md", "editions/*/sources.yaml", ".memory/**"],
+      "review": "One human glance; CI green"
+    },
+    {
+      "tier": 1,
+      "name": "normal",
+      "paths": ["scripts/**", "tests/**", "prompts/**", "editions/**", "site/**"],
+      "review": "Tests added or updated; CI green; human review"
+    },
+    {
+      "tier": 2,
+      "name": "high",
+      "paths": [
+        "run.sh",
+        "watchdog.sh",
+        "launchd/**",
+        "scripts/llm.py",
+        "scripts/db.py",
+        "scripts/publish.py",
+        "pyproject.toml",
+        "uv.lock",
+        "site/pnpm-lock.yaml"
+      ],
+      "review": "Human review required; state the failure mode and how it was tested; never lower the coverage gate"
+    },
+    {
+      "tier": 3,
+      "name": "critical",
+      "paths": [
+        ".github/workflows/**",
+        "policies/agent-policy.yaml",
+        "AGENTS.md",
+        ".claude/settings.json",
+        ".env",
+        ".env.template"
+      ],
+      "review": "Human-authored or human-applied only; agents open an issue with the exact replacement text instead of a PR"
+    }
+  ],
+  "agent_pull_requests": {
+    "label": "hold",
+    "agents_may_merge": false
+  }
+}
