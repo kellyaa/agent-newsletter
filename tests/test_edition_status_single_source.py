@@ -16,7 +16,7 @@ from models import EditionStatus
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 STATUS_VALUES = {s.value for s in EditionStatus}
-GUARDED = ("edition.py", "check_edition.py")
+GUARDED = ("edition.py", "check_edition.py", "new_edition.py")
 
 
 def test_statuses_come_from_models():

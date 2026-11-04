@@ -503,6 +503,103 @@ def load_appendix_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# --- publish's run finalization ----------------------------------------------
+# publish.py used to run these statements inline (advisory: "No data access
+# layer").
+
+
+def load_run_featured_count(conn: sqlite3.Connection, date: str) -> int | None:
+    """``runs.items_featured`` for ``date``; None when no runs row exists.
+
+    A row with a NULL count reads as 0, so callers can tell "already
+    published" (not None) from "never published" (None).
+    """
+    row = conn.execute(
+        "SELECT items_featured FROM runs WHERE date = ?", (date,)
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0] or 0)
+
+
+def count_featured_by_section(conn: sqlite3.Connection) -> dict[str, int]:
+    """Number of ``featured`` items per section; sections with none are absent."""
+    rows = conn.execute(
+        f"SELECT section, COUNT(*) FROM items WHERE status = '{Status.FEATURED}' "
+        "GROUP BY section ORDER BY section"
+    ).fetchall()
+    return {r[0]: int(r[1]) for r in rows}
+
+
+def publish_selected_items(conn: sqlite3.Connection, date: str) -> int:
+    """Move every featured/appendix item to ``published`` on ``date``.
+
+    Commits. Returns rows updated.
+    """
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
+        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
+        (date,),
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def upsert_run(
+    conn: sqlite3.Connection,
+    date: str,
+    *,
+    items_fetched: int,
+    items_candidate: int,
+    items_featured: int,
+    items_papers: int,
+    items_news: int,
+    items_blogs: int,
+    notes: str,
+    duration_seconds: int | None = None,
+    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    papers_expired_unjudged: int | None = None,
+    papers_prerank_cut: int | None = None,
+) -> None:
+    """Insert or refresh the ``runs`` row for ``date``. Commits.
+
+    Counts and notes are overwritten on re-publish; duration, tokens and the
+    papers-pool counters keep their earlier value when the new one is None.
+    """
+    conn.execute(
+        """
+        INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
+                          items_papers, items_news, items_blogs,
+                          duration_seconds, tokens_in, tokens_out, notes,
+                          papers_expired_unjudged, papers_prerank_cut)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date) DO UPDATE SET
+            items_fetched = excluded.items_fetched,
+            items_candidate = excluded.items_candidate,
+            items_featured = excluded.items_featured,
+            items_papers = excluded.items_papers,
+            items_news = excluded.items_news,
+            items_blogs = excluded.items_blogs,
+            duration_seconds = COALESCE(excluded.duration_seconds, runs.duration_seconds),
+            tokens_in = COALESCE(excluded.tokens_in, runs.tokens_in),
+            tokens_out = COALESCE(excluded.tokens_out, runs.tokens_out),
+            notes = excluded.notes,
+            papers_expired_unjudged = COALESCE(
+                excluded.papers_expired_unjudged, runs.papers_expired_unjudged),
+            papers_prerank_cut = COALESCE(
+                excluded.papers_prerank_cut, runs.papers_prerank_cut)
+        """,
+        (
+            date, items_fetched, items_candidate, items_featured,
+            items_papers, items_news, items_blogs,
+            duration_seconds, tokens_in, tokens_out, notes,
+            papers_expired_unjudged, papers_prerank_cut,
+        ),
+    )
+    conn.commit()
+
+
 # --- reset_day's forced re-run resets ----------------------------------------
 # reset_day.py used to run these statements inline (advisory: "No data access
 # layer").
