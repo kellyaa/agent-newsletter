@@ -103,6 +103,7 @@ def _run(root: Path, slug: str) -> subprocess.CompletedProcess[str]:
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         env.pop(var, None)
     env["NO_PROXY"] = "127.0.0.1,localhost"
+    env["FETCH_ALLOW_PRIVATE_HOSTS"] = "1"  # the fixture feed is served from loopback
     return subprocess.run(
         [sys.executable, str(root / "scripts" / "check_edition.py"), slug],
         cwd=root, env=env, capture_output=True, text=True, timeout=120,

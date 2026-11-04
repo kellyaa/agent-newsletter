@@ -8,7 +8,6 @@ import html
 import json
 import logging
 import re
-import ssl
 import subprocess
 import sys
 import time
@@ -17,19 +16,19 @@ from datetime import datetime, timezone
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import certifi
 import feedparser
 import httpx
 import yaml
 
 import edition
+import net
 from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
-    url_id,
+    upsert_item, url_id,
 )
 from db import count_items_seen_on
-from models import Section, Status
+from models import ExitCode, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,47 +37,14 @@ logging.basicConfig(
 log = logging.getLogger("fetch")
 
 SOURCES_PATH = edition.current().paths().sources
-USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
-HTTP_TIMEOUT = 20.0
 
-
-class _NoALPNContext(ssl.SSLContext):
-    """SSLContext that ignores attempts to advertise ALPN protocols.
-
-    The pod's egress proxy answers 406 (empty body, no content-type, and one
-    fewer x-cache hop than a real response) to any TLS handshake that carries
-    an ALPN extension, so the request never reaches the origin. httpx always
-    calls set_alpn_protocols(["http/1.1"]) on its context; curl and urllib
-    happen not to send ALPN through the proxy, which is why they still work.
-    Swallowing the call keeps the ClientHello ALPN-free.
-    """
-
-    def set_alpn_protocols(self, protocols):  # noqa: D102 - see class docstring
-        return None
-
-
-def _make_ssl_context() -> ssl.SSLContext:
-    ctx = _NoALPNContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.load_verify_locations(cafile=certifi.where())
-    ctx.verify_mode = ssl.CERT_REQUIRED
-    ctx.check_hostname = True
-    return ctx
-
-
-def _make_http_client() -> httpx.Client:
-    """Create a shared HTTP client with connection pooling.
-
-    A single Client instance reuses TCP connections across requests to the
-    same host, avoiding repeated TLS handshakes and TCP slow-starts. The
-    caller is responsible for closing the client when done (via context
-    manager or explicit .close()).
-    """
-    return httpx.Client(
-        timeout=HTTP_TIMEOUT,
-        headers={"User-Agent": USER_AGENT},
-        follow_redirects=True,
-        verify=_make_ssl_context(),
-    )
+# The HTTP client lives in net.py (shared with new_edition.py). These names
+# stay as fetch-module attributes because tests and check_edition patch or
+# call fetch._make_http_client.
+_NoALPNContext = net.NoALPNContext
+_make_ssl_context = net.make_ssl_context
+_reject_non_public_target = net.reject_non_public_target
+_make_http_client = net.make_http_client
 
 
 @dataclass
@@ -540,33 +506,16 @@ def upsert_items(
             continue
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
-        cur = conn.execute(
-            f"""
-            INSERT INTO items (id, source, url, canonical_url, title, author,
-                               published_at, fetched_at, raw_text, status,
-                               section_override, keyword_gate_bypass,
-                               recency_days_override,
-                               first_seen_date, last_seen_date, appearances)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{Status.NEW}', ?, ?, ?, ?, ?, 1)
-            ON CONFLICT(id) DO UPDATE SET
-                last_seen_date = excluded.last_seen_date,
-                appearances = items.appearances + 1,
-                section_override = COALESCE(excluded.section_override,
-                                            items.section_override),
-                keyword_gate_bypass = MAX(excluded.keyword_gate_bypass,
-                                          items.keyword_gate_bypass),
-                recency_days_override = COALESCE(excluded.recency_days_override,
-                                                 items.recency_days_override)
-            """,
-            (
-                item_id, it.source, it.url, canonical, it.title, it.author,
-                it.published_at, fetched_at, it.raw_text,
-                it.section_override, 1 if it.keyword_gate_bypass else 0,
-                it.recency_days_override,
-                today, today,
-            ),
-        )
-        if cur.rowcount and cur.lastrowid:  # pragma: no cover — ON CONFLICT DO UPDATE always sets both
+        if upsert_item(  # pragma: no cover — ON CONFLICT DO UPDATE always reports a row
+            conn,
+            item_id=item_id, source=it.source, url=it.url, canonical_url=canonical,
+            title=it.title, author=it.author, published_at=it.published_at,
+            fetched_at=fetched_at, raw_text=it.raw_text,
+            section_override=it.section_override,
+            keyword_gate_bypass=it.keyword_gate_bypass,
+            recency_days_override=it.recency_days_override,
+            seen_date=today,
+        ):
             inserted += 1
     conn.commit()
     return seen, inserted
@@ -697,8 +646,16 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
             yield label, with_override(entry, fetch_github_releases([entry]))
 
 
-def main() -> int:
+def main(now: datetime | None = None) -> int:
+    """Run the fetch stage.
+
+    ``now`` stamps ``fetched_at`` on every row inserted this run. It defaults
+    to the current UTC time; tests and backfills pass a fixed instant instead
+    of patching ``datetime`` (same contract as ``prefilter.main``).
+    """
     init_db()
+    if now is None:
+        now = datetime.now(timezone.utc)
     sources = load_sources()
     conn = connect()
 
@@ -710,7 +667,7 @@ def main() -> int:
             existing,
         )
         conn.close()
-        return 0
+        return ExitCode.OK
 
     total_seen = total_inserted = 0
     errors = 0
@@ -723,7 +680,7 @@ def main() -> int:
             log.exception("%s: collector failed: %s", label, e)
             errors += 1
             return
-        seen, inserted = upsert_items(conn, items)
+        seen, inserted = upsert_items(conn, items, now=now)
         log.info("%s: seen=%d new=%d", label, seen, inserted)
         total_seen += seen
         total_inserted += inserted
@@ -746,8 +703,8 @@ def main() -> int:
     # taints an otherwise-successful 400+-item fetch.
     if total_seen == 0 and errors > 0:
         log.error("fetch: ALL collectors failed; aborting")
-        return 1
-    return 0
+        return ExitCode.NO_DATA
+    return ExitCode.OK
 
 
 if __name__ == "__main__":

@@ -100,8 +100,8 @@ def test_count_never_scored_expired(conn):
     assert db_mod.count_never_scored_expired(conn, Section.PAPERS) == 2
 
 
-def test_prefilter_has_one_inline_execute_only():
-    """Only the shared PAPER_AGE_OUT_SQL (also used by backfill) runs inline."""
+def test_prefilter_has_no_inline_execute():
+    """prefilter.py's item-state SQL, age-out included, lives in db.py."""
     tree = ast.parse(PREFILTER_PY.read_text(encoding="utf-8"))
     calls = [
         node.lineno for node in ast.walk(tree)
@@ -109,4 +109,4 @@ def test_prefilter_has_one_inline_execute_only():
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in {"execute", "executemany", "executescript"}
     ]
-    assert len(calls) == 1, f"move new prefilter SQL into db.py helpers: lines {calls}"
+    assert calls == [], f"move new prefilter SQL into db.py helpers: lines {calls}"

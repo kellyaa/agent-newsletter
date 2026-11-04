@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_governance_and_continuity_files_exist_and_are_nonempty():
     for rel in (
         "docs/risk-tiers.md",
+        "docs/ai-ops-runbook.md",
         "SECURITY-AI.md",
         ".claude/checkpoint.md",
         ".claude/session-summary.md",
@@ -32,3 +33,17 @@ def test_security_ai_agrees_with_agent_policy():
     for rel in policy["paths"]["agent_forbidden"]:
         assert rel in text, rel
     assert policy["paths"]["never_commit_by_hand_branch"] in text
+
+
+def test_ai_ops_runbook_links_resolve_and_is_indexed():
+    import re
+
+    runbook = REPO_ROOT / "docs" / "ai-ops-runbook.md"
+    broken = []
+    for target in re.findall(r"\]\(([^)#]+?)(?:#[^)]*)?\)", runbook.read_text()):
+        if "://" in target:
+            continue
+        if not (runbook.parent / target).resolve().exists():
+            broken.append(target)
+    assert not broken, broken
+    assert "ai-ops-runbook.md" in (REPO_ROOT / "docs" / "README.md").read_text()

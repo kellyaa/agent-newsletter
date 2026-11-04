@@ -17,9 +17,10 @@ import logging
 import sys
 from pathlib import Path
 
+import db
 import edition
 from db import CONTENT_ROOT, connect, run_date
-from models import MetaKey, Status
+from models import MetaKey
 
 # Shared with fetch.FETCH_DONE_KEY via models (fetch itself is not imported: it pulls in httpx etc.).
 FETCH_DONE_KEY = MetaKey.FETCH_DONE
@@ -32,29 +33,15 @@ def refetch(conn, today: str) -> int:
     # Clear fetch's completion marker too: deleting first_seen_date rows alone
     # leaves older items whose last_seen_date was bumped to today, which made
     # fetch skip and the write stage overwrite the live issue (#321).
-    conn.execute("DELETE FROM meta WHERE key = ?", (FETCH_DONE_KEY,))
-    cur = conn.execute("DELETE FROM items WHERE first_seen_date = ?", (today,))
-    conn.commit()
-    return cur.rowcount or 0
+    db.delete_meta(conn, FETCH_DONE_KEY)
+    return db.delete_items_first_seen_on(conn, today)
 
 
 def force_reset(conn, today: str) -> None:
-    # Leave 'new' alone (prefilter handles those naturally) and leave 'dropped'
-    # alone (deliberate negatives we don't want to re-evaluate). Match by
-    # first_seen_date: last_seen_date matches any prior-day published item that
-    # today's feeds re-surfaced (fetch bumps last_seen_date on conflict), which
-    # would re-promote already-published items into today's issue.
-    # published_date (stamped by publish) additionally catches multi-day pool
-    # papers first seen on an earlier day that won a slot today (#326).
-    conn.execute(
-        f"UPDATE items SET status = '{Status.CANDIDATE}', score = NULL, tags = NULL, "
-        "why = NULL, published_date = NULL "
-        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}', '{Status.PUBLISHED}') "
-        "AND (first_seen_date = ? OR published_date = ?)",
-        (today, today),
-    )
-    conn.execute("DELETE FROM runs WHERE date = ?", (today,))
-    conn.commit()
+    # Leave 'new' and 'dropped' alone; see db.reset_processed_items_for for
+    # why the match is first_seen_date/published_date (#321, #326).
+    db.reset_processed_items_for(conn, today)
+    db.delete_run(conn, today)
 
 
 def main(argv: list[str] | None = None) -> int:

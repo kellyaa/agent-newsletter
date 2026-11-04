@@ -42,13 +42,12 @@ import yaml
 import check_edition
 import edition as edition_mod
 import llm
+import net
 from edition import EditionError
 
 TEMPLATE_SLUG = "_template"
 ARXIV_API = "https://export.arxiv.org/api/query"
 ARXIV_DELAY_S = 3.0  # arXiv asks for >= 3 s between requests
-USER_AGENT = "agent-newsletter/0.1 (+https://github.com/; bot)"
-HTTP_TIMEOUT = 20.0
 
 _SLUG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 _PLACEHOLDER = re.compile(r"\{\{([a-z_]+)\}\}")
@@ -200,7 +199,9 @@ def clean_keywords(raw: list[str]) -> tuple[list[str], list[Dropped]]:
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=True)
+    # Same client as fetch.py: seed URLs are user input, so they get the SSRF
+    # guard and the ALPN-free TLS context too.
+    return net.make_http_client()
 
 
 def check_rss(client: httpx.Client, url: str) -> str | None:

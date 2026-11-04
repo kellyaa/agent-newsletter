@@ -23,7 +23,7 @@ import edition
 from db import CONTENT_ROOT, connect, init_db, load_stage_stats, run_date
 from db import count_items_in_status, count_items_seen_on
 from llm import usage_totals
-from models import Status
+from models import ExitCode, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -117,12 +117,12 @@ def main() -> int:
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)
-        return 2
+        return ExitCode.MISSING_INPUT
 
     size = issue_path.stat().st_size
     if size < MIN_FILE_SIZE_BYTES:
         log.error("issue file is unreasonably small (%d bytes); refusing to publish", size)
-        return 4
+        return ExitCode.ISSUE_TOO_SMALL
 
     conn = connect()
 
@@ -138,7 +138,7 @@ def main() -> int:
             today, runs_row[0] or 0,
         )
         conn.close()
-        return 0
+        return ExitCode.OK
     rows = conn.execute(
         f"SELECT section FROM items WHERE status = '{Status.FEATURED}'"
     ).fetchall()
@@ -155,7 +155,7 @@ def main() -> int:
             "no featured items and no appendix items — refusing to publish empty issue"
         )
         conn.close()
-        return 5
+        return ExitCode.EMPTY_ISSUE
 
     conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
@@ -182,7 +182,7 @@ def main() -> int:
 
     log.info("issue file: %s (%d bytes)", issue_path, size)
     log.info("the Astro build is the next gate; it validates frontmatter against the schema")
-    return 0
+    return ExitCode.OK
 
 
 if __name__ == "__main__":

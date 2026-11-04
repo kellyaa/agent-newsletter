@@ -26,7 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prompts  # noqa: E402
-from db import connect, init_db  # noqa: E402
+from db import connect, init_db, load_item_by_id  # noqa: E402
 from models import Section  # noqa: E402
 from write import (  # noqa: E402
     EDITION,
@@ -75,15 +75,7 @@ def load_from_issue_file(conn, date: str):
 
     featured: list[dict] = []
     for item_id in featured_ids:
-        row = conn.execute(
-            """
-            SELECT id, source, url, canonical_url, title, author, published_at,
-                   raw_text, score, tags, why, section
-            FROM items
-            WHERE id = ?
-            """,
-            (item_id,),
-        ).fetchone()
+        row = load_item_by_id(conn, item_id)
         if row is None:
             log.warning("featured id %s from issue file not found in state.db", item_id)
             continue
