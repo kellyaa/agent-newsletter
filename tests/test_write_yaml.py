@@ -244,14 +244,20 @@ class TestAssembleIssue:
                                self._make_metadata(), self._make_writer_output(f))
         assert "2401.99999" in issue
 
-    def test_missing_writer_summary_falls_back_to_title(self):
+    def test_missing_writer_summary_fails_instead_of_publishing_title(self):
         f = self._make_featured(1)
         writer_output = {"theme": None, "items": []}  # no summary for item
-        issue = assemble_issue("2026-06-01", f, self._make_appendix(),
-                               self._make_metadata(), writer_output)
-        fm = self._parse_frontmatter(issue)
-        # The fallback is the title
-        assert fm["featured"][0]["summary"] == f[0]["title"]
+        with pytest.raises(RuntimeError, match="missing summaries for 1 of 1"):
+            assemble_issue("2026-06-01", f, self._make_appendix(),
+                           self._make_metadata(), writer_output)
+
+    def test_one_missing_summary_of_many_fails(self):
+        f = self._make_featured(3)
+        wo = self._make_writer_output(f)
+        wo["items"][1]["id"] = "not-a-featured-id"  # mis-keyed, like 2026-11-04
+        with pytest.raises(RuntimeError, match="1 of 3.*not-a-featured-id"):
+            assemble_issue("2026-06-01", f, self._make_appendix(),
+                           self._make_metadata(), wo)
 
     def test_theme_in_frontmatter(self):
         f = self._make_featured(1)
@@ -322,15 +328,9 @@ def _frontmatter(md: str) -> dict:
 class TestMalformedWriterOutput:
     @pytest.mark.parametrize("bad", [
         {"theme": 5, "items": [{"id": "a1", "summary": "ok"}]},
-        {"theme": "t", "items": [{"id": "a1", "summary": 5}]},
-        {"theme": "t", "items": None},
-        {"theme": "t", "items": "nope"},
         {"theme": "t", "items": [None, {"id": "a1", "summary": "ok"}]},
-        {"theme": "t", "items": [{"id": ["x"], "summary": "ok"}]},
         {"theme": "t", "items": [{"id": "a1", "summary": "ok",
                                   "takeaway": 3, "open_question": 4}]},
-        ["not", "a", "dict"],
-        None,
     ])
     def test_does_not_crash_and_yields_valid_yaml(self, bad):
         fm = _frontmatter(_assemble(bad))
@@ -340,10 +340,17 @@ class TestMalformedWriterOutput:
         assert feat["open_question"] is None or isinstance(feat["open_question"], str)
         assert fm["theme"] is None or isinstance(fm["theme"], str)
 
-    def test_non_string_summary_falls_back_to_title(self):
-        fm = _frontmatter(_assemble({"theme": "t", "items": [{"id": "a1", "summary": 5}]}))
-        assert fm["featured"][0]["summary"] == "Title A"
-        assert fm["featured"][0]["takeaway"] is None
+    @pytest.mark.parametrize("bad", [
+        {"theme": "t", "items": [{"id": "a1", "summary": 5}]},
+        {"theme": "t", "items": None},
+        {"theme": "t", "items": "nope"},
+        {"theme": "t", "items": [{"id": ["x"], "summary": "ok"}]},
+        ["not", "a", "dict"],
+        None,
+    ])
+    def test_unusable_summary_fails_instead_of_publishing_title(self, bad):
+        with pytest.raises(RuntimeError, match="missing summaries"):
+            _assemble(bad)
 
     def test_valid_entries_kept(self):
         out = sanitize_writer_output({
