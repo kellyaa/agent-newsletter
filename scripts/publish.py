@@ -76,6 +76,7 @@ def record_run(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(date) DO UPDATE SET
             items_fetched = excluded.items_fetched,
+            items_candidate = excluded.items_candidate,
             items_featured = excluded.items_featured,
             items_papers = excluded.items_papers,
             items_news = excluded.items_news,

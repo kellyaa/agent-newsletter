@@ -85,6 +85,20 @@ class TestRecordRun:
         assert row["items_papers"] == 3
         assert row["items_fetched"] == 80
 
+    def test_upsert_refreshes_items_candidate(self, db):
+        """A same-day re-publish must not leave the first run's candidate count behind."""
+        from publish import record_run
+
+        record_run(db, "2026-06-01", {"papers": 1}, 0, 50)
+        assert db.execute(
+            "SELECT items_candidate FROM runs WHERE date = '2026-06-01'"
+        ).fetchone()["items_candidate"] == 1
+        record_run(db, "2026-06-01", {"papers": 3}, 2, 80)
+        row = db.execute("SELECT * FROM runs WHERE date = '2026-06-01'").fetchone()
+        # 3 featured + 2 appendix
+        assert row["items_candidate"] == 5
+        assert row["items_featured"] == 3
+
     def test_zero_featured_counts(self, db):
         from publish import record_run
 
