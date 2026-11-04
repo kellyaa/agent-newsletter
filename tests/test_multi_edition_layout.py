@@ -481,7 +481,7 @@ class TestResetDay:
         reset_day, paths = self._seed(tmp_path, monkeypatch)
         conn = db_mod.connect(paths.state_db)
         db_mod.set_meta(conn, fetch.FETCH_DONE_KEY, "2026-10-22")
-        assert fetch._already_fetched_today(conn) > 0
+        assert fetch._already_fetched_today(conn) == 4
         conn.close()
         assert reset_day.main(["--refetch"]) == 0
         conn = db_mod.connect(paths.state_db)
