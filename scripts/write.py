@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import sys
+from pathlib import Path
 
 import edition
 import prompts
@@ -368,31 +369,25 @@ def assemble_issue(
     return fm + body
 
 
-def main(today: str | None = None) -> int:
-    """Write the issue for ``today`` (``YYYY-MM-DD``; defaults to :func:`db.run_date`).
+def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = True) -> Path | None:
+    """Write the issue file for ``today`` from ``conn``; return its path.
 
-    ``today`` is injectable so tests and backfills pin the run date instead of
-    setting ``RUN_DATE`` in the environment, matching fetch/prefilter/rank's
-    ``main(now=...)``.
+    The single writer core shared by :func:`main` (daily run, live DB) and
+    ``backfill.run_writer_for_date`` (sandbox DB). Returns ``None`` without
+    writing when the issue already exists (unless ``force``) or when there is
+    nothing featured or in the appendix. ``log_prompt`` controls whether the
+    rendered rubric is also written under ``logs/<slug>/`` (backfills skip it
+    so a sandbox run leaves the live logs untouched).
     """
-    init_db()
-    if not PROMPT_PATH.exists():
-        log.error("missing %s", PROMPT_PATH)
-        return ExitCode.MISSING_INPUT
-
-    if today is None:
-        today = run_date()
     out_path = ISSUES_DIR / f"{today}.md"
-    if out_path.exists():
+    if out_path.exists() and not force:
         log.info(
             "write: skip — %s already exists (%d bytes); delete to rerun",
             out_path, out_path.stat().st_size,
         )
-        return ExitCode.OK
+        return None
 
-    conn = connect()
     featured, appendix_by_section, metadata = load_today_items(conn, today)
-    conn.close()
 
     appendix_total = sum(len(v) for v in appendix_by_section.values())
     log.info(
@@ -405,12 +400,13 @@ def main(today: str | None = None) -> int:
     )
     if not featured and not appendix_total:
         log.warning("nothing to publish for %s; skipping", today)
-        return ExitCode.OK
+        return None
 
     prev = find_previous_newsletter(today)
     payload = build_writer_input(today, featured, appendix_by_section, metadata, prev)
 
-    rubric = prompts.render_and_log("write", EDITION, template_path=PROMPT_PATH)
+    render = prompts.render_and_log if log_prompt else prompts.render
+    rubric = render("write", EDITION, template_path=PROMPT_PATH)
     prompt = build_writer_prompt(payload, rubric)
 
     if featured:
@@ -423,9 +419,31 @@ def main(today: str | None = None) -> int:
     issue_md = assemble_issue(today, featured, appendix_by_section, metadata, writer_output)
 
     ISSUES_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = ISSUES_DIR / f"{today}.md"
     out_path.write_text(issue_md)
     log.info("wrote %s (%d bytes)", out_path, len(issue_md))
+    return out_path
+
+
+def main(today: str | None = None) -> int:
+    """Write the issue for ``today`` (``YYYY-MM-DD``; defaults to :func:`db.run_date`).
+
+    ``today`` is injectable so tests and backfills pin the run date instead of
+    setting ``RUN_DATE`` in the environment, matching fetch/prefilter/rank's
+    ``main(now=...)``. The work itself lives in :func:`write_issue`.
+    """
+    init_db()
+    if not PROMPT_PATH.exists():
+        log.error("missing %s", PROMPT_PATH)
+        return ExitCode.MISSING_INPUT
+
+    if today is None:
+        today = run_date()
+
+    conn = connect()
+    try:
+        write_issue(conn, today)
+    finally:
+        conn.close()
     return ExitCode.OK
 
 
