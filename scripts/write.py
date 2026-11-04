@@ -170,6 +170,23 @@ def build_writer_prompt(payload: dict, rubric: str) -> str:
     )
 
 
+class WriterOutputError(RuntimeError):
+    """The writer's response cannot be spliced into a trustworthy issue."""
+
+
+def save_writer_response(out) -> Path:
+    """Keep the writer's parsed response at ``logs/<slug>/write.response.json``.
+
+    It sits next to the rendered prompt so a bad splice can be diagnosed
+    without spending another writer call. Only the daily run saves it:
+    backfill and replay must leave the live logs alone.
+    """
+    path = EDITION.paths().logs / "write.response.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=2, ensure_ascii=False))
+    return path
+
+
 def invoke_writer(prompt: str) -> dict:
     out = call_llm(
         prompt,
@@ -271,7 +288,7 @@ def sanitize_writer_output(out) -> dict:
     response_format=json_schema (LLM_RESPONSE_FORMAT=json_object|none does
     not), so `items` may be null/not a list, entries may be null or lack a
     string `id`, and prose fields may be non-strings. Non-string prose fields
-    become None (summary falls back to the title in assemble_issue); entries
+    become None (assemble_issue then treats the summary as missing); entries
     that are not dicts or have a non-string id are skipped.
     """
     if not isinstance(out, dict):
@@ -317,7 +334,7 @@ def assemble_issue(
         summary = (w.get("summary") or "").strip()
         if not summary:
             missing_summaries.append(item["id"])
-            summary = item.get("title", "")  # last-resort fallback
+            continue
         featured_for_fm.append({
             "id": item["id"],
             "section": item["section"],
@@ -332,9 +349,20 @@ def assemble_issue(
             "open_question": (w.get("open_question") or None) or None,
         })
 
+    featured_ids = {item["id"] for item in featured}
+    unknown_ids = [e["id"] for e in writer_output["items"] if e["id"] not in featured_ids]
+    if unknown_ids:
+        log.warning("writer returned %d ids not in the featured set: %s",
+                    len(unknown_ids), unknown_ids[:3])
+
     if missing_summaries:
-        log.warning("writer missing summaries for %d items: %s",
-                    len(missing_summaries), missing_summaries[:3])
+        # Publishing the title as the summary is how a mis-keyed writer response
+        # shipped green; fail the stage so the run is red and re-runnable.
+        raise WriterOutputError(
+            f"writer missing summaries for {len(missing_summaries)} of "
+            f"{len(featured)} featured items: {missing_summaries[:3]}; "
+            f"returned ids not in featured set: {unknown_ids[:3]}"
+        )
 
     appendix_for_fm: dict[str, list[dict]] = {s.value: [] for s in Section}
     for sec, items in appendix_by_section.items():
@@ -411,6 +439,7 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
 
     if featured:
         writer_output = invoke_writer(prompt)
+        save_writer_response(writer_output)
     else:
         # Edge case: zero featured items but appendix non-empty. Skip the LLM
         # entirely; the issue page can still render an appendix-only digest.

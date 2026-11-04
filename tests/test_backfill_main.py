@@ -476,7 +476,7 @@ class TestRunWriterForDate:
 
         # Mock invoke_writer to avoid LLM call
         fake_output = {"theme": "AI agents reshape enterprise workflows",
-                       "items": [{"id": "feat1", "prose": "Prose text."}]}
+                       "items": [{"id": "feat1", "summary": "Prose text."}]}
         monkeypatch.setattr(write_mod, "invoke_writer", lambda prompt: fake_output)
 
         import backfill

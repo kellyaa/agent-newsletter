@@ -169,6 +169,34 @@ class TestWriteMainNormal:
         assert "My special theme" in content
 
 
+class TestSaveWriterResponse:
+    def test_main_saves_raw_response(self, db_path, issues_dir, prompt_file, monkeypatch):
+        import json
+        import write as write_mod
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_featured(conn, "feat1")
+        conn.close()
+        out = {"theme": "t", "items": [{"id": "feat1", "summary": "s"}]}
+        with patch("write.invoke_writer", return_value=out):
+            _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        saved = write_mod.EDITION.paths().logs / "write.response.json"
+        assert json.loads(saved.read_text()) == out
+
+    def test_response_kept_when_splice_fails(self, db_path, issues_dir, prompt_file, monkeypatch):
+        import write as write_mod
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_featured(conn, "feat1")
+        conn.close()
+        out = {"theme": "t", "items": [{"id": "wrong-id", "summary": "s"}]}
+        with patch("write.invoke_writer", return_value=out):
+            with pytest.raises(RuntimeError, match="missing summaries"):
+                _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        assert (write_mod.EDITION.paths().logs / "write.response.json").exists()
+        assert not list(issues_dir.glob("*.md"))
+
+
 class TestInvokeWriter:
     def test_raises_when_items_missing(self, tmp_path):
         import write as write_mod
