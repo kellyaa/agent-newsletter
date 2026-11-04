@@ -41,6 +41,7 @@ scripts/
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
+scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines
 scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh --edition …` for editions whose log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
 watchdog.sh             — fires macOS notification if the `content` branch has no successful `newsletter: <date> daily run` commit in >36h (see §Troubleshooting)
 launchd/                — plists + install.sh for the two daily/hourly jobs
@@ -311,6 +312,8 @@ Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier)
 | `STATUS: IN_PROGRESS <date>` | a run is mid-flight; left alone | 0 |
 | `STATUS: HEALED <date>` | an edition's log was missing/incomplete; it re-ran it successfully | 0 |
 | `STATUS: FAILED <date> <slug>:<stage> …` | worst-of: names each edition that failed and its stage | 1 |
+
+Before the `EDITION:` lines it also prints `MISSED: <slug> <date>` for each of the last 7 days (excluding today) on which a draft/live edition has **no `run_attempts` row**, i.e. `run.sh` never started, so there is no log to heal and `run.sh --failed` has nothing to re-run. These lines are informational (they do not change `STATUS:` or the exit code), need no `osascript`, and are read-only. Days before the edition's first recorded attempt are not reported. Run it alone with `uv run scripts/missed_days.py [--days N]` (exit 1 if any gap). A missed day cannot be regenerated faithfully, since a re-run only covers the current fetch window.
 
 ```bash
 ./scripts/watchdog.sh          # check, and run the pipeline if needed

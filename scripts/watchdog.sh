@@ -27,6 +27,11 @@
 #   STATUS: FAILED <date> <slug>:<stage>[ <slug>:<stage>...]
 #                                — names each failed edition and its stage
 #
+# Before those lines it also prints one `MISSED: <slug> <date>` line per recent
+# day on which a draft/live edition has no run_attempts row at all (run.sh never
+# started, so there is no log to heal; scripts/missed_days.py, issue #519). It is
+# informational: it does not change STATUS or the exit code, and works off macOS.
+#
 # Paused editions are not checked. Per-edition logs are logs/<slug>/run-DATE.log
 # (written by scripts/run_edition.sh); a run is complete iff its log has DONE.
 #
@@ -45,7 +50,7 @@ CHECK_ONLY=false
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=true ;;
-    -h|--help) sed -n '3,34p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,38p' "$0"; exit 0 ;;
     *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -78,6 +83,19 @@ if [ "${#SLUGS[@]}" -eq 0 ]; then
   say "no draft/live editions found (is scripts/edition.py list working?)"
   echo "STATUS: FAILED $DATE_TODAY no-editions"
   exit 1
+fi
+
+# Days with no run_attempts row (run never started). Reads the content worktree
+# when there is one, as run.sh does. Never affects STATUS or the exit code.
+CONTENT_ROOT="${CONTENT_ROOT:-}"
+if [ -z "$CONTENT_ROOT" ] && [ -e "$REPO_ROOT/.worktrees/content/.git" ]; then
+  CONTENT_ROOT="$REPO_ROOT/.worktrees/content"
+fi
+export CONTENT_ROOT
+MISSED_OUT="$("${PY_RUN[@]}" scripts/missed_days.py 2>/dev/null || true)"
+if [ -n "$MISSED_OUT" ]; then
+  say "days with no run_attempts row (the scheduled run never started):"
+  printf '%s\n' "$MISSED_OUT"
 fi
 
 log_file() { echo "$REPO_ROOT/logs/$1/run-$DATE_TODAY.log"; }
