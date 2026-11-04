@@ -20,6 +20,7 @@ prompts/
   draft_edition.md      — meta-prompt `scripts/new_edition.py` sends to the LLM to draft a new edition
 scripts/
   fetch.py              — collectors (no LLM); INSERT OR IGNORE into state.db
+  net.py                — shared outbound HTTP client (SSRF guard, ALPN-free TLS, User-Agent); used by fetch.py and new_edition.py
   prefilter.py          — prefilter stage: applies the gates to state.db items, promotes candidates, ages out papers; writes candidates.json as debug artifact
   gates.py              — pure recency / keyword / section / near-dup gate functions (no DB, no edition at import); used by prefilter.py and check_edition.py
   candidates.py         — shared candidate pool query (DB → grouped dict) and papers prerank cap; used by prefilter.py, rank.py and backfill.py
