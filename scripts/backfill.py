@@ -234,12 +234,15 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
 
 
 def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
-    """Pin write.py's logic to target_date and write the issue file."""
-    import prompts
+    """Write the issue for target_date from the sandbox conn via write.write_issue.
+
+    The writer core is shared with the daily run; backfill only adds the loud
+    already-exists error (it is a manual CLI) and skips logging the rendered
+    prompt so the live logs/ dir is untouched.
+    """
     import write as write_mod
 
-    issues_dir = write_mod.ISSUES_DIR
-    out_path = issues_dir / f"{target_date}.md"
+    out_path = write_mod.ISSUES_DIR / f"{target_date}.md"
     if out_path.exists() and not force:
         log.error(
             "%s already exists (%d bytes); pass --force to overwrite",
@@ -247,41 +250,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
         )
         return None
 
-    featured, appendix_by_section, metadata = write_mod.load_today_items(
-        conn, target_date,
-    )
-    appendix_total = sum(len(v) for v in appendix_by_section.values())
-    log.info(
-        "writer input: featured=%d (papers=%d news=%d blogs=%d) appendix=%d",
-        len(featured),
-        metadata["items_featured_papers"],
-        metadata["items_featured_news"],
-        metadata["items_featured_blogs"],
-        appendix_total,
-    )
-    if not featured and not appendix_total:
-        log.warning("nothing to publish for %s; aborting", target_date)
-        return None
-
-    prev = write_mod.find_previous_newsletter(target_date)
-    payload = write_mod.build_writer_input(
-        target_date, featured, appendix_by_section, metadata, prev,
-    )
-    rubric = prompts.render("write", write_mod.EDITION, template_path=write_mod.PROMPT_PATH)
-    prompt = write_mod.build_writer_prompt(payload, rubric)
-
-    if featured:
-        writer_output = write_mod.invoke_writer(prompt)
-    else:
-        writer_output = {"theme": None, "items": []}
-
-    issue_md = write_mod.assemble_issue(
-        target_date, featured, appendix_by_section, metadata, writer_output,
-    )
-    issues_dir.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(issue_md)
-    log.info("wrote %s (%d bytes)", out_path, len(issue_md))
-    return out_path
+    return write_mod.write_issue(conn, target_date, force=force, log_prompt=False)
 
 
 def parse_args() -> argparse.Namespace:
