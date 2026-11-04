@@ -177,3 +177,90 @@ class TestPrerankCapDefaultNow:
 
         mock_dt.now.assert_called_once_with(timezone.utc)
         assert len(result["papers"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# prerank_score: exact values
+#
+# score = recency * (0.5 + kw), recency = 1 / (1 + age_days),
+# kw = min(keyword_hits, 5) / 5.  The existing prefilter tests only compare
+# scores with > / <, so a wrong constant (the 0.5 floor, the cap of 5, the
+# 86400 divisor) would still pass them.  These pin the formula itself.
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+from candidates import prerank_score  # noqa: E402
+
+_NOW = datetime(2026, 6, 27, 12, tzinfo=timezone.utc)
+_KW = re.compile(r"agent")
+
+
+def _item(published_at="2026-06-27T12:00:00+00:00", title="", raw_text="", **extra):
+    return {"published_at": published_at, "title": title, "raw_text": raw_text, **extra}
+
+
+class TestPrerankScoreValues:
+    def test_no_keywords_just_published_is_half(self):
+        assert prerank_score(_item(), _NOW, _KW) == pytest.approx(0.5)
+
+    def test_one_day_old_halves_recency(self):
+        item = _item(published_at="2026-06-26T12:00:00+00:00")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25)
+
+    def test_keyword_hits_scale_linearly_up_to_cap(self):
+        # 2 hits -> kw 0.4 -> 1.0 * 0.9
+        item = _item(title="agent agent")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.9)
+
+    def test_keyword_hits_capped_at_five(self):
+        five = _item(title="agent " * 5)
+        fifty = _item(title="agent " * 50)
+        assert prerank_score(five, _NOW, _KW) == pytest.approx(1.5)
+        assert prerank_score(fifty, _NOW, _KW) == pytest.approx(1.5)
+
+    def test_hits_counted_across_title_and_raw_text(self):
+        item = _item(title="agent", raw_text="agent agent")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.5 + 3 / 5)
+
+    def test_matching_is_case_insensitive_via_lowercased_haystack(self):
+        item = _item(title="AGENT Agent")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.9)
+
+    def test_age_and_keywords_combine(self):
+        # 3 days old -> recency 0.25; 5 hits -> 1.5
+        item = _item(published_at="2026-06-24T12:00:00+00:00", title="agent " * 5)
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25 * 1.5)
+
+    def test_future_published_at_clamps_age_to_zero(self):
+        item = _item(published_at="2026-07-27T12:00:00+00:00")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.5)
+
+    def test_z_suffix_parsed_as_utc(self):
+        item = _item(published_at="2026-06-26T12:00:00Z")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25)
+
+    def test_naive_timestamp_treated_as_utc(self):
+        item = _item(published_at="2026-06-26T12:00:00")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25)
+
+    def test_non_utc_offset_is_converted(self):
+        # 2026-06-26T14:00+02:00 == 12:00Z, one day before _NOW
+        item = _item(published_at="2026-06-26T14:00:00+02:00")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25)
+
+    def test_falls_back_to_fetched_at_when_published_missing(self):
+        item = _item(published_at=None, fetched_at="2026-06-26T12:00:00+00:00")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.25)
+
+    def test_unparseable_date_treated_as_age_zero(self):
+        item = _item(published_at="not-a-date")
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.5)
+
+    def test_no_date_at_all_treated_as_age_zero(self):
+        item = {"title": "agent", "raw_text": None}
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.7)
+
+    def test_none_title_and_raw_text_tolerated(self):
+        item = _item(title=None, raw_text=None)
+        assert prerank_score(item, _NOW, _KW) == pytest.approx(0.5)
