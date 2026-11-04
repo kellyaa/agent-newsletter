@@ -6,13 +6,14 @@ Durable lessons go elsewhere: corrections in `.memory/corrections.jsonl`, reflec
 
 ## Current state
 
-- Multi-edition pipeline is in place (`editions/<slug>/` config, shared code in `scripts/`). Editions: `agents` (live) and `engineering-with-ai` (draft, go-live check pending).
+- Multi-edition pipeline is in place (`editions/<slug>/` config, shared code in `scripts/`). Editions: `agents` (live) and `engineering-with-ai` (live, now deployed).
 - Reddit is fetched through the unauthenticated Atom feed with a per-source top-N `limit` (no credentials).
 - Policy for automated contributors: `AGENTS.md` and `policies/agent-policy.yaml`. Tool permissions: `.claude/settings.json`.
+- Latest health check (2026-11-04): all systems healthy, no issues found. See `.claude/health-check.md`.
 
 ## Open threads
 
-- `engineering-with-ai` `status: live` flip is tracked in the multi-edition issue (#291).
+- `engineering-with-ai` go-live complete (tracked in multi-edition issue #291).
 - `.github/workflows/**` changes need a human or a merge-capable agent; agents file an issue with the exact replacement text instead.
 
 ## Next session checklist
