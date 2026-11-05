@@ -27,16 +27,17 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prompts  # noqa: E402
 from db import connect, init_db, load_item_by_id  # noqa: E402
-from models import Section  # noqa: E402
+from models import FeaturedItem, Section  # noqa: E402
 from write import (  # noqa: E402
     EDITION,
     ISSUES_DIR,
     PROMPT_PATH,
-    RAW_TEXT_MAX,
     build_writer_input,
     build_writer_prompt,
+    featured_item_from_row,
     find_previous_newsletter,
     invoke_writer,
+    writer_metadata,
 )
 
 logging.basicConfig(
@@ -73,32 +74,13 @@ def load_from_issue_file(conn, date: str):
     featured_ids: list[str] = [entry["id"] for entry in (fm.get("featured") or [])]
     appendix_fm: dict = fm.get("appendix") or {}
 
-    featured: list[dict] = []
+    featured: list[FeaturedItem] = []
     for item_id in featured_ids:
         row = load_item_by_id(conn, item_id)
         if row is None:
             log.warning("featured id %s from issue file not found in state.db", item_id)
             continue
-        try:
-            tags = json.loads(row["tags"]) if row["tags"] else []
-        except json.JSONDecodeError:
-            tags = []
-        raw = row["raw_text"] or ""
-        if len(raw) > RAW_TEXT_MAX:
-            raw = raw[:RAW_TEXT_MAX] + "\n...[truncated]"
-        featured.append({
-            "id": row["id"],
-            "section": row["section"],
-            "source": row["source"],
-            "url": row["url"],
-            "title": row["title"],
-            "author": row["author"],
-            "published_at": row["published_at"],
-            "raw_text": raw,
-            "score": row["score"],
-            "tags": tags,
-            "why": row["why"],
-        })
+        featured.append(featured_item_from_row(row))
 
     # Preserve production ordering: within a section, by score desc, then id.
     # Matches scripts/write.py:load_today_items ORDER BY clause.
@@ -121,18 +103,7 @@ def load_from_issue_file(conn, date: str):
                 "title": entry["title"],
             })
 
-    counts = {s.value: 0 for s in Section}
-    for it in featured:
-        counts[it["section"]] = counts.get(it["section"], 0) + 1
-    appendix_total = sum(len(v) for v in appendix_by_section.values())
-    metadata = {
-        "items_considered": None,
-        "items_featured_total": len(featured),
-        "items_featured_papers": counts["papers"],
-        "items_featured_news": counts["news"],
-        "items_featured_blogs": counts["blogs"],
-        "items_appendix": appendix_total,
-    }
+    metadata = writer_metadata(featured, appendix_by_section, items_considered=None)
     return featured, appendix_by_section, metadata
 
 

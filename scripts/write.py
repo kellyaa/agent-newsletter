@@ -77,6 +77,58 @@ WRITER_SCHEMA = {
 }
 
 
+def featured_item_from_row(r) -> FeaturedItem:
+    """Project one ``items`` row onto the writer's FeaturedItem shape.
+
+    Single home for the row -> writer-input mapping (tag JSON decode,
+    raw_text truncation to RAW_TEXT_MAX). Shared by load_today_items and
+    scripts/replay_writer.py so a replay sees exactly what production sent;
+    tests/test_writer_input_single_source.py enforces that.
+    """
+    try:
+        tags = json.loads(r["tags"]) if r["tags"] else []
+    except json.JSONDecodeError:
+        tags = []
+    raw = r["raw_text"] or ""
+    if len(raw) > RAW_TEXT_MAX:
+        raw = raw[:RAW_TEXT_MAX] + "\n...[truncated]"
+    return FeaturedItem(
+        id=r["id"],
+        section=r["section"],
+        source=r["source"],
+        url=r["url"],
+        title=r["title"],
+        author=r["author"],
+        published_at=r["published_at"],
+        raw_text=raw,
+        score=r["score"],
+        tags=tags,
+        why=r["why"],
+    )
+
+
+def writer_metadata(
+    featured: list[FeaturedItem],
+    appendix_by_section: dict[str, list[AppendixItem]],
+    items_considered: int | None,
+) -> dict:
+    """Run metadata block for the writer input / issue frontmatter.
+
+    ``items_considered`` is None when it cannot be reconstructed (replay).
+    """
+    counts = {s.value: 0 for s in Section}
+    for it in featured:
+        counts[it["section"]] = counts.get(it["section"], 0) + 1
+    return {
+        "items_considered": items_considered,
+        "items_featured_total": len(featured),
+        "items_featured_papers": counts[Section.PAPERS],
+        "items_featured_news": counts[Section.NEWS],
+        "items_featured_blogs": counts[Section.BLOGS],
+        "items_appendix": sum(len(v) for v in appendix_by_section.values()),
+    }
+
+
 def load_today_items(
     conn, today: str
 ) -> tuple[list[FeaturedItem], dict[str, list[AppendixItem]], dict[str, int]]:
@@ -88,28 +140,7 @@ def load_today_items(
     featured_rows = load_featured_items(conn)
     appendix_rows = load_appendix_items(conn)
 
-    featured: list[FeaturedItem] = []
-    for r in featured_rows:
-        try:
-            tags = json.loads(r["tags"]) if r["tags"] else []
-        except json.JSONDecodeError:
-            tags = []
-        raw = r["raw_text"] or ""
-        if len(raw) > RAW_TEXT_MAX:
-            raw = raw[:RAW_TEXT_MAX] + "\n...[truncated]"
-        featured.append(FeaturedItem(
-            id=r["id"],
-            section=r["section"],
-            source=r["source"],
-            url=r["url"],
-            title=r["title"],
-            author=r["author"],
-            published_at=r["published_at"],
-            raw_text=raw,
-            score=r["score"],
-            tags=tags,
-            why=r["why"],
-        ))
+    featured: list[FeaturedItem] = [featured_item_from_row(r) for r in featured_rows]
 
     appendix_by_section: dict[str, list[AppendixItem]] = {s.value: [] for s in Section}
     for r in appendix_rows:
@@ -122,20 +153,9 @@ def load_today_items(
             title=r["title"],
         ))
 
-    counts = {s.value: 0 for s in Section}
-    for it in featured:
-        counts[it["section"]] = counts.get(it["section"], 0) + 1
-    items_considered = count_items_seen_on(conn, today)
-    appendix_total = sum(len(v) for v in appendix_by_section.values())
-
-    metadata = {
-        "items_considered": int(items_considered),
-        "items_featured_total": len(featured),
-        "items_featured_papers": counts[Section.PAPERS],
-        "items_featured_news": counts[Section.NEWS],
-        "items_featured_blogs": counts[Section.BLOGS],
-        "items_appendix": appendix_total,
-    }
+    metadata = writer_metadata(
+        featured, appendix_by_section, int(count_items_seen_on(conn, today))
+    )
     return featured, appendix_by_section, metadata
 
 
