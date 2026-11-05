@@ -26,10 +26,17 @@ from typing import Any
 
 import yaml
 
-from models import EditionStatus, Section
+from models import (
+    EDITIONS_DIRNAME,
+    ISSUES_DIRNAME,
+    LEGACY_EDITION,
+    STATE_DB_NAME,
+    EditionStatus,
+    Section,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EDITIONS_DIR = REPO_ROOT / "editions"
+EDITIONS_DIR = REPO_ROOT / EDITIONS_DIRNAME
 # Rendered prompts and other per-edition debug output go under LOGS_ROOT/<slug>/.
 # Module-level so tests can point it at a tmp dir and never write into logs/.
 LOGS_ROOT = REPO_ROOT / "logs"
@@ -145,11 +152,11 @@ def runtime_paths(content_root: Path, slug: str | None = None) -> RuntimePaths:
     slug = slug or selected_slug()
     if not _SLUG_RE.fullmatch(slug):
         raise EditionError(f"invalid edition slug {slug!r}")
-    root = content_root / "editions" / slug
+    root = content_root / EDITIONS_DIRNAME / slug
     logs = LOGS_ROOT / slug
     return RuntimePaths(
-        state_db=root / "state.db",
-        issues_dir=root / "issues",
+        state_db=root / STATE_DB_NAME,
+        issues_dir=root / ISSUES_DIRNAME,
         candidates=logs / "candidates.json",
         ranked=logs / "ranked.json",
     )
@@ -323,7 +330,7 @@ def discover(editions_dir: Path | None = None) -> list[tuple[str, Edition | None
 
     def key(row):
         slug, ed, _ = row
-        return (ed is None, ed.order if ed else 0, slug != "agents", slug)
+        return (ed is None, ed.order if ed else 0, slug != LEGACY_EDITION, slug)
 
     return sorted(found, key=key)
 

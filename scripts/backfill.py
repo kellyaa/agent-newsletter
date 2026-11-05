@@ -52,7 +52,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
-from models import Section, Status  # noqa: E402  (needs the sys.path entry above)
+from models import (  # noqa: E402  (needs the sys.path entry above)
+    LEGACY_EDITION,
+    LEGACY_RUN_COMMIT_PREFIX,
+    STATE_DB_NAME,
+    Section,
+    Status,
+    edition_state_db_relpath,
+    run_commit_prefix,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,10 +69,10 @@ logging.basicConfig(
 log = logging.getLogger("backfill")
 
 
-# Before the multi-edition layout (#301) there was one edition, its commits read
-# "newsletter: <date> ..." and its state.db sat at the content root.
-LEGACY_EDITION = "agents"
-LEGACY_DB_PATH = "state.db"
+# Before the multi-edition layout (#301) there was one edition (LEGACY_EDITION),
+# its commits read "newsletter: <date> ..." and its state.db sat at the content
+# root. The layout and subject formats come from models (run_edition.sh writes them).
+LEGACY_DB_PATH = STATE_DB_NAME
 
 
 def _edition_slug() -> str:
@@ -74,7 +82,7 @@ def _edition_slug() -> str:
 
 
 def edition_db_path(slug: str) -> str:
-    return f"editions/{slug}/state.db"
+    return edition_state_db_relpath(slug)
 
 
 def find_pre_run_commit(target_date: str, slug: str | None = None) -> str:
@@ -95,9 +103,9 @@ def find_pre_run_commit(target_date: str, slug: str | None = None) -> str:
         sha, _, subject = line.partition(" ")
         # Match the run commit formats: "newsletter(<slug>): YYYY-MM-DD daily run",
         # or the legacy "newsletter: YYYY-MM-DD daily run" for the legacy edition.
-        prefixes = [f"newsletter({slug}): "]
+        prefixes = [run_commit_prefix(slug)]
         if slug == LEGACY_EDITION:
-            prefixes.append("newsletter: ")
+            prefixes.append(LEGACY_RUN_COMMIT_PREFIX)
         prefix = next((p for p in prefixes if subject.startswith(p)), None)
         if prefix is None:
             continue
@@ -106,7 +114,7 @@ def find_pre_run_commit(target_date: str, slug: str | None = None) -> str:
         if date_str < target_date:
             return sha
     raise RuntimeError(
-        f"no `newsletter({slug}): <date> daily run` commit dated before {target_date}"
+        f"no `{run_commit_prefix(slug)}<date> daily run` commit dated before {target_date}"
     )
 
 
@@ -121,7 +129,7 @@ def setup_sandbox(target_date: str) -> Path:
     slug = _edition_slug()
     sha = find_pre_run_commit(target_date, slug)
     log.info("using pre-run snapshot from commit %s (edition %s)", sha[:12], slug)
-    db_path = sandbox / "state.db"
+    db_path = sandbox / STATE_DB_NAME
     # Commits from before the layout migration keep state.db at the content
     # root; that fallback is for the legacy edition only.
     candidates = [edition_db_path(slug)]
@@ -289,7 +297,7 @@ def main() -> int:
     from candidates import PAPERS_PRESCORED, load_candidates_from_db
 
     sandbox = setup_sandbox(args.date)
-    sandbox_db = sandbox / "state.db"
+    sandbox_db = sandbox / STATE_DB_NAME
 
     # Every stage below receives this sandbox connection explicitly; nothing
     # opens a DB by default path, so the live state.db is untouched until
