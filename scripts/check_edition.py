@@ -34,7 +34,14 @@ import edition as edition_mod
 import gates
 import prompts as prompts_mod
 from edition import Edition, EditionError
-from models import SOURCE_REQUIRED_KEYS, EditionStatus, SourceFamily
+from models import (
+    SOURCE_BOOL_FLAGS,
+    SOURCE_POSITIVE_INT_KEYS,
+    SOURCE_REQUIRED_KEYS,
+    EditionStatus,
+    SourceFamily,
+    is_positive_int,
+)
 
 # sources.yaml schema comes from models so the linter and fetch agree on it.
 FAMILIES = tuple(f.value for f in SourceFamily)
@@ -119,13 +126,12 @@ def _check_sources(sources: dict, result: LintResult) -> None:
                     seen_ids.add(sid)
             if "section" in entry and entry["section"] not in SECTIONS:
                 result.errors.append(f"{where}: section {entry['section']!r} must be one of {list(SECTIONS)}")
-            for flag in ("keyword_gate_bypass", "exclude_launches"):
+            for flag in SOURCE_BOOL_FLAGS:
                 if flag in entry and not isinstance(entry[flag], bool):
                     result.errors.append(f"{where}: {flag} must be true or false")
-            if "recency_days" in entry:
-                rd = entry["recency_days"]
-                if isinstance(rd, bool) or not isinstance(rd, int) or rd <= 0:
-                    result.errors.append(f"{where}: recency_days must be a positive integer")
+            for key in SOURCE_POSITIVE_INT_KEYS:
+                if key in entry and not is_positive_int(entry[key]):
+                    result.errors.append(f"{where}: {key} must be a positive integer")
     if active == 0:
         msg = "sources.yaml has no active sources, so the edition cannot produce an issue yet"
         (result.errors if _is_live(result) else result.warnings).append(msg)

@@ -29,7 +29,7 @@ from db import (
     upsert_item, url_id,
 )
 from db import count_items_seen_on
-from models import ExitCode, Section, SourceFamily
+from models import REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int
 
 logging.basicConfig(
     level=logging.INFO,
@@ -356,7 +356,6 @@ def _normalize_date(raw: str) -> str | None:
         return None
 
 
-REDDIT_DEFAULT_LIMIT = 10
 REDDIT_REQUEST_DELAY = 2.0  # seconds between subreddit requests (429 avoidance)
 _REDDIT_LINK_RE = re.compile(r'<a\s+href="([^"]+)"[^>]*>\s*\[link\]\s*</a>', re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -373,7 +372,7 @@ _reddit_rss_url = urls.reddit_rss_url
 def _validate_reddit_limit(value, source_id: str) -> int:
     if value is None:
         return REDDIT_DEFAULT_LIMIT
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+    if is_positive_int(value):
         return value
     log.warning("source %s: invalid limit %r (must be positive int); using %d",
                 source_id, value, REDDIT_DEFAULT_LIMIT)
@@ -543,11 +542,7 @@ def _validate_keyword_gate_bypass(value, source_id: str) -> bool:
 def _validate_recency_days(value, source_id: str) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool):  # bool is an int subclass in Python; reject explicitly
-        log.warning("source %s: invalid recency_days %r (must be positive int); ignoring",
-                    source_id, value)
-        return None
-    if isinstance(value, int) and value > 0:
+    if is_positive_int(value):
         return value
     log.warning("source %s: invalid recency_days %r (must be positive int); ignoring",
                 source_id, value)
