@@ -47,3 +47,17 @@ def test_ai_ops_runbook_links_resolve_and_is_indexed():
             broken.append(target)
     assert not broken, broken
     assert "ai-ops-runbook.md" in (REPO_ROOT / "docs" / "README.md").read_text()
+
+
+def test_strategy_index_links_resolve_and_is_indexed():
+    import re
+
+    doc = REPO_ROOT / "docs" / "strategy.md"
+    broken = []
+    for target in re.findall(r"\]\(([^)#]+?)(?:#[^)]*)?\)", doc.read_text()):
+        if "://" in target:
+            continue
+        if not (doc.parent / target).resolve().exists():
+            broken.append(target)
+    assert not broken, broken
+    assert "strategy.md" in (REPO_ROOT / "docs" / "README.md").read_text()
