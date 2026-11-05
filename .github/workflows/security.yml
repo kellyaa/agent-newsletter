@@ -57,9 +57,5 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
-      # Non-blocking until the astro 5 -> 7 migration (#485) clears the
-      # remaining findings in astro itself and its pinned transitives.
-      # Step-level so the job reports green with a warning annotation.
       - name: Audit site dependencies
         run: pnpm --prefix site audit --prod --audit-level=high
-        continue-on-error: true
