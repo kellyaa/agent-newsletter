@@ -43,6 +43,7 @@ import check_edition
 import edition as edition_mod
 import llm
 import net
+import urls
 from edition import EditionError
 from models import EditionStatus, SourceFamily
 
@@ -213,7 +214,7 @@ def _client() -> httpx.Client:
 
 def check_rss(client: httpx.Client, url: str) -> str | None:
     """None if *url* serves a parseable feed with entries, else the reason it does not."""
-    if urlparse(url).scheme not in ("http", "https"):
+    if not urls.is_allowed_url(url):
         return "not an http(s) URL"
     try:
         resp = client.get(url)
@@ -245,11 +246,10 @@ def check_subreddit(client: httpx.Client, url: str) -> str | None:
     """Probe the subreddit's Atom feed (the endpoint ``fetch_reddit`` reads).
 
     Reddit answers 403 to the ``.json`` endpoints without OAuth, so the feed
-    URL is derived from the ``top.json`` URL the same way fetch.py does.
+    URL comes from :func:`urls.reddit_rss_url`, the same derivation fetch.py
+    reads, with ``limit=1``.
     """
-    parts = urlparse(url)
-    path = parts.path if parts.path.endswith(".rss") else parts.path.removesuffix(".json").rstrip("/") + "/.rss"
-    rss_url = parts._replace(path=path, query=f"{parts.query}&limit=1" if parts.query else "limit=1").geturl()
+    rss_url = urls.reddit_rss_url(url, 1)
     try:
         resp = client.get(rss_url)
         resp.raise_for_status()
@@ -582,7 +582,7 @@ def scaffold(
     if dest.exists():
         raise NewEditionError(f"{dest} already exists; refusing to overwrite it")
     for u in seed_urls:
-        if urlparse(u).scheme not in ("http", "https"):
+        if not urls.is_allowed_url(u):
             raise NewEditionError(f"--seed-source {u!r} must be an http(s) URL")
 
     order = _next_order(editions_dir)

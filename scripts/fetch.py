@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import feedparser
 import httpx
@@ -22,6 +22,7 @@ import yaml
 
 import edition
 import net
+import urls
 from models import MetaKey
 from db import (
     canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
@@ -365,22 +366,8 @@ _GH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _REDDIT_SUBMITTED_BY_RE = re.compile(r"submitted by\s+/u/\S+")
 
 
-def _reddit_rss_url(url: str, limit: int) -> str:
-    """Derive the unauthenticated RSS URL from a ``sources.yaml`` reddit URL.
-
-    ``https://www.reddit.com/r/<sub>/top.json?t=day`` becomes
-    ``https://www.reddit.com/r/<sub>/top/.rss?t=day&limit=<limit>``. Reddit
-    answers 403 to the ``.json`` endpoints without OAuth, but the Atom feed
-    still works and is already sorted by score, so ``limit`` (top N) takes the
-    place of the old ``min_score`` gate.
-    """
-    parts = urlsplit(url)
-    path = parts.path
-    if not path.endswith(".rss"):
-        path = path.removesuffix(".json").rstrip("/") + "/.rss"
-    query = dict(parse_qsl(parts.query))
-    query["limit"] = str(limit)
-    return urlunsplit(parts._replace(path=path, query=urlencode(query)))
+# Shared with new_edition.check_subreddit so its probe hits the same feed.
+_reddit_rss_url = urls.reddit_rss_url
 
 
 def _validate_reddit_limit(value, source_id: str) -> int:

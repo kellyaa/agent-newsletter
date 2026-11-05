@@ -4,15 +4,19 @@ The schema is idempotent — calling init_db() repeatedly is safe.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import sqlite3
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import edition as _edition
 from models import Section, Status
+# URL policy (scheme allowlist, dedup canonicalization, item ids) lives in
+# urls.py; re-exported because callers and tests import it from db.
+from urls import (  # noqa: F401
+    ALLOWED_URL_SCHEMES, TRACKING_PARAM_PREFIXES, TRACKING_PARAMS,
+    canonicalize_url, is_allowed_url, url_id,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -155,30 +159,6 @@ CREATE TABLE IF NOT EXISTS topics_covered (
   PRIMARY KEY (topic, date, item_id)
 );
 """
-
-TRACKING_PARAM_PREFIXES = ("utm_", "ref_")
-TRACKING_PARAMS = {"ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source"}
-
-# Schemes allowed for item URLs that flow into rendered <a href> on the
-# public site (and RSS feed links). Anything else — javascript:, data:,
-# file:, vbscript:, etc. — is a click-to-execute or local-file-disclosure
-# vector and must be rejected at ingest, before it ever reaches state.db.
-# See issue #248.
-ALLOWED_URL_SCHEMES = {"http", "https"}
-
-
-def is_allowed_url(url: str) -> bool:
-    """Return True iff `url` parses to an http(s) scheme.
-
-    Used at ingest (fetch.py) to reject non-http(s) URLs — javascript:,
-    data:, file:, etc. — before they're persisted to state.db and
-    eventually rendered as a clickable link on the site or in RSS.
-    """
-    try:
-        scheme = urlparse(url.strip()).scheme.lower()
-    except (AttributeError, ValueError):
-        return False
-    return scheme in ALLOWED_URL_SCHEMES
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -687,53 +667,6 @@ def load_stage_stats(conn: sqlite3.Connection, date: str) -> dict[str, int] | No
         "papers_expired_unjudged": row[0],
         "papers_prerank_cut": row[1],
     }
-
-
-def canonicalize_url(url: str) -> str:
-    """Return a normalized URL safe to use as a dedup key.
-
-    - Lowercase scheme + host; drop an explicit default port (:80 / :443)
-    - Strip tracking query params
-    - Strip trailing slash on path
-    - Resolve arxiv pdf/abs/v<N> variants to the abs form
-    """
-    parsed = urlparse(url.strip())
-    scheme = (parsed.scheme or "https").lower()
-    netloc = parsed.netloc.lower()
-    # An explicit default port names the same resource as the bare host, and
-    # would otherwise defeat both dedup and the arxiv host match below.
-    default_port = {"http": ":80", "https": ":443"}.get(scheme)
-    if default_port and netloc.endswith(default_port):
-        netloc = netloc[: -len(default_port)]
-    path = parsed.path or "/"
-
-    # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
-    # would also rewrite paths on unrelated hosts such as notarxiv.org.
-    if netloc == "arxiv.org" or netloc.endswith(".arxiv.org"):
-        # /pdf/2401.12345.pdf, /pdf/2401.12345v2, /abs/2401.12345v3 → /abs/2401.12345
-        import re
-        m = re.match(r"^/(?:pdf|abs|html)/([0-9]{4}\.[0-9]{4,5})(?:v\d+)?(?:\.pdf)?/?$", path)
-        if m:
-            path = f"/abs/{m.group(1)}"
-
-    if path != "/" and path.endswith("/"):
-        path = path.rstrip("/") or "/"
-
-    kept = []
-    for k, v in parse_qsl(parsed.query, keep_blank_values=False):
-        kl = k.lower()
-        if kl in TRACKING_PARAMS:
-            continue
-        if any(kl.startswith(p) for p in TRACKING_PARAM_PREFIXES):
-            continue
-        kept.append((k, v))
-    query = urlencode(kept)
-
-    return urlunparse((scheme, netloc, path, "", query, ""))
-
-
-def url_id(url: str) -> str:
-    return hashlib.sha256(canonicalize_url(url).encode("utf-8")).hexdigest()
 
 
 # --- run_attempts bookkeeping and check_edition's dry-run read ---------------
