@@ -179,6 +179,44 @@ class TestPrerankCapDefaultNow:
         assert len(result["papers"]) == 3
 
 
+class TestPrerankCapBoundary:
+    """The cap binds only when papers exceed it: exactly `cap` papers is not a cut."""
+
+    @staticmethod
+    def _load(db_path, n, cap, calls, stats):
+        import candidates
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        for i in range(n):
+            _insert_candidate(conn, f"p{i}")
+        conn.commit()
+
+        def scorer(item, now):
+            calls.append(item["id"])
+            return -int(item["id"][1:])  # p0 scores highest
+
+        result = candidates.load_candidates_from_db(
+            conn, prerank_cap=cap, prerank_scorer=scorer,
+            now=datetime(2026, 7, 9, 12, tzinfo=timezone.utc), stats=stats,
+        )
+        conn.close()
+        return result
+
+    def test_exactly_at_cap_is_not_cut_or_scored(self, db_path):
+        calls, stats = [], {}
+        result = self._load(db_path, n=3, cap=3, calls=calls, stats=stats)
+        assert len(result["papers"]) == 3
+        assert calls == []
+        assert stats == {}
+
+    def test_one_over_cap_cuts_the_lowest_scored_and_records_it(self, db_path):
+        calls, stats = [], {}
+        result = self._load(db_path, n=4, cap=3, calls=calls, stats=stats)
+        assert sorted(it["id"] for it in result["papers"]) == ["p0", "p1", "p2"]
+        assert stats == {"prerank_cut": 1}
+
+
 # ---------------------------------------------------------------------------
 # prerank_score: exact values
 #
