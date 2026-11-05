@@ -126,3 +126,57 @@ def test_render_and_log_overwrites_an_earlier_rendered_prompt(tmp_path, monkeypa
     out.write_text("stale")
     assert prompts.render_and_log("rank", ed, tpl) == "AI Agents Daily"
     assert out.read_text() == "AI Agents Daily"
+
+
+def test_fragments_for_the_other_stage_are_ignored(tmp_path, monkeypatch):
+    """rank.* and write.* fragments live side by side; rendering one stage must not trip on the other's."""
+    ed, tpl = _make_edition(
+        tmp_path, monkeypatch,
+        {"rank.extra.md": "ranked\n", "write.only_writer.md": "written\n"},
+        "{{extra}}",
+    )
+    assert prompts.render("rank", ed, tpl) == "ranked"
+
+
+def test_only_one_trailing_newline_is_stripped_from_a_fragment(tmp_path, monkeypatch):
+    ed, tpl = _make_edition(tmp_path, monkeypatch, {"rank.extra.md": "body\n\n"}, "[{{extra}}]")
+    assert prompts.render("rank", ed, tpl) == "[body\n]"
+
+
+def test_fragment_without_trailing_newline_is_used_verbatim(tmp_path, monkeypatch):
+    ed, tpl = _make_edition(tmp_path, monkeypatch, {"rank.extra.md": "body"}, "[{{extra}}]")
+    assert prompts.render("rank", ed, tpl) == "[body]"
+
+
+def test_malformed_placeholders_are_left_alone_and_not_treated_as_slots(tmp_path, monkeypatch):
+    """Only lowercase `{{slot}}` matches; uppercase, spaced and single-brace text is literal."""
+    template = "{{Name}} {{ name }} {name} {{1abc}} {{name}}"
+    assert prompts.template_slots(template) == ["name"]
+    ed, tpl = _make_edition(tmp_path, monkeypatch, {}, template)
+    assert prompts.render("rank", ed, tpl) == "{{Name}} {{ name }} {name} {{1abc}} AI Agents Daily"
+
+
+def test_slot_names_may_contain_digits_underscores_and_hyphens():
+    assert prompts.template_slots("{{a1}} {{b_c}} {{d-e}}") == ["a1", "b_c", "d-e"]
+
+
+def test_all_unused_fragments_are_reported_sorted(tmp_path, monkeypatch):
+    ed, tpl = _make_edition(
+        tmp_path, monkeypatch, {"rank.zeta.md": "z\n", "rank.alpha.md": "a\n"}, "{{name}}"
+    )
+    with pytest.raises(edition.EditionError) as exc:
+        prompts.render("rank", ed, tpl)
+    msg = str(exc.value)
+    assert "'rank.alpha.md', 'rank.zeta.md'" in msg
+    assert "edition 'demo'" in msg
+
+
+def test_missing_slot_error_names_the_fragment_file_to_add(tmp_path, monkeypatch):
+    ed, tpl = _make_edition(tmp_path, monkeypatch, {}, "{{nope}}")
+    with pytest.raises(edition.EditionError, match=r"editions/demo/prompts/rank\.nope\.md"):
+        prompts.render("rank", ed, tpl)
+
+
+def test_template_with_no_slots_renders_unchanged(tmp_path, monkeypatch):
+    ed, tpl = _make_edition(tmp_path, monkeypatch, {}, "plain text\n")
+    assert prompts.render("rank", ed, tpl) == "plain text\n"
