@@ -31,6 +31,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [repository-branches-and-worktrees.md](repository-branches-and-worktrees.md) | Two-branch model, worktree layout, main vs content |
 | [risk-tiers.md](risk-tiers.md) | Change review expectations by what you touch (tier 0–3) |
 | [agent-boundaries.md](agent-boundaries.md) | What AI agents may and may not do here (summary of AGENTS.md and the policy file) |
+| [strategy.md](strategy.md) | Index of where direction, roadmap, health and agent activity are recorded |
 
 ### Operations
 
