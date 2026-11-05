@@ -35,7 +35,8 @@ scripts/
   prompts.py            — render prompts/{rank,write}.md with an edition's fragments
   new_edition.py        — scaffold `editions/<slug>/` from the template, optionally LLM-drafted and machine-validated; writes `REVIEW.md`
   check_edition.py      — lint an edition and dry-run fetch + prefilter against a throwaway DB (no LLM): per-source counts
-  db.py                 — schema, URL canonicalization
+  db.py                 — schema and data access helpers (re-exports the URL helpers from urls.py)
+  urls.py               — URL policy (pure): http(s) allowlist, dedup canonicalization, item ids, reddit feed URL; used by db.py, fetch.py and new_edition.py
   models.py             — TypedDict definitions for pipeline stage boundaries; Status and Section StrEnum constants
   backfill.py           — reconstruct a missed day's issue from the candidate pool snapshot
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
