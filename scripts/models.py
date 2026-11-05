@@ -54,6 +54,34 @@ class EditionStatus(StrEnum):
     PAUSED = "paused"
 
 
+class SourceFamily(StrEnum):
+    """Top-level keys of an edition's sources.yaml (one collector per family).
+
+    fetch.iter_collectors walks these, check_edition lints them, and
+    new_edition scaffolds a subset. Declaration order is the fetch order.
+    """
+
+    RSS = "rss"
+    ARXIV = "arxiv"
+    HN = "hn"
+    REDDIT = "reddit"
+    HTML = "html"
+    GITHUB_RELEASES = "github_releases"
+
+
+# Keys every sources.yaml entry of a family must carry; fetch indexes them
+# directly (src["id"], src["url"], entry["owner"] ...), so a missing one is a
+# KeyError mid-run. check_edition rejects entries lacking them.
+SOURCE_REQUIRED_KEYS: dict[SourceFamily, frozenset[str]] = {
+    SourceFamily.RSS: frozenset({"id", "url"}),
+    SourceFamily.ARXIV: frozenset({"id", "query"}),
+    SourceFamily.HN: frozenset({"id", "query"}),
+    SourceFamily.REDDIT: frozenset({"id", "url"}),
+    SourceFamily.HTML: frozenset({"id", "url"}),
+    SourceFamily.GITHUB_RELEASES: frozenset({"owner", "repo"}),
+}
+
+
 class MetaKey(StrEnum):
     """Keys in the state.db `meta` table that more than one module reads or writes."""
 

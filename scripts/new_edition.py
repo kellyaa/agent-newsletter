@@ -44,7 +44,13 @@ import edition as edition_mod
 import llm
 import net
 from edition import EditionError
-from models import EditionStatus
+from models import EditionStatus, SourceFamily
+
+# The source families the LLM proposes and new_edition live-checks. The rest of
+# SourceFamily (html, github_releases) is scaffolded empty for a human to fill.
+LLM_FAMILIES = tuple(f.value for f in (SourceFamily.RSS, SourceFamily.ARXIV,
+                                       SourceFamily.HN, SourceFamily.REDDIT))
+MANUAL_FAMILIES = tuple(f.value for f in SourceFamily if f.value not in LLM_FAMILIES)
 
 TEMPLATE_SLUG = "_template"
 ARXIV_API = "https://export.arxiv.org/api/query"
@@ -95,7 +101,7 @@ DRAFT_SCHEMA: dict[str, Any] = {
         "sources": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["rss", "arxiv", "hn", "reddit"],
+            "required": list(LLM_FAMILIES),
             "properties": {
                 "rss": {"type": "array", "items": {
                     "type": "object", "additionalProperties": False,
@@ -281,7 +287,7 @@ def validate_sources(
     that failed.
     """
     dropped: list[Dropped] = []
-    out: dict[str, list[dict]] = {"rss": [], "arxiv": [], "hn": [], "reddit": []}
+    out: dict[str, list[dict]] = {fam: [] for fam in LLM_FAMILIES}
 
     rss = list(proposed.get("rss") or [])
     have = {str(e.get("url", "")).rstrip("/") for e in rss}
@@ -388,7 +394,7 @@ def coerce_proposal(raw: Any) -> dict[str, Any]:
     sources = raw.get("sources")
     if not isinstance(sources, dict):
         raise NewEditionError("the LLM's 'sources' must be an object")
-    for fam in ("rss", "arxiv", "hn", "reddit"):
+    for fam in LLM_FAMILIES:
         v = sources.get(fam, [])
         if not isinstance(v, list) or not all(isinstance(x, dict) for x in v):
             raise NewEditionError(f"the LLM's sources.{fam} must be a list of objects")
@@ -462,7 +468,7 @@ def render_sources_yaml(name: str, sources: dict[str, list[dict]], dropped: list
         "# so a human can fix or delete them. See editions/_template/sources.yaml.",
         "",
     ]
-    for fam in ("rss", "arxiv", "hn", "reddit"):
+    for fam in LLM_FAMILIES:
         entries = sources.get(fam) or []
         if entries:
             out.append(_dump({fam: entries}).rstrip())
@@ -474,7 +480,7 @@ def render_sources_yaml(name: str, sources: dict[str, list[dict]], dropped: list
             for line in _dump([d.entry]).rstrip().splitlines():
                 out.append(f"  # {line}")
         out.append("")
-    out += ["html: []", "github_releases: []", ""]
+    out += [f"{fam}: []" for fam in MANUAL_FAMILIES] + [""]
     return "\n".join(out)
 
 
