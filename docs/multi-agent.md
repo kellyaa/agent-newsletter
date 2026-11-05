@@ -22,4 +22,4 @@ Agents are dispatched from the issue queue by the hive that manages this reposit
 
 ## Handoff
 
-Work moves between agents and humans through GitHub objects only: issue → branch → `hold` PR → human merge. See [`agent-tasks/README.md`](agent-tasks/README.md) for the traceability chain. A held PR whose head moves after review needs fresh human review.
+Work moves between agents and humans through GitHub objects only: issue → branch → `hold` PR → human merge. Each step leaves a GitHub record, so the chain from task to merge can be reconstructed from GitHub alone. A held PR whose head moves after review needs fresh human review.
