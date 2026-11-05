@@ -8,6 +8,7 @@ What automated contributors (AI agents and bots) may and may not do in this repo
 | [`policies/agent-policy.yaml`](../policies/agent-policy.yaml) | Machine-readable policy, checked by `tests/test_agent_policy.py` |
 | [`SECURITY-AI.md`](../SECURITY-AI.md) | Secrets, untrusted feed content, LLM-call rules |
 | [`risk-tiers.md`](risk-tiers.md) | How much review a change needs, by what it touches |
+| [`agent-tasks/`](agent-tasks/README.md) | How agent work is traced from task to PR |
 
 ## Structural gates
 
