@@ -125,6 +125,31 @@ def test_main_rejects_non_positive_days(editions):
     assert exc.value.code == 2
 
 
+def test_main_default_window_is_seven_days(editions, capsys):
+    """Only the 7 days before today are checked by default: 10-26 is out of range."""
+    _record(editions, "agents", "2026-10-20", "2026-11-03")
+    rc = missed_days.main(["--today", "2026-11-03"])
+    assert missed_days.DEFAULT_DAYS == 7
+    assert capsys.readouterr().out.splitlines() == [
+        f"MISSED: agents 2026-10-{d}" for d in (27, 28, 29, 30, 31)
+    ] + ["MISSED: agents 2026-11-01", "MISSED: agents 2026-11-02"]
+    assert rc == 1
+
+
+def test_main_accepts_a_one_day_window(editions, capsys):
+    """--days 1 is the smallest valid window: it checks only yesterday."""
+    _record(editions, "agents", "2026-10-30")
+    rc = missed_days.main(["--days", "1", "--today", "2026-11-03"])
+    assert capsys.readouterr().out == "MISSED: agents 2026-11-02\n"
+    assert rc == 1
+
+
+def test_main_rejects_negative_days(editions):
+    with pytest.raises(SystemExit) as exc:
+        missed_days.main(["--days", "-3"])
+    assert exc.value.code == 2
+
+
 # ─── wired into scripts/watchdog.sh ───────────────────────────────────────
 
 FAKE_RUN = "#!/usr/bin/env bash\nexit 0\n"
