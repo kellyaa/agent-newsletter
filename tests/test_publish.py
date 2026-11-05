@@ -14,6 +14,7 @@ def test_publish_issues_dir_uses_content_root_env(monkeypatch, tmp_path):
 
 
 import pytest
+from datetime import datetime, timezone
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -389,3 +390,187 @@ class TestMainIdempotentSkip:
         result = publish_main()
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# main() — wiring into the runs row, thresholds, and rerun behaviour
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def publish_env(db_path, tmp_path, monkeypatch):
+    """Wire publish.main() to a temp DB and a valid 2026-06-01 issue file."""
+    import publish as publish_mod
+    import db as db_mod
+
+    issues_dir = tmp_path / "issues"
+    issues_dir.mkdir()
+    (issues_dir / "2026-06-01.md").write_text("x" * (publish_mod.MIN_FILE_SIZE_BYTES + 50))
+    monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+    monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
+    monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
+    monkeypatch.setenv("RUN_DATE", "2026-06-01")
+    monkeypatch.delenv("LLM_USAGE_LOG", raising=False)
+    monkeypatch.delenv("RUN_STARTED_AT", raising=False)
+    return db_path
+
+
+def _runs_row(db_path, date="2026-06-01"):
+    import db as db_mod
+    conn = db_mod.connect(db_path)
+    row = conn.execute("SELECT * FROM runs WHERE date = ?", (date,)).fetchone()
+    conn.close()
+    return row
+
+
+class TestMainThresholds:
+    def test_min_featured_for_publish_is_one(self):
+        import publish
+        assert publish.MIN_FEATURED_FOR_PUBLISH == 1
+
+    def test_single_featured_item_without_appendix_publishes(self, publish_env):
+        """The boundary: exactly MIN_FEATURED_FOR_PUBLISH featured, no appendix."""
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "news")
+        conn.close()
+
+        assert publish_main() == 0
+        assert _runs_row(publish_env)["items_featured"] == 1
+
+    def test_empty_issue_refusal_leaves_no_runs_row(self, publish_env):
+        from publish import main as publish_main
+
+        assert publish_main() == 5
+        assert _runs_row(publish_env) is None
+
+
+class TestMainRunsRowWiring:
+    def test_items_fetched_counts_only_items_seen_today(self, publish_env):
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        _insert_item(conn, "old-1", "published", "papers")
+        conn.execute("UPDATE items SET last_seen_date = '2026-05-31' WHERE id = 'old-1'")
+        conn.commit()
+        conn.close()
+
+        assert publish_main() == 0
+        row = _runs_row(publish_env)
+        assert row["items_fetched"] == 1
+        assert row["items_candidate"] == 1
+
+    def test_reads_usage_log_and_run_started_at_from_env(self, publish_env, monkeypatch):
+        import json
+        import db as db_mod
+        import publish as publish_mod
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        conn.close()
+
+        usage_log = publish_env.parent / "usage.jsonl"
+        usage_log.write_text(
+            json.dumps({"label": "writer", "model": "w", "prompt_tokens": 70, "completion_tokens": 7})
+            + "\n"
+        )
+        monkeypatch.setenv("LLM_USAGE_LOG", str(usage_log))
+        monkeypatch.setenv("RUN_STARTED_AT", "2026-06-01T11:00:00Z")
+        real_duration = publish_mod.run_duration_s
+        monkeypatch.setattr(
+            publish_mod, "run_duration_s",
+            lambda started: real_duration(
+                started, datetime(2026, 6, 1, 11, 4, 5, tzinfo=timezone.utc)
+            ),
+        )
+
+        assert publish_mod.main() == 0
+        row = _runs_row(publish_env)
+        assert (row["tokens_in"], row["tokens_out"]) == (70, 7)
+        assert row["duration_seconds"] == 245
+        assert "llm_calls=1" in row["notes"]
+        assert "tokens_by_model=w:70/7" in row["notes"]
+
+    def test_without_usage_env_tokens_and_duration_stay_null(self, publish_env):
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        conn.close()
+
+        assert publish_main() == 0
+        row = _runs_row(publish_env)
+        assert row["tokens_in"] is None
+        assert row["tokens_out"] is None
+        assert row["duration_seconds"] is None
+        assert row["notes"] == "appendix=0"
+
+    def test_records_per_section_counts(self, publish_env):
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        for i, section in enumerate(["papers", "papers", "news", "blogs"]):
+            _insert_item(conn, f"feat-{i}", "featured", section)
+        _insert_item(conn, "app-1", "appendix", "news")
+        conn.close()
+
+        assert publish_main() == 0
+        row = _runs_row(publish_env)
+        assert (row["items_papers"], row["items_news"], row["items_blogs"]) == (2, 1, 1)
+        assert row["items_featured"] == 4
+        assert row["items_candidate"] == 5
+        assert row["notes"] == "appendix=1"
+
+
+class TestMainRerunBehaviour:
+    def test_skip_leaves_existing_runs_row_untouched(self, publish_env):
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        conn.close()
+        assert publish_main() == 0
+        before = dict(_runs_row(publish_env))
+
+        assert publish_main() == 0
+        assert dict(_runs_row(publish_env)) == before
+
+    def test_new_pending_items_after_a_publish_are_published_and_row_refreshed(self, publish_env):
+        """A runs row alone does not skip: pending featured items still go out."""
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "papers")
+        conn.close()
+        assert publish_main() == 0
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-2", "featured", "news")
+        conn.close()
+        assert publish_main() == 0
+
+        conn = db_mod.connect(publish_env)
+        statuses = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM items")}
+        conn.close()
+        assert statuses == {"feat-1": "published", "feat-2": "published"}
+        row = _runs_row(publish_env)
+        assert (row["items_featured"], row["items_news"]) == (1, 1)
+
+    def test_pending_items_without_runs_row_are_not_skipped(self, publish_env):
+        """No runs row => never 'already published', even with nothing pending after."""
+        import db as db_mod
+        from publish import main as publish_main
+
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "pub-1", "published", "papers")
+        conn.close()
+
+        # nothing featured/appendix and no runs row: falls through to the empty-issue refusal
+        assert publish_main() == 5
