@@ -82,6 +82,20 @@ SOURCE_REQUIRED_KEYS: dict[SourceFamily, frozenset[str]] = {
 }
 
 
+# Optional per-entry sources.yaml overrides. fetch applies them (falling back
+# with a warning on a bad value), check_edition rejects bad values, and
+# new_edition only emits valid ones; all three read the rules from here so
+# lint, scaffold and runtime agree on what is accepted.
+SOURCE_BOOL_FLAGS: tuple[str, ...] = ("keyword_gate_bypass", "exclude_launches")
+SOURCE_POSITIVE_INT_KEYS: tuple[str, ...] = ("recency_days", "limit")
+REDDIT_DEFAULT_LIMIT = 10  # top-N posts per subreddit when `limit` is unset
+
+
+def is_positive_int(value: object) -> bool:
+    """True for an int > 0. bool is an int subclass, so True/False are rejected."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 class MetaKey(StrEnum):
     """Keys in the state.db `meta` table that more than one module reads or writes."""
 

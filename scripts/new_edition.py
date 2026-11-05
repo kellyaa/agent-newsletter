@@ -45,7 +45,7 @@ import llm
 import net
 import urls
 from edition import EditionError
-from models import EditionStatus, SourceFamily
+from models import REDDIT_DEFAULT_LIMIT, EditionStatus, SourceFamily, is_positive_int
 
 # The source families the LLM proposes and new_edition live-checks. The rest of
 # SourceFamily (html, github_releases) is scaffolded empty for a human to fill.
@@ -306,7 +306,7 @@ def validate_sources(
         if e.get("keyword_gate_bypass") is True:
             entry["keyword_gate_bypass"] = True
         rd = e.get("recency_days")
-        if isinstance(rd, int) and not isinstance(rd, bool) and rd > 0:
+        if is_positive_int(rd):
             entry["recency_days"] = rd
         reason = check_rss(client, url)
         if reason:
@@ -324,7 +324,7 @@ def validate_sources(
             "id": _unique_id(str(e.get("id") or "arxiv"), "arxiv", seen),
             "name": str(e.get("name") or e.get("id") or "arXiv"),
             "query": query,
-            "max_results": mr if isinstance(mr, int) and not isinstance(mr, bool) and 0 < mr <= 100 else 30,
+            "max_results": mr if is_positive_int(mr) and mr <= 100 else 30,
         }
         reason = check_arxiv(client, query) if query else "empty query"
         if reason:
@@ -344,7 +344,7 @@ def validate_sources(
             "name": str(e.get("name") or f"HN: {query}"),
             "query": query,
             "hours_back": 48,
-            "min_points": mp if isinstance(mp, int) and not isinstance(mp, bool) and mp > 0 else 40,
+            "min_points": mp if is_positive_int(mp) else 40,
         })
 
     seen = set()
@@ -359,7 +359,7 @@ def validate_sources(
             "id": _unique_id(str(e.get("id") or f"reddit-{sub}"), "reddit", seen),
             "name": str(e.get("name") or f"r/{sub}"),
             "url": url,
-            "limit": lim if isinstance(lim, int) and not isinstance(lim, bool) and lim > 0 else 10,
+            "limit": lim if is_positive_int(lim) else REDDIT_DEFAULT_LIMIT,
         }
         reason = check_subreddit(client, url)
         if reason:
