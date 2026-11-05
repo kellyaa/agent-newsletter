@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 
@@ -27,7 +26,7 @@ from db import (
     connect,
     init_db,
 )
-from llm import ContentFilterError, call_llm
+from llm import ContentFilterError, call_llm, ranker_config
 from models import ExitCode, RankDecision, ScoredItem, Section, Status
 
 logging.basicConfig(
@@ -41,14 +40,8 @@ EDITION = edition.current()
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
 RANKED_PATH = edition.runtime_paths(CONTENT_ROOT).ranked  # debug artifact: raw LLM scores
 
-RANKER_MODEL = os.environ.get("RANKER_MODEL", "gpt-4o-mini")
-# Per-section call timeout. Per-call output is bounded by section size, so this
-# is generous — papers (up to 100+) is the long pole.
-RANKER_TIMEOUT_S = int(os.environ.get("RANKER_TIMEOUT_S", "1800"))
-# Cap per-call output. Healthy heaviest section (papers) lands around ~24k
-# completion tokens; this caps it at ~32k to fail fast on degenerate
-# repetition loops.
-RANKER_MAX_TOKENS = int(os.environ.get("RANKER_MAX_TOKENS", "32000"))
+# Model, timeout and token cap: env-driven, single-sourced in llm.ranker_config().
+RANKER = ranker_config()
 
 # Per-section thresholds and caps come from editions/<slug>/edition.yaml
 # (`sections:`). See SPEC.md "Ranking rubric".
@@ -124,10 +117,10 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
         prompt,
         RANKER_OUTPUT_SCHEMA,
         schema_name="ranker_output",
-        model=RANKER_MODEL,
-        timeout_s=RANKER_TIMEOUT_S,
+        model=RANKER.model,
+        timeout_s=RANKER.timeout_s,
         label=label,
-        max_tokens=RANKER_MAX_TOKENS,
+        max_tokens=RANKER.max_tokens,
     )
     rankings = out.get("rankings")
     if not isinstance(rankings, list):

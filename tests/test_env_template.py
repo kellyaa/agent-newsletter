@@ -60,7 +60,7 @@ def test_internal_vars_list_has_no_stale_entries():
 
 
 def test_template_documented_numeric_defaults_match_code():
-    source = (SCRIPTS / "rank.py").read_text() + (SCRIPTS / "write.py").read_text()
+    source = (SCRIPTS / "llm.py").read_text()
     documented = _template_assignments()
     for name in (
         "RANKER_TIMEOUT_S", "WRITER_TIMEOUT_S",

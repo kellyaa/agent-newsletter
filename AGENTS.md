@@ -31,6 +31,7 @@ pnpm --prefix site install && pnpm --prefix site build
 - Pipeline stage scripts (`fetch`, `prefilter`, `rank`, `write`, `publish`, `run_attempt`) must not import from each other; they share state only through `state.db` and the shared helpers (`db.py`, `edition.py`, `models.py`, `llm.py`, `candidates.py`). `tests/test_stage_import_boundary.py` enforces this.
 - LLM calls go through `scripts/llm.py` only.
 - URL policy (http(s) allowlist, canonicalization, item ids, reddit feed URL) lives in `scripts/urls.py`; do not re-implement it inline (`tests/test_url_policy_single_source.py` enforces this).
+- LLM role settings (`WRITER_*` / `RANKER_*` model, timeout, token cap and their defaults) are read only by `llm.writer_config()` / `llm.ranker_config()`; do not read them from the environment elsewhere (`tests/test_llm_role_config.py` enforces this).
 - Edition behaviour comes from `editions/<slug>/` config, never from hard-coded slugs in code.
 - A new script or documented path must be reflected in `README.md` / `CONTRIBUTING.md` (`tests/test_docs_paths.py` enforces this).
 - A PR labelled `hold` (or `on-hold` / `do-not-merge`) must not be merged until a human removes the label. Never remove it yourself.
