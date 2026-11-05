@@ -25,7 +25,6 @@ stays off the site unless ``SHOW_DRAFTS=1``. Going live is a one-line PR.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import shutil
 import sys
@@ -595,14 +594,15 @@ def scaffold(
         if use_llm:
             repo_root = edition_mod.REPO_ROOT
             prompt = build_prompt(slug, name, describe, seed_urls, repo_root)
+            cfg = llm.writer_config()
             raw = llm.call_llm(
                 prompt,
                 DRAFT_SCHEMA,
                 schema_name="edition_draft",
-                model=os.environ.get("WRITER_MODEL", "gpt-4o-mini"),
-                timeout_s=int(os.environ.get("WRITER_TIMEOUT_S", "1200")),
+                model=cfg.model,
+                timeout_s=cfg.timeout_s,
                 label="new_edition",
-                max_tokens=int(os.environ.get("WRITER_MAX_TOKENS", "16000")),
+                max_tokens=cfg.max_tokens,
             )
             proposal = validate_proposal(raw, seed_urls, client, sleep)
         elif seed_urls:

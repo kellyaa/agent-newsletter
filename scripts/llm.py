@@ -13,9 +13,12 @@ Provider is selected via env:
                         LLM_EXTRA_HEADERS='{"RITS_API_KEY": "xyz"}'
                         LLM_EXTRA_HEADERS='{"X-Tenant-Id": "abc"}'
 
-Model id is passed in by the caller (WRITER_MODEL / RANKER_MODEL env vars in
-the existing scripts), and is interpreted by the target endpoint — there's no
-provider-side translation here.
+Per-role settings (model id, per-call timeout, completion-token cap) are read
+from the environment here and nowhere else: ``writer_config()`` for
+WRITER_MODEL / WRITER_TIMEOUT_S / WRITER_MAX_TOKENS (write.py, new_edition.py)
+and ``ranker_config()`` for the RANKER_* equivalents (rank.py). Callers pass
+the resulting values to ``call_llm``. The model id is interpreted by the
+target endpoint — there's no provider-side translation here.
 
 Structured output defaults to `response_format={"type": "json_schema", strict:
 true}`, which OpenAI and most compatible servers (vLLM, llama.cpp, LM Studio)
@@ -30,6 +33,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
@@ -37,6 +41,43 @@ from openai import OpenAI
 log = logging.getLogger("llm")
 
 DEFAULT_TIMEOUT_S = 1200
+
+
+@dataclass(frozen=True)
+class RoleConfig:
+    """Model id, per-call timeout and completion-token cap for one LLM role."""
+
+    model: str
+    timeout_s: int
+    max_tokens: int
+
+
+def writer_config() -> RoleConfig:
+    """Settings for writer-class calls (write.py, new_edition.py), read from env now.
+
+    Cap per-call output: healthy writer runs land around 6-8k completion
+    tokens; 16k leaves headroom while failing fast on degenerate repetition
+    loops (which we've seen burn 65k tokens producing unparseable JSON).
+    """
+    return RoleConfig(
+        model=os.environ.get("WRITER_MODEL", "gpt-4o-mini"),
+        timeout_s=int(os.environ.get("WRITER_TIMEOUT_S", "1200")),
+        max_tokens=int(os.environ.get("WRITER_MAX_TOKENS", "16000")),
+    )
+
+
+def ranker_config() -> RoleConfig:
+    """Settings for per-section ranker calls (rank.py), read from env now.
+
+    The timeout is generous because per-call output is bounded by section
+    size and papers (up to 100+) is the long pole. The healthy heaviest
+    section lands around ~24k completion tokens; 32k fails fast on loops.
+    """
+    return RoleConfig(
+        model=os.environ.get("RANKER_MODEL", "gpt-4o-mini"),
+        timeout_s=int(os.environ.get("RANKER_TIMEOUT_S", "1800")),
+        max_tokens=int(os.environ.get("RANKER_MAX_TOKENS", "32000")),
+    )
 
 
 class ContentFilterError(Exception):

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sys
 from pathlib import Path
@@ -30,7 +29,7 @@ from db import (
     load_featured_items,
     run_date,
 )
-from llm import call_llm
+from llm import call_llm, writer_config
 from models import AppendixItem, ExitCode, FeaturedItem, FrontmatterFeatured, Section
 
 logging.basicConfig(
@@ -44,12 +43,8 @@ EDITION = edition.current()
 PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
 ISSUES_DIR = edition.runtime_paths(CONTENT_ROOT).issues_dir
 
-WRITER_MODEL = os.environ.get("WRITER_MODEL", "gpt-4o-mini")
-WRITER_TIMEOUT_S = int(os.environ.get("WRITER_TIMEOUT_S", "1200"))
-# Cap per-call output. Healthy writer runs land around 6-8k completion tokens;
-# this leaves comfortable headroom while failing fast on degenerate repetition
-# loops (which we've seen burn 65k tokens producing unparseable truncated JSON).
-WRITER_MAX_TOKENS = int(os.environ.get("WRITER_MAX_TOKENS", "16000"))
+# Model, timeout and token cap: env-driven, single-sourced in llm.writer_config().
+WRITER = writer_config()
 
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
@@ -199,10 +194,10 @@ def invoke_writer(prompt: str) -> dict:
         prompt,
         WRITER_SCHEMA,
         schema_name="writer_output",
-        model=WRITER_MODEL,
-        timeout_s=WRITER_TIMEOUT_S,
+        model=WRITER.model,
+        timeout_s=WRITER.timeout_s,
         label="writer",
-        max_tokens=WRITER_MAX_TOKENS,
+        max_tokens=WRITER.max_tokens,
     )
     if not isinstance(out, dict) or "items" not in out:
         debug_path = EDITION.paths().logs / "writer-output.json"
