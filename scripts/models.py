@@ -96,6 +96,34 @@ def is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+# Content-branch layout and run-commit subjects (multi-edition layout, #301).
+# scripts/run_edition.sh writes these and backfill.py reads them back, so both
+# sides must agree; tests/test_content_layout_single_source.py checks the shell
+# against these values. Kept here (no imports) so migrate_layout.py, which must
+# not import db/edition, can use them too.
+EDITIONS_DIRNAME = "editions"
+STATE_DB_NAME = "state.db"
+ISSUES_DIRNAME = "issues"
+# The one edition that predates the layout: its state.db sat at the content
+# root and its run commits read "newsletter: <date> ...".
+LEGACY_EDITION = "agents"
+LEGACY_RUN_COMMIT_PREFIX = "newsletter: "
+
+
+def edition_state_db_relpath(slug: str) -> str:
+    """``editions/<slug>/state.db``, relative to the content root (a git path)."""
+    return f"{EDITIONS_DIRNAME}/{slug}/{STATE_DB_NAME}"
+
+
+def run_commit_prefix(slug: str) -> str:
+    """Subject prefix of an edition's run commits: ``newsletter(<slug>): ``.
+
+    run_edition.sh follows it with ``<YYYY-MM-DD> daily run`` (or
+    ``<YYYY-MM-DD> attempt N failed at <stage>``).
+    """
+    return f"newsletter({slug}): "
+
+
 class MetaKey(StrEnum):
     """Keys in the state.db `meta` table that more than one module reads or writes."""
 
