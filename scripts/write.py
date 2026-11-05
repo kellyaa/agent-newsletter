@@ -31,7 +31,7 @@ from db import (
     run_date,
 )
 from llm import call_llm
-from models import AppendixItem, ExitCode, FeaturedItem, Section
+from models import AppendixItem, ExitCode, FeaturedItem, FrontmatterFeatured, Section
 
 logging.basicConfig(
     level=logging.INFO,
@@ -317,8 +317,8 @@ def sanitize_writer_output(out) -> dict:
 
 def assemble_issue(
     today: str,
-    featured: list[dict],
-    appendix_by_section: dict[str, list[dict]],
+    featured: list[FeaturedItem],
+    appendix_by_section: dict[str, list[AppendixItem]],
     metadata: dict,
     writer_output: dict,
 ) -> str:
@@ -334,7 +334,7 @@ def assemble_issue(
     for entry in writer_output.get("items", []):
         writer_items[entry["id"]] = entry
 
-    featured_for_fm: list[dict] = []
+    featured_for_fm: list[FrontmatterFeatured] = []
     missing_summaries: list[str] = []
     for item in featured:
         w = writer_items.get(item["id"], {})
@@ -342,19 +342,19 @@ def assemble_issue(
         if not summary:
             missing_summaries.append(item["id"])
             continue
-        featured_for_fm.append({
-            "id": item["id"],
-            "section": item["section"],
-            "source": item["source"],
-            "url": item["url"],
-            "title": item["title"],
-            "author": item.get("author"),
-            "score": int(item["score"]) if item.get("score") is not None else 0,
-            "tags": list(item.get("tags") or []),
-            "summary": summary,
-            "takeaway": (w.get("takeaway") or None) or None,
-            "open_question": (w.get("open_question") or None) or None,
-        })
+        featured_for_fm.append(FrontmatterFeatured(
+            id=item["id"],
+            section=item["section"],
+            source=item["source"],
+            url=item["url"],
+            title=item["title"],
+            author=item.get("author"),
+            score=int(item["score"]) if item.get("score") is not None else 0,
+            tags=list(item.get("tags") or []),
+            summary=summary,
+            takeaway=w.get("takeaway") or None,
+            open_question=w.get("open_question") or None,
+        ))
 
     featured_ids = {item["id"] for item in featured}
     unknown_ids = [e["id"] for e in writer_output["items"] if e["id"] not in featured_ids]
@@ -371,16 +371,16 @@ def assemble_issue(
             f"returned ids not in featured set: {unknown_ids[:3]}"
         )
 
-    appendix_for_fm: dict[str, list[dict]] = {s.value: [] for s in Section}
+    appendix_for_fm: dict[str, list[AppendixItem]] = {s.value: [] for s in Section}
     for sec, items in appendix_by_section.items():
         for it in items:
-            appendix_for_fm[sec].append({
-                "id": it["id"],
-                "section": sec,
-                "source": it["source"],
-                "url": it["url"],
-                "title": it["title"],
-            })
+            appendix_for_fm[sec].append(AppendixItem(
+                id=it["id"],
+                section=sec,
+                source=it["source"],
+                url=it["url"],
+                title=it["title"],
+            ))
 
     theme = (writer_output.get("theme") or "").strip() or None
 
