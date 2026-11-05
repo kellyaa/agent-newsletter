@@ -43,6 +43,7 @@ scripts/
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
+scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines
 scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh --edition …` for editions whose log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
 watchdog.sh             — fires macOS notification if the `content` branch has no successful `newsletter: <date> daily run` commit in >36h (see §Troubleshooting)
