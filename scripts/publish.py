@@ -97,9 +97,16 @@ def record_run(
     )
 
 
-def main() -> int:
+def main(today: str | None = None) -> int:
+    """Publish the issue for ``today`` (``YYYY-MM-DD``; defaults to :func:`db.run_date`).
+
+    ``today`` is injectable so tests and backfills pin the run date instead of
+    setting ``RUN_DATE`` in the environment, matching ``write.main(today=...)``
+    and fetch/prefilter/rank's ``main(now=...)``.
+    """
     init_db()
-    today = run_date()
+    if today is None:
+        today = run_date()
     issue_path = ISSUES_DIR / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)
