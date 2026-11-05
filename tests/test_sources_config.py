@@ -13,15 +13,10 @@ import pytest
 import fetch
 from fetch import VALID_SECTIONS, load_sources
 
-FAMILIES = {"rss", "arxiv", "hn", "reddit", "html", "github_releases"}
-REQUIRED_KEYS = {
-    "rss": {"id", "url"},
-    "arxiv": {"id", "query"},
-    "hn": {"id", "query"},
-    "reddit": {"id", "url"},
-    "html": {"id", "url"},
-    "github_releases": {"owner", "repo"},
-}
+from models import SOURCE_REQUIRED_KEYS, SourceFamily
+
+FAMILIES = {f.value for f in SourceFamily}
+REQUIRED_KEYS = {f.value: set(keys) for f, keys in SOURCE_REQUIRED_KEYS.items()}
 
 
 @pytest.fixture(scope="module")

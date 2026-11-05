@@ -34,17 +34,11 @@ import edition as edition_mod
 import gates
 import prompts as prompts_mod
 from edition import Edition, EditionError
-from models import EditionStatus
+from models import SOURCE_REQUIRED_KEYS, EditionStatus, SourceFamily
 
-FAMILIES = ("rss", "arxiv", "hn", "reddit", "html", "github_releases")
-REQUIRED_KEYS = {
-    "rss": {"id", "url"},
-    "arxiv": {"id", "query"},
-    "hn": {"id", "query"},
-    "reddit": {"id", "url"},
-    "html": {"id", "url"},
-    "github_releases": {"owner", "repo"},
-}
+# sources.yaml schema comes from models so the linter and fetch agree on it.
+FAMILIES = tuple(f.value for f in SourceFamily)
+REQUIRED_KEYS = {f.value: set(keys) for f, keys in SOURCE_REQUIRED_KEYS.items()}
 SECTIONS = edition_mod.SECTION_NAMES
 _TODO = re.compile(r"\bTODO\b")
 _UNFILLED_SLOT = re.compile(r"\{\{[a-z][a-z0-9_-]*\}\}")

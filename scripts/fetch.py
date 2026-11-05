@@ -28,7 +28,7 @@ from db import (
     upsert_item, url_id,
 )
 from db import count_items_seen_on
-from models import ExitCode, Section
+from models import ExitCode, Section, SourceFamily
 
 logging.basicConfig(
     level=logging.INFO,
@@ -618,30 +618,30 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
         rdo = _validate_recency_days(src.get("recency_days"), sid)
         return _stamp_overrides(gen, section_override, kgb, rdo)
 
-    for src in sources.get("rss") or []:
+    for src in sources.get(SourceFamily.RSS) or []:
         yield f"rss/{src['id']}", with_override(src, fetch_rss(src, client=http_client))
 
     # arXiv asks for >=3 seconds between requests. We have multiple arxiv
     # collectors; sleep between them to avoid 429s.
-    arxiv_sources = sources.get("arxiv") or []
+    arxiv_sources = sources.get(SourceFamily.ARXIV) or []
     for i, src in enumerate(arxiv_sources):
         if i > 0:
             time.sleep(3.0)
         yield f"arxiv/{src['id']}", with_override(src, fetch_arxiv(src, client=http_client))
-    for src in sources.get("hn") or []:
+    for src in sources.get(SourceFamily.HN) or []:
         yield f"hn/{src['id']}", with_override(src, fetch_hn(src, client=http_client))
-    for i, src in enumerate(sources.get("reddit") or []):
+    for i, src in enumerate(sources.get(SourceFamily.REDDIT) or []):
         if i > 0:
             time.sleep(REDDIT_REQUEST_DELAY)
         yield f"reddit/{src['id']}", with_override(src, fetch_reddit(src, client=http_client))
     # HTML scraper family (issue #10). Vendor pages that don't offer
     # RSS (Anthropic /news, etc.) go here.
-    for src in sources.get("html") or []:
+    for src in sources.get(SourceFamily.HTML) or []:
         yield f"html/{src['id']}", with_override(src, fetch_html(src, client=http_client))
-    if sources.get("github_releases"):
+    if sources.get(SourceFamily.GITHUB_RELEASES):
         # GitHub release entries can each carry their own `section:`. Run them
         # one at a time so per-repo overrides take effect.
-        for entry in sources["github_releases"]:
+        for entry in sources[SourceFamily.GITHUB_RELEASES]:
             label = f"gh/{entry['owner']}/{entry['repo']}"
             yield label, with_override(entry, fetch_github_releases([entry]))
 
