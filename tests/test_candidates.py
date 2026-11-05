@@ -302,3 +302,72 @@ class TestPrerankScoreValues:
     def test_none_title_and_raw_text_tolerated(self):
         item = _item(title=None, raw_text=None)
         assert prerank_score(item, _NOW, _KW) == pytest.approx(0.5)
+
+    def test_missing_title_and_raw_text_contribute_empty_text_not_a_placeholder(self):
+        # A None field must read as "", not as some filler text a keyword could hit.
+        any_char = re.compile(r".")
+        assert prerank_score(_item(title=None, raw_text=None), _NOW, any_char) == pytest.approx(0.5)
+        # Only the joining newline remains, so a single-char title still counts one hit.
+        assert prerank_score(_item(title=None, raw_text="x"), _NOW, re.compile("x")) == pytest.approx(0.7)
+        assert prerank_score(_item(title="x", raw_text=None), _NOW, re.compile("x")) == pytest.approx(0.7)
+
+
+# ---------------------------------------------------------------------------
+# Prescored-paper carry-over: score/tags/why survive the DB round trip, and
+# malformed or empty cached values degrade to safe defaults rather than
+# dropping the paper or crashing the ranker.
+# ---------------------------------------------------------------------------
+
+
+class TestPrescoredPaperFields:
+    @staticmethod
+    def _load(db_path, **overrides):
+        import candidates
+        import db as db_mod
+
+        conn = db_mod.connect(db_path)
+        _insert_candidate(conn, "p1", **overrides)
+        conn.commit()
+        result = candidates.load_candidates_from_db(conn)
+        conn.close()
+        return result
+
+    def test_cached_score_tags_and_why_are_carried_over(self, db_path):
+        result = self._load(db_path, score=8, tags='["evals", "agents"]', why="strong eval")
+        assert result["papers"] == []
+        (item,) = result["papers_prescored"]
+        assert item["score"] == 8
+        assert item["tags"] == ["evals", "agents"]
+        assert item["why"] == "strong eval"
+
+    def test_zero_score_is_still_prescored(self, db_path):
+        result = self._load(db_path, score=0, tags="[]", why="weak")
+        assert result["papers"] == []
+        assert [i["id"] for i in result["papers_prescored"]] == ["p1"]
+
+    def test_null_tags_become_an_empty_list(self, db_path):
+        (item,) = self._load(db_path, score=5, tags=None, why="ok")["papers_prescored"]
+        assert item["tags"] == []
+
+    def test_empty_string_tags_become_an_empty_list(self, db_path):
+        (item,) = self._load(db_path, score=5, tags="", why="ok")["papers_prescored"]
+        assert item["tags"] == []
+
+    def test_malformed_tags_json_becomes_an_empty_list(self, db_path):
+        (item,) = self._load(db_path, score=5, tags="{not json", why="ok")["papers_prescored"]
+        assert item["tags"] == []
+
+    def test_null_why_becomes_empty_string(self, db_path):
+        (item,) = self._load(db_path, score=5, tags="[]", why=None)["papers_prescored"]
+        assert item["why"] == ""
+
+    def test_unscored_paper_carries_no_score_fields(self, db_path):
+        result = self._load(db_path)
+        (item,) = result["papers"]
+        assert not {"score", "tags", "why"} & item.keys()
+
+    def test_scored_non_paper_stays_in_its_own_section_without_score_fields(self, db_path):
+        result = self._load(db_path, section="news", score=9, tags="[]", why="x")
+        assert result["papers_prescored"] == []
+        (item,) = result["news"]
+        assert not {"score", "tags", "why"} & item.keys()
