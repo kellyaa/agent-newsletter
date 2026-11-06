@@ -282,6 +282,16 @@ This validates:
 
 If validation fails, the error message names the problem and the line number.
 
+### Per-source keys in `sources.yaml`
+
+Each `sources.yaml` entry accepts optional overrides (`section`, `keyword_gate_bypass`, `recency_days`, and `limit` for Reddit). One more controls the dead-feed check:
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `dead_after_days` | positive int | 7 | `./scripts/watchdog.sh --check` prints `DEAD: <slug>/<source> no items for N days` once every fetch recorded in the last N days saw zero items or failed. Raise it for slow publishers (e.g. `90` beside `recency_days: 90`). An invalid value is logged and ignored; `check_edition.py` reports it as an error. |
+
+A source with no recorded fetches is never reported, and a new source is not reported until its first recorded fetch is at least N days old.
+
 ---
 
 ## Common Patterns

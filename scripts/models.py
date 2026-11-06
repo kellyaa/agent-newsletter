@@ -87,7 +87,7 @@ SOURCE_REQUIRED_KEYS: dict[SourceFamily, frozenset[str]] = {
 # new_edition only emits valid ones; all three read the rules from here so
 # lint, scaffold and runtime agree on what is accepted.
 SOURCE_BOOL_FLAGS: tuple[str, ...] = ("keyword_gate_bypass", "exclude_launches")
-SOURCE_POSITIVE_INT_KEYS: tuple[str, ...] = ("recency_days", "limit")
+SOURCE_POSITIVE_INT_KEYS: tuple[str, ...] = ("recency_days", "limit", "dead_after_days")
 REDDIT_DEFAULT_LIMIT = 10  # top-N posts per subreddit when `limit` is unset
 
 

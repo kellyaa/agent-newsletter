@@ -20,6 +20,11 @@
 # recency window in scripts/prefilter.py RECENCY_DAYS. Use for slow-publishing
 # sources (e.g., Hamel posts every 4-7 weeks; bump to 90). Invalid values are
 # logged and ignored. Don't set this on high-volume sources.
+#
+# Optional `dead_after_days: N` (positive int) sets how many days of empty or
+# failed fetches make `scripts/watchdog.sh --check` print a `DEAD:` line for the
+# source (default 7). Raise it for slow publishers, e.g. 90 next to
+# `recency_days: 90`. Invalid values are logged and ignored.
 
 rss:
   - id: simonw
