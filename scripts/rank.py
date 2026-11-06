@@ -25,6 +25,7 @@ from db import (
     bump_times_competed,
     connect,
     init_db,
+    reset_unpublished_featured,
 )
 from llm import ContentFilterError, call_llm, ranker_config
 from models import ExitCode, RankDecision, ScoredItem, Section, Status
@@ -404,12 +405,23 @@ def main(now: datetime | None = None) -> int:
 
     rubric = prompts.render_and_log("rank", EDITION, template_path=PROMPT_PATH)
 
+    # Start from a clean slate: publish promotes featured items, so any still
+    # 'featured' now were picked by an earlier run that failed after rank. Left
+    # alone they pile up across retries and the writer gets a bigger set each
+    # time (#587). Rank persists all its verdicts in one commit, so there is no
+    # half-ranked state to resume from.
+    reset_conn = connect()
+    try:
+        stale = reset_unpublished_featured(reset_conn)
+    finally:
+        reset_conn.close()
+    if stale:
+        log.warning("reset %d featured items left by an unpublished earlier run", stale)
+
     # Load candidates directly from the DB. This is the same function
     # prefilter.py uses to write its debug artifact, ensuring consistency.
-    # The query only returns items with status='candidate', so it inherently
-    # handles idempotent resume: if rank.py crashed after papers but before
-    # blogs, the already-ranked items will have moved to 'featured'/'appendix'/
-    # 'dropped' and won't appear in this result set.
+    # The query only returns items with status='candidate'; items already
+    # dropped, appendix'd or published are not re-ranked.
     #
     # The prerank cap must be applied here, not just in prefilter's debug
     # artifact: it's what bounds the papers prompt (and so the LLM call's

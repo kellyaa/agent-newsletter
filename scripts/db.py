@@ -374,6 +374,23 @@ def apply_rank_decisions(
     conn.commit()
 
 
+def reset_unpublished_featured(conn: sqlite3.Connection) -> int:
+    """Send every still-``featured`` item back to ``candidate``, scores cleared.
+
+    ``publish`` moves featured items to ``published``, so a ``featured`` row at
+    the start of rank is left over from an earlier run that failed after rank
+    (e.g. at write). Without this, each retry adds its new winners to the last
+    attempt's and the writer sees an ever-larger set (#587). Commits; returns
+    the rows reset.
+    """
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.CANDIDATE}', score = NULL, tags = NULL, "
+        f"why = NULL WHERE status = '{Status.FEATURED}'"
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
 def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
     """Increment ``times_competed`` for `item_ids` still in the ``candidate`` pool.
 
@@ -472,6 +489,24 @@ def load_featured_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         f"WHERE status = '{Status.FEATURED}' "
         "ORDER BY section, score DESC, id"
     ).fetchall()
+
+
+def demote_featured_to_appendix(conn: sqlite3.Connection, item_ids: list[str]) -> int:
+    """Move `item_ids` still in ``featured`` status to ``appendix``.
+
+    For featured items the writer produced no summary for (#587). Commits;
+    returns the rows demoted.
+    """
+    if not item_ids:
+        return 0
+    marks = ",".join("?" * len(item_ids))
+    cur = conn.execute(
+        f"UPDATE items SET status = '{Status.APPENDIX}' "
+        f"WHERE status = '{Status.FEATURED}' AND id IN ({marks})",
+        list(item_ids),
+    )
+    conn.commit()
+    return cur.rowcount or 0
 
 
 def load_appendix_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:

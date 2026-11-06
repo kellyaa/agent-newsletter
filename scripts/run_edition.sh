@@ -13,7 +13,8 @@
 # Every stage is idempotent; a re-run picks up where a prior failure left off:
 #   - fetch skips if today's items are already in the DB
 #   - prefilter is a no-op if there's nothing new to gate
-#   - rank skips items that already have a status past 'candidate'
+#   - rank skips items that already have a status past 'candidate', and first
+#     resets any still 'featured' from an unpublished run so retries don't pile up
 #   - write skips if today's issue file exists
 #   - publish skips if today's runs row exists and items are published
 #
