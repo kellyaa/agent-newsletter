@@ -259,6 +259,51 @@ class TestAssembleIssue:
             assemble_issue("2026-06-01", f, self._make_appendix(),
                            self._make_metadata(), wo)
 
+    def test_dup_suffix_is_stripped(self):
+        f = self._make_featured(2)
+        wo = self._make_writer_output(f)
+        wo["items"][1]["id"] += "_dup"
+        issue = assemble_issue("2026-06-01", f, self._make_appendix(),
+                               self._make_metadata(2), wo)
+        assert "Summary for id-1" in issue
+
+    def test_dup_suffix_not_stripped_when_real_entry_present(self):
+        f = self._make_featured(2)
+        wo = self._make_writer_output(f)
+        wo["items"].append({**wo["items"][0], "id": "id-0_dup", "summary": "other"})
+        wo["items"].pop(1)  # id-1 now missing
+        with pytest.raises(RuntimeError, match="1 of 2"):
+            assemble_issue("2026-06-01", f, self._make_appendix(),
+                           self._make_metadata(2), wo)
+
+    def test_single_typo_id_is_rekeyed(self):
+        f = self._make_featured(1)
+        f[0]["id"] = "a" * 64
+        wo = self._make_writer_output(f)
+        wo["items"][0]["id"] = "a" * 62 + "bb"
+        issue = assemble_issue("2026-06-01", f, self._make_appendix(),
+                               self._make_metadata(), wo)
+        assert "Summary for " + "a" * 64 in issue
+
+    def test_typo_beyond_hamming_limit_still_fails(self):
+        f = self._make_featured(1)
+        f[0]["id"] = "a" * 64
+        wo = self._make_writer_output(f)
+        wo["items"][0]["id"] = "a" * 58 + "b" * 6
+        with pytest.raises(RuntimeError, match="1 of 1"):
+            assemble_issue("2026-06-01", f, self._make_appendix(),
+                           self._make_metadata(), wo)
+
+    def test_ambiguous_typos_are_not_rekeyed(self):
+        f = self._make_featured(2)
+        f[0]["id"], f[1]["id"] = "a" * 64, "b" * 64
+        wo = self._make_writer_output(f)
+        wo["items"][0]["id"] = "a" * 63 + "c"
+        wo["items"][1]["id"] = "b" * 63 + "c"
+        with pytest.raises(RuntimeError, match="2 of 2"):
+            assemble_issue("2026-06-01", f, self._make_appendix(),
+                           self._make_metadata(2), wo)
+
     def test_theme_in_frontmatter(self):
         f = self._make_featured(1)
         wo = self._make_writer_output(f)
