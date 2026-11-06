@@ -330,6 +330,56 @@ def sanitize_writer_output(out) -> dict:
     return {"theme": _opt_str(out.get("theme")), "items": items}
 
 
+_DUP_SUFFIX = "_dup"
+_MAX_ID_HAMMING = 4
+
+
+def _hamming(a: str, b: str) -> int | None:
+    """Hamming distance of two equal-length strings; ``None`` if lengths differ."""
+    if len(a) != len(b):
+        return None
+    return sum(x != y for x, y in zip(a, b))
+
+
+def recover_writer_ids(featured_ids: list[str], items: list[dict]) -> list[dict]:
+    """Re-key writer entries whose id is a recognisable corruption of a featured id.
+
+    Two failure shapes seen in production are repaired, each with a warning:
+
+    * a ``_dup`` suffix on an otherwise valid featured id (only when no other
+      entry already carries that id);
+    * exactly one featured id missing and exactly one unknown id returned,
+      within ``_MAX_ID_HAMMING`` character edits (a typo when copying the
+      64-hex id).
+
+    Anything else is left untouched so :func:`assemble_issue` still fails
+    rather than publish a summary under the wrong item.
+    """
+    featured_set = set(featured_ids)
+    present = {e["id"] for e in items}
+    fixed: list[dict] = []
+    for e in items:
+        base = e["id"].removesuffix(_DUP_SUFFIX)
+        if (e["id"] not in featured_set and base != e["id"]
+                and base in featured_set and base not in present):
+            log.warning("writer id %r: stripped %r suffix", e["id"], _DUP_SUFFIX)
+            present.add(base)
+            e = {**e, "id": base}
+        fixed.append(e)
+
+    seen = {e["id"] for e in fixed}
+    missing = [i for i in featured_ids if i not in seen]
+    unknown = [e["id"] for e in fixed if e["id"] not in featured_set]
+    if len(missing) == 1 and len(unknown) == 1:
+        dist = _hamming(missing[0], unknown[0])
+        if dist is not None and dist <= _MAX_ID_HAMMING:
+            log.warning("writer id %r re-keyed to %r (hamming %d)",
+                        unknown[0], missing[0], dist)
+            fixed = [{**e, "id": missing[0]} if e["id"] == unknown[0] else e
+                     for e in fixed]
+    return fixed
+
+
 def assemble_issue(
     today: str,
     featured: list[FeaturedItem],
@@ -344,6 +394,8 @@ def assemble_issue(
     out of the LLM's hands entirely.
     """
     writer_output = sanitize_writer_output(writer_output)
+    writer_output["items"] = recover_writer_ids(
+        [item["id"] for item in featured], writer_output["items"])
     # Map writer-output items by id for splicing.
     writer_items: dict[str, dict] = {}
     for entry in writer_output.get("items", []):
