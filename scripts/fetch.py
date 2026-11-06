@@ -25,8 +25,8 @@ import net
 import urls
 from models import MetaKey
 from db import (
-    canonicalize_url, connect, get_meta, init_db, is_allowed_url, run_date, set_meta,
-    upsert_item, url_id,
+    canonicalize_url, connect, get_meta, init_db, is_allowed_url, prune_source_fetches,
+    record_source_fetch, run_date, set_meta, upsert_item, url_id,
 )
 from db import count_items_seen_on
 from models import REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int
@@ -661,9 +661,17 @@ def main(now: datetime | None = None) -> int:
         except Exception as e:
             log.exception("%s: collector failed: %s", label, e)
             errors += 1
+            record_source_fetch(
+                conn, run_date(), label, items_seen=0, items_new=0,
+                error=f"{type(e).__name__}: {e}"[:500], fetched_at=now.isoformat(),
+            )
             return
         seen, inserted = upsert_items(conn, items, now=now)
         log.info("%s: seen=%d new=%d", label, seen, inserted)
+        record_source_fetch(
+            conn, run_date(), label, items_seen=seen, items_new=inserted,
+            error=None, fetched_at=now.isoformat(),
+        )
         total_seen += seen
         total_inserted += inserted
 
@@ -675,6 +683,7 @@ def main(now: datetime | None = None) -> int:
         for label, gen in iter_collectors(sources, http_client):
             run_collector(label, gen)
 
+    prune_source_fetches(conn, run_date())
     log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
     if not (total_seen == 0 and errors > 0):
         set_meta(conn, FETCH_DONE_KEY, run_date())

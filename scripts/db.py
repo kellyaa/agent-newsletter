@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import edition as _edition
@@ -158,7 +158,24 @@ CREATE TABLE IF NOT EXISTS topics_covered (
   item_id TEXT NOT NULL,
   PRIMARY KEY (topic, date, item_id)
 );
+
+-- One row per source per fetch run, written by fetch.py including the
+-- zero-item case. A feed that returns nothing without raising is otherwise
+-- indistinguishable from a quiet one (#572). `error` is NULL on success.
+CREATE TABLE IF NOT EXISTS source_fetch_outcomes (
+  run_date TEXT NOT NULL,
+  label TEXT NOT NULL,       -- collector label, e.g. rss/latent_space
+  family TEXT NOT NULL,      -- rss | arxiv | hn | reddit | html | gh
+  source_id TEXT NOT NULL,
+  items_seen INTEGER NOT NULL,
+  items_new INTEGER NOT NULL,
+  error TEXT,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (run_date, label)
+);
 """
+
+SOURCE_FETCH_RETENTION_DAYS = 90
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -211,6 +228,39 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("papers_expired_unjudged", "papers_prerank_cut"):
         if col not in run_cols:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {col} INTEGER")
+
+
+def record_source_fetch(
+    conn: sqlite3.Connection, run_date: str, label: str, *, items_seen: int,
+    items_new: int, error: str | None, fetched_at: str,
+) -> None:
+    """Record one source's outcome for the fetch run of `run_date`. Commits.
+
+    `label` is ``<family>/<source id>`` (``gh/<owner>/<repo>`` for releases). A
+    re-run of the same day replaces that source's row.
+    """
+    family, _, source_id = label.partition("/")
+    conn.execute(
+        "INSERT INTO source_fetch_outcomes "
+        "(run_date, label, family, source_id, items_seen, items_new, error, fetched_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(run_date, label) DO UPDATE SET "
+        "family = excluded.family, source_id = excluded.source_id, "
+        "items_seen = excluded.items_seen, items_new = excluded.items_new, "
+        "error = excluded.error, fetched_at = excluded.fetched_at",
+        (run_date, label, family, source_id, items_seen, items_new, error, fetched_at),
+    )
+    conn.commit()
+
+
+def prune_source_fetches(
+    conn: sqlite3.Connection, today: str, keep_days: int = SOURCE_FETCH_RETENTION_DAYS,
+) -> int:
+    """Delete outcome rows older than `keep_days` before `today`; returns rows deleted."""
+    cutoff = (date.fromisoformat(today) - timedelta(days=keep_days)).isoformat()
+    cur = conn.execute("DELETE FROM source_fetch_outcomes WHERE run_date < ?", (cutoff,))
+    conn.commit()
+    return cur.rowcount or 0
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
