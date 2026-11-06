@@ -285,6 +285,92 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
     return final
 
 
+def score_candidates(
+    candidates: dict[str, list[dict]],
+    rubric: str,
+    *,
+    ranked_path=None,
+) -> dict[str, RankDecision]:
+    """Score a grouped candidate pool and return id -> RankDecision.
+
+    The single scoring core shared by :func:`main` (daily run) and
+    ``backfill.rank_with_optional_llm`` (sandbox DB). Only the unscored
+    buckets go to the LLM, each through :func:`rank_section` (content-filter
+    bisection, per-section failure isolation, output sanitising);
+    ``papers_prescored`` items keep their cached score and compete with the
+    fresh ones in :func:`assign_statuses`. Any candidate the ranker did not
+    score falls back to the appendix with score 0, so an item is never left
+    in limbo. ``ranked_path``, when given, receives the sanitised rankings
+    for debugging (the daily run only; backfill leaves live logs alone).
+    Persisting and ``times_competed`` bookkeeping stay with the caller.
+    tests/test_rank_scoring_single_source.py keeps backfill on this path.
+    """
+    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
+
+    # Papers: only invoke the LLM on the unscored bucket. Prescored items
+    # already have a score from a prior day's run and bypass the LLM entirely.
+    unscored_papers = candidates.get(Section.PAPERS, [])
+    prescored_papers = candidates.get(PAPERS_PRESCORED, [])
+    if unscored_papers:
+        scored = rank_section(Section.PAPERS.value, unscored_papers, rubric)
+        log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
+        scored_by_section[Section.PAPERS].extend(scored)
+    else:
+        log.info("papers: no unscored items, skipping LLM call")
+    # Merge in prescored items (they pass through assign_statuses with their
+    # cached score and compete head-to-head with the freshly-scored ones).
+    for it in prescored_papers:
+        scored_by_section[Section.PAPERS].append({
+            "id": it["id"],
+            "score": it["score"],
+            "tags": it.get("tags", []),
+            "why": it.get("why", ""),
+        })
+    if prescored_papers:
+        log.info("papers: merged %d prescored items from the multi-day pool", len(prescored_papers))
+
+    for section in (Section.NEWS.value, Section.BLOGS.value):
+        items = candidates.get(section, [])
+        if not items:
+            continue
+        scored = rank_section(section, items, rubric)
+        log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
+        scored_by_section[section] = scored
+
+    if ranked_path is not None:
+        # Just the rankings (not the full envelopes — too noisy) for debugging.
+        ranked_path.parent.mkdir(parents=True, exist_ok=True)
+        ranked_path.write_text(json.dumps(scored_by_section, indent=2, ensure_ascii=False))
+
+    # Build id → section map from input candidates for fallback handling.
+    # Papers (both unscored + prescored) all collapse to section='papers'.
+    by_id_section: dict[str, str] = {}
+    for bucket, items in candidates.items():
+        section = Section.PAPERS.value if bucket in (Section.PAPERS, PAPERS_PRESCORED) else bucket
+        if section not in SECTION_RULES:
+            continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
+        for it in items:
+            by_id_section[it["id"]] = section
+
+    decisions = assign_statuses(scored_by_section)
+
+    # Defensive fallback: any candidate not scored → appendix with score 0.
+    # (Only triggers when the LLM omits an id it was sent. Prescored items
+    # are merged into scored_by_section directly so they can never end up here.)
+    missing = [iid for iid in by_id_section if iid not in decisions]
+    if missing:
+        log.warning("%d candidates not scored → fallback to appendix", len(missing))
+        for iid in missing:
+            decisions[iid] = {
+                "status": Status.APPENDIX,
+                "score": 0,
+                "tags": [],
+                "why": "fallback: ranker did not return a score",
+                "section": by_id_section[iid],
+            }
+    return decisions
+
+
 def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
     rows = []
@@ -356,69 +442,7 @@ def main(now: datetime | None = None) -> int:
         log.warning("no candidates to rank; exiting cleanly")
         return ExitCode.OK
 
-    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
-
-    # Papers: only invoke the LLM on the unscored bucket. Prescored items
-    # already have a score from a prior day's run and bypass the LLM entirely.
-    unscored_papers = candidates.get(Section.PAPERS, [])
-    prescored_papers = candidates.get(PAPERS_PRESCORED, [])
-    if unscored_papers:
-        scored = rank_section(Section.PAPERS.value, unscored_papers, rubric)
-        log.info("papers: ranker returned %d entries (sent %d)", len(scored), len(unscored_papers))
-        scored_by_section[Section.PAPERS].extend(scored)
-    else:
-        log.info("papers: no unscored items, skipping LLM call")
-    # Merge in prescored items (they pass through assign_statuses with their
-    # cached score and compete head-to-head with the freshly-scored ones).
-    for it in prescored_papers:
-        scored_by_section[Section.PAPERS].append({
-            "id": it["id"],
-            "score": it["score"],
-            "tags": it.get("tags", []),
-            "why": it.get("why", ""),
-        })
-    if prescored_papers:
-        log.info("papers: merged %d prescored items from the multi-day pool", len(prescored_papers))
-
-    # News + blogs unchanged.
-    for section in (Section.NEWS.value, Section.BLOGS.value):
-        items = candidates.get(section, [])
-        if not items:
-            continue
-        scored = rank_section(section, items, rubric)
-        log.info("%s: ranker returned %d entries (sent %d)", section, len(scored), len(items))
-        scored_by_section[section] = scored
-
-    # Save just the rankings (not the full envelopes — too noisy) for debugging.
-    RANKED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RANKED_PATH.write_text(json.dumps(scored_by_section, indent=2, ensure_ascii=False))
-
-    # Build id → section map from input candidates for fallback handling.
-    # Papers (both unscored + prescored) all collapse to section='papers'.
-    by_id_section: dict[str, str] = {}
-    for bucket, items in candidates.items():
-        section = Section.PAPERS.value if bucket in (Section.PAPERS, PAPERS_PRESCORED) else bucket
-        if section not in SECTION_RULES:
-            continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
-        for it in items:
-            by_id_section[it["id"]] = section
-
-    decisions = assign_statuses(scored_by_section)
-
-    # Defensive fallback: any candidate not scored → appendix with score 0.
-    # (Only triggers when the LLM omits an id it was sent. Prescored items
-    # are merged into scored_by_section directly so they can never end up here.)
-    missing = [iid for iid in by_id_section if iid not in decisions]
-    if missing:
-        log.warning("%d candidates not scored → fallback to appendix", len(missing))
-        for iid in missing:
-            decisions[iid] = {
-                "status": Status.APPENDIX,
-                "score": 0,
-                "tags": [],
-                "why": "fallback: ranker did not return a score",
-                "section": by_id_section[iid],
-            }
+    decisions = score_candidates(candidates, rubric, ranked_path=RANKED_PATH)
 
     conn = connect()
     counts = persist(conn, decisions)
