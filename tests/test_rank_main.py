@@ -189,13 +189,18 @@ class TestRankMainIdempotentResume:
             # Capture which items were sent to the ranker
             items = json.loads(prompt.split("```json\n")[1].split("\n```")[0])
             sent_items.extend([it["id"] for it in items])
-            return [{"id": "todo", "score": 7, "tags": [], "why": "ok"}]
+            return [{"id": it["id"], "score": 7, "tags": [], "why": "ok"} for it in items]
 
         with patch("rank.invoke_ranker", side_effect=mock_invoke):
             _run_main(db_path, prompt_path, monkeypatch)
 
-        assert "todo" in sent_items
-        assert "done" not in sent_items
+        # Only the one candidate is sent (under an alias) and it is scored.
+        assert sent_items == ["i1"]
+        conn = db_mod.connect(db_path)
+        scores = {r["id"]: r["score"] for r in conn.execute("SELECT id, score FROM items")}
+        conn.close()
+        assert scores["todo"] == 7
+        assert scores["done"] is None
 
     def test_all_already_ranked_returns_0(self, db_path, prompt_path, monkeypatch):
         """If all items are already past candidate status, main() exits cleanly."""
@@ -380,5 +385,5 @@ class TestRankMainRetryAfterFailedRun:
         conn = db_mod.connect(db_path)
         rows = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM items")}
         conn.close()
-        assert sorted(sent) == ["n1", "stale"]
+        assert sorted(sent) == ["i1", "i2"]  # n1 + stale, as aliases; "old" is not sent
         assert rows["old"] == "published"

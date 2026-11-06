@@ -272,7 +272,8 @@ class TestSilentWriterDrops:
         with patch("write.invoke_writer", side_effect=fake):
             _run_main(db_path, issues_dir, prompt_file, monkeypatch)
         assert len(calls) == 2
-        assert '"id": "f9"' in calls[1] and '"id": "f0"' not in calls[1]
+        # The follow-up asks for the one missing item only (aliased to i1).
+        assert '"id": "i1"' in calls[1] and '"id": "i2"' not in calls[1]
         content = (issues_dir / f"{date.today().isoformat()}.md").read_text()
         assert "S f9." in content
         assert set(self._statuses(db_path).values()) == {"featured"}

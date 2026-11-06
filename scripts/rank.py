@@ -28,6 +28,7 @@ from db import (
     reset_unpublished_featured,
 )
 from llm import ContentFilterError, call_llm, ranker_config
+from llm_ids import alias_items, resolve_ids
 from models import ExitCode, RankDecision, ScoredItem, Section, Status
 
 logging.basicConfig(
@@ -211,8 +212,15 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     summary rather than vanishing).
     """
     try:
-        rankings = invoke_ranker(build_prompt(section, items, rubric), label=section)
-        return sanitize_rankings(rankings, {it["id"] for it in items}, section)
+        # The model sees short per-call aliases (i1…iN), not 64-hex ids, so a
+        # mis-copied id cannot demote a featured-grade item to the appendix.
+        aliased, alias_to_id = alias_items(items)
+        rankings = invoke_ranker(build_prompt(section, aliased, rubric), label=section)
+        resolved, unknown = resolve_ids(rankings, alias_to_id)
+        if unknown:
+            log.warning("%s: ranker returned %d ids it was not sent: %s",
+                        section, len(unknown), unknown[:3])
+        return sanitize_rankings(resolved, set(alias_to_id.values()), section)
     except ContentFilterError:
         if len(items) == 1:
             log.warning(

@@ -31,6 +31,7 @@ from db import (
     run_date,
 )
 from llm import ContentFilterError, call_llm, writer_config
+from llm_ids import alias_items, resolve_ids
 from models import AppendixItem, ExitCode, FeaturedItem, FrontmatterFeatured, Section
 
 logging.basicConfig(
@@ -331,54 +332,47 @@ def sanitize_writer_output(out) -> dict:
     return {"theme": _opt_str(out.get("theme")), "items": items}
 
 
-_DUP_SUFFIX = "_dup"
-_MAX_ID_HAMMING = 4
+def resolve_writer_output(out, alias_to_id: dict[str, str]):
+    """Map the aliases in a writer response back to real featured ids.
 
-
-def _hamming(a: str, b: str) -> int | None:
-    """Hamming distance of two equal-length strings; ``None`` if lengths differ."""
-    if len(a) != len(b):
-        return None
-    return sum(x != y for x, y in zip(a, b))
-
-
-def recover_writer_ids(featured_ids: list[str], items: list[dict]) -> list[dict]:
-    """Re-key writer entries whose id is a recognisable corruption of a featured id.
-
-    Two failure shapes seen in production are repaired, each with a warning:
-
-    * a ``_dup`` suffix on an otherwise valid featured id (only when no other
-      entry already carries that id);
-    * exactly one featured id missing and exactly one unknown id returned,
-      within ``_MAX_ID_HAMMING`` character edits (a typo when copying the
-      64-hex id).
-
-    Anything else is left untouched so :func:`assemble_issue` still fails
-    rather than publish a summary under the wrong item.
+    The id contract (aliases, ``_dup`` tolerance, unknown ids) lives in
+    ``llm_ids``; this only applies it to the writer's ``items`` array. A
+    response without a list ``items`` is returned unchanged for
+    :func:`sanitize_writer_output` to deal with. Entries whose id matches no
+    featured item are dropped with a warning, so :func:`assemble_issue` and
+    :func:`_unwritten` see only real ids and the item they would have
+    summarised counts as unwritten.
     """
-    featured_set = set(featured_ids)
-    present = {e["id"] for e in items}
-    fixed: list[dict] = []
-    for e in items:
-        base = e["id"].removesuffix(_DUP_SUFFIX)
-        if (e["id"] not in featured_set and base != e["id"]
-                and base in featured_set and base not in present):
-            log.warning("writer id %r: stripped %r suffix", e["id"], _DUP_SUFFIX)
-            present.add(base)
-            e = {**e, "id": base}
-        fixed.append(e)
+    if not isinstance(out, dict) or not isinstance(out.get("items"), list):
+        return out
+    items, unknown = resolve_ids(out["items"], alias_to_id)
+    if unknown:
+        log.warning("writer returned %d ids not in the featured set: %s",
+                    len(unknown), unknown[:3])
+    return {**out, "items": items}
 
-    seen = {e["id"] for e in fixed}
-    missing = [i for i in featured_ids if i not in seen]
-    unknown = [e["id"] for e in fixed if e["id"] not in featured_set]
-    if len(missing) == 1 and len(unknown) == 1:
-        dist = _hamming(missing[0], unknown[0])
-        if dist is not None and dist <= _MAX_ID_HAMMING:
-            log.warning("writer id %r re-keyed to %r (hamming %d)",
-                        unknown[0], missing[0], dist)
-            fixed = [{**e, "id": missing[0]} if e["id"] == unknown[0] else e
-                     for e in fixed]
-    return fixed
+
+def call_writer(
+    today: str,
+    featured: list[FeaturedItem],
+    appendix_by_section: dict[str, list[AppendixItem]],
+    metadata: dict,
+    prev: str | None,
+    rubric: str,
+    *,
+    save: bool = False,
+) -> dict:
+    """One writer call over ``featured``, with ids aliased in and resolved out.
+
+    ``save`` keeps the raw response at ``logs/<slug>/write.response.json``
+    (the daily run only; follow-ups and replays leave it alone).
+    """
+    aliased, alias_to_id = alias_items(featured)
+    payload = build_writer_input(today, aliased, appendix_by_section, metadata, prev)
+    raw = invoke_writer(build_writer_prompt(payload, rubric))
+    if save:
+        save_writer_response(raw)
+    return resolve_writer_output(raw, alias_to_id)
 
 
 # A writer that leaves out a few featured items is a flaky response; one that
@@ -388,13 +382,13 @@ MAX_DEMOTED_FRACTION = 0.2
 
 
 def _unwritten(featured: list[FeaturedItem], writer_output: dict) -> list[FeaturedItem]:
-    """Featured items with no usable summary in `writer_output` after id recovery.
+    """Featured items with no usable summary in `writer_output`.
 
-    Same matching :func:`assemble_issue` applies, so the two never disagree.
+    `writer_output` carries real ids (see :func:`resolve_writer_output`). Same
+    matching :func:`assemble_issue` applies, so the two never disagree.
     """
     out = sanitize_writer_output(writer_output)
-    items = recover_writer_ids([it["id"] for it in featured], out["items"])
-    have = {e["id"] for e in items if (e["summary"] or "").strip()}
+    have = {e["id"] for e in out["items"] if (e["summary"] or "").strip()}
     return [it for it in featured if it["id"] not in have]
 
 
@@ -413,17 +407,15 @@ def fill_missing_summaries(
         return writer_output
     log.warning("writer left out %d of %d featured items; asking again for just those",
                 len(missing), len(featured))
-    payload = build_writer_input(
-        today, missing, {s.value: [] for s in Section},
-        writer_metadata(missing, {}, None), None,
-    )
     try:
-        extra = invoke_writer(build_writer_prompt(payload, rubric))
+        extra = call_writer(
+            today, missing, {s.value: [] for s in Section},
+            writer_metadata(missing, {}, None), None, rubric,
+        )
     except (RuntimeError, ContentFilterError) as e:
         log.warning("follow-up writer call failed: %s", e)
         return writer_output
-    # Exact ids only: re-keying against this tiny set would pair a stray
-    # answer with whichever missing item is closest.
+    # Only the ids asked for: a stray answer must never land on another item.
     wanted = {it["id"] for it in missing}
     recovered = [e for e in sanitize_writer_output(extra)["items"]
                  if e["id"] in wanted and (e["summary"] or "").strip()]
@@ -480,8 +472,6 @@ def assemble_issue(
     out of the LLM's hands entirely.
     """
     writer_output = sanitize_writer_output(writer_output)
-    writer_output["items"] = recover_writer_ids(
-        [item["id"] for item in featured], writer_output["items"])
     # Map writer-output items by id for splicing.
     writer_items: dict[str, dict] = {}
     for entry in writer_output.get("items", []):
@@ -591,15 +581,13 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
         return None
 
     prev = find_previous_newsletter(today)
-    payload = build_writer_input(today, featured, appendix_by_section, metadata, prev)
 
     render = prompts.render_and_log if log_prompt else prompts.render
     rubric = render("write", EDITION, template_path=PROMPT_PATH)
-    prompt = build_writer_prompt(payload, rubric)
 
     if featured:
-        writer_output = invoke_writer(prompt)
-        save_writer_response(writer_output)
+        writer_output = call_writer(
+            today, featured, appendix_by_section, metadata, prev, rubric, save=True)
         writer_output = fill_missing_summaries(today, featured, writer_output, rubric)
         featured, appendix_by_section, metadata = demote_unwritten(
             conn, featured, appendix_by_section, metadata, writer_output)

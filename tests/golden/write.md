@@ -14,7 +14,7 @@ You do **not** emit URLs, titles, scores, tags, source labels, or appendix data.
   "reader_profile": "...",
   "featured": [
     {
-      "id": "<sha256 hash>",
+      "id": "<short label such as i1>",
       "section": "papers" | "news" | "blogs",
       "source": "rss:simonw" | "arxiv:..." | "gh:owner/repo" | "hn:..." | ...,
       "url": "https://...",
@@ -42,7 +42,7 @@ The featured list is sorted descending by score within each section. Render in i
   "theme": "Front-page card copy in two parts: a lede (1-2 sentences introducing 1-2 featured items in plain framing) plus a territory sentence (gesturing at what else is in the issue without naming systems). ~60 words. May be null only when fewer than 3 featured items exist.",
   "items": [
     {
-      "id": "<exact id from the input item>",
+      "id": "<the id of the input item, e.g. i1>",
       "summary": "60-90 word prose summary in your editorial voice.",
       "takeaway": "One sentence with a concrete thing the reader should consider, or null.",
       "open_question": "One sentence with a real unresolved question the work surfaces, or null."
@@ -54,7 +54,7 @@ The featured list is sorted descending by score within each section. Render in i
 
 ### Output rules
 
-- The `items` array must contain exactly one entry per featured input item, with `id` matching the input verbatim. No extras, no merges, no skips.
+- The `items` array must contain exactly one entry per featured input item, with `id` copied exactly from the input item (a short label such as `i1`, with no suffix or change). No extras, no merges, no skips.
 - For each item, set **at most one** of `takeaway` and `open_question`. The other must be `null`. Both being `null` is also fine if neither fits — silence is preferable to padding.
 - `theme`: two-part front-page card copy — a lede (1-2 sentences framing 1-2 featured items plainly, for a cold reader) plus a territory sentence (gesturing at the rest of the day by kinds of work, not system names). ~60 words total. It is **not** a category label, **not** a meta-narrative about the field, **not** a run-on list of system names, and **not** a framing of "today's items focus on X." See the "Theme" section below.
 - Do not include any markdown formatting in the JSON values beyond what's natural to prose (occasional `inline code`, `**bold**` for proper emphasis, links written as `[text](url)` only if you're citing something *from the input's `raw_text`*; do not invent URLs).

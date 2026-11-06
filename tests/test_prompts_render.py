@@ -2,7 +2,7 @@
 
 The regression guard for issue #300: rendering the `agents` edition must
 reproduce the pre-extraction prompts/rank.md and prompts/write.md byte for byte
-(tests/golden/*.md are verbatim copies of those files).
+(tests/golden/*.md are copies of those files, updated only for the id-alias wording, #586).
 """
 from pathlib import Path
 
