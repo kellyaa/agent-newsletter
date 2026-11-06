@@ -179,8 +179,8 @@ class TestRankMainIdempotentResume:
         """Items no longer in 'candidate' status are not loaded from DB."""
         import db as db_mod
         conn = db_mod.connect(db_path)
-        # One item already ranked (featured), one still candidate
-        _insert_candidate(conn, "done", section="papers", status="featured")
+        # One item already ranked (appendix), one still candidate
+        _insert_candidate(conn, "done", section="papers", status="appendix")
         _insert_candidate(conn, "todo", section="papers", status="candidate")
         conn.close()
 
@@ -201,7 +201,7 @@ class TestRankMainIdempotentResume:
         """If all items are already past candidate status, main() exits cleanly."""
         import db as db_mod
         conn = db_mod.connect(db_path)
-        _insert_candidate(conn, "done1", section="papers", status="featured")
+        _insert_candidate(conn, "done1", section="papers", status="appendix")
         _insert_candidate(conn, "done2", section="news", status="appendix")
         conn.close()
 
@@ -324,3 +324,61 @@ class TestRankMainTimesCompeted:
         assert len(featured_items) == cap
         for pid in featured_items:
             assert rows[pid]["times_competed"] == 0  # gated on status='candidate'
+
+
+# ---------------------------------------------------------------------------
+# main() — a retry after a failed run must not grow the featured set (#587)
+# ---------------------------------------------------------------------------
+
+class TestRankMainRetryAfterFailedRun:
+    def test_second_run_sees_same_featured_set(self, db_path, prompt_path, monkeypatch):
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        for i in range(4):
+            _insert_candidate(conn, f"n{i}", section="news")
+        conn.close()
+
+        def ranker(prompt, label):
+            sent = json.loads(prompt.split("```json\n")[1].split("\n```")[0])
+            return [{"id": it["id"], "score": 9, "tags": [], "why": "ok"} for it in sent]
+
+        def featured_ids():
+            conn = db_mod.connect(db_path)
+            rows = conn.execute("SELECT id FROM items WHERE status='featured'").fetchall()
+            conn.close()
+            return sorted(r["id"] for r in rows)
+
+        with patch("rank.invoke_ranker", side_effect=ranker):
+            _run_main(db_path, prompt_path, monkeypatch)
+            first = featured_ids()
+            # write failed, nothing published; a new candidate arrives, then retry
+            conn = db_mod.connect(db_path)
+            _insert_candidate(conn, "n_new", section="news")
+            conn.close()
+            _run_main(db_path, prompt_path, monkeypatch)
+        second = featured_ids()
+        assert len(first) == 4
+        assert len(second) == 5  # same per-section cap applies; it did not pile up to 9
+        assert second == sorted(set(second))
+
+    def test_published_items_are_left_alone(self, db_path, prompt_path, monkeypatch):
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_candidate(conn, "old", section="news", status="published", score=9)
+        _insert_candidate(conn, "stale", section="news", status="featured", score=9)
+        _insert_candidate(conn, "n1", section="news")
+        conn.close()
+        sent = []
+
+        def ranker(prompt, label):
+            items = json.loads(prompt.split("```json\n")[1].split("\n```")[0])
+            sent.extend(it["id"] for it in items)
+            return [{"id": it["id"], "score": 1, "tags": [], "why": "low"} for it in items]
+
+        with patch("rank.invoke_ranker", side_effect=ranker):
+            _run_main(db_path, prompt_path, monkeypatch)
+        conn = db_mod.connect(db_path)
+        rows = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM items")}
+        conn.close()
+        assert sorted(sent) == ["n1", "stale"]
+        assert rows["old"] == "published"

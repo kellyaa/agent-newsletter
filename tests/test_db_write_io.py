@@ -86,3 +86,22 @@ def test_write_has_no_inline_execute():
         and node.func.attr in {"execute", "executemany", "executescript"}
     ]
     assert calls == [], f"move new write SQL into db.py helpers: lines {calls}"
+
+
+def test_demote_featured_to_appendix_only_moves_featured(conn):
+    _add(conn, "f1", Status.FEATURED, score=9)
+    _add(conn, "f2", Status.FEATURED, score=9)
+    _add(conn, "p", Status.PUBLISHED, score=9)
+    assert db_mod.demote_featured_to_appendix(conn, ["f1", "p"]) == 1
+    assert db_mod.demote_featured_to_appendix(conn, []) == 0
+    got = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM items")}
+    assert got == {"f1": "appendix", "f2": "featured", "p": "published"}
+
+
+def test_reset_unpublished_featured_clears_scores(conn):
+    _add(conn, "f1", Status.FEATURED, score=9)
+    _add(conn, "a", Status.APPENDIX, score=5)
+    _add(conn, "p", Status.PUBLISHED, score=9)
+    assert db_mod.reset_unpublished_featured(conn) == 1
+    rows = {r["id"]: (r["status"], r["score"]) for r in conn.execute("SELECT id, status, score FROM items")}
+    assert rows == {"f1": ("candidate", None), "a": ("appendix", 5), "p": ("published", 9)}
