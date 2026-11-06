@@ -6,6 +6,7 @@ This directory contains comprehensive guides for operating, extending, and under
 
 ### I want to…
 
+- **Look up a command** → [command-reference.md](command-reference.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
@@ -77,6 +78,7 @@ This directory contains comprehensive guides for operating, extending, and under
 
 | Document | Purpose |
 |----------|---------|
+| [command-reference.md](command-reference.md) | Quick lookup for all pipeline, testing, operational commands and environment variables |
 | [../SPEC.md](../SPEC.md) | High-level design and component architecture; canonical reference |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributing workflow, PR naming, branch model, hold-label policy |
 | [../AGENTS.md](../AGENTS.md) | Instructions for AI coding agents (permissions, constraints, rules) |
