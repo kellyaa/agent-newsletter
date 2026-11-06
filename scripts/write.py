@@ -24,12 +24,13 @@ from db import (
     REPO_ROOT,
     connect,
     count_items_seen_on,
+    demote_featured_to_appendix,
     init_db,
     load_appendix_items,
     load_featured_items,
     run_date,
 )
-from llm import call_llm, writer_config
+from llm import ContentFilterError, call_llm, writer_config
 from models import AppendixItem, ExitCode, FeaturedItem, FrontmatterFeatured, Section
 
 logging.basicConfig(
@@ -380,6 +381,91 @@ def recover_writer_ids(featured_ids: list[str], items: list[dict]) -> list[dict]
     return fixed
 
 
+# A writer that leaves out a few featured items is a flaky response; one that
+# leaves out many is a broken one. Demote up to this share of the featured set
+# to the appendix; above it, fail the stage (#587).
+MAX_DEMOTED_FRACTION = 0.2
+
+
+def _unwritten(featured: list[FeaturedItem], writer_output: dict) -> list[FeaturedItem]:
+    """Featured items with no usable summary in `writer_output` after id recovery.
+
+    Same matching :func:`assemble_issue` applies, so the two never disagree.
+    """
+    out = sanitize_writer_output(writer_output)
+    items = recover_writer_ids([it["id"] for it in featured], out["items"])
+    have = {e["id"] for e in items if (e["summary"] or "").strip()}
+    return [it for it in featured if it["id"] not in have]
+
+
+def fill_missing_summaries(
+    today: str, featured: list[FeaturedItem], writer_output: dict, rubric: str
+) -> dict:
+    """Ask the writer once more for only the featured items it left out.
+
+    Returns `writer_output` with any recovered entries appended. A failed
+    follow-up call is logged and ignored: the caller still has the demote path.
+    Only the ids asked for are accepted, so the follow-up can never put a
+    summary under the wrong item.
+    """
+    missing = _unwritten(featured, writer_output)
+    if not missing:
+        return writer_output
+    log.warning("writer left out %d of %d featured items; asking again for just those",
+                len(missing), len(featured))
+    payload = build_writer_input(
+        today, missing, {s.value: [] for s in Section},
+        writer_metadata(missing, {}, None), None,
+    )
+    try:
+        extra = invoke_writer(build_writer_prompt(payload, rubric))
+    except (RuntimeError, ContentFilterError) as e:
+        log.warning("follow-up writer call failed: %s", e)
+        return writer_output
+    # Exact ids only: re-keying against this tiny set would pair a stray
+    # answer with whichever missing item is closest.
+    wanted = {it["id"] for it in missing}
+    recovered = [e for e in sanitize_writer_output(extra)["items"]
+                 if e["id"] in wanted and (e["summary"] or "").strip()]
+    base = sanitize_writer_output(writer_output)
+    return {"theme": base["theme"], "items": base["items"] + recovered}
+
+
+def demote_unwritten(
+    conn,
+    featured: list[FeaturedItem],
+    appendix_by_section: dict[str, list[AppendixItem]],
+    metadata: dict,
+    writer_output: dict,
+) -> tuple[list[FeaturedItem], dict[str, list[AppendixItem]], dict]:
+    """Move featured items the writer still has no summary for to the appendix.
+
+    Each is logged as a WARNING and moved in the DB too, so publish does not
+    count it as featured. Nothing is demoted when more than
+    ``MAX_DEMOTED_FRACTION`` of the featured set is missing: that points to a
+    broken response, and :func:`assemble_issue` then fails the stage. A demoted
+    item appears as title + link only, never with a made-up summary (#540).
+    """
+    missing = _unwritten(featured, writer_output)
+    if not missing or len(missing) > MAX_DEMOTED_FRACTION * len(featured):
+        return featured, appendix_by_section, metadata
+    gone = {it["id"] for it in missing}
+    for it in missing:
+        log.warning("demoting featured item to appendix, writer gave no summary: %s %r",
+                    it["id"], it["title"])
+    demote_featured_to_appendix(conn, sorted(gone))
+    kept = [it for it in featured if it["id"] not in gone]
+    appendix = {sec: list(items) for sec, items in appendix_by_section.items()}
+    for it in missing:
+        appendix.setdefault(it["section"], []).append(AppendixItem(
+            id=it["id"], section=it["section"], source=it["source"],
+            url=it["url"], title=it["title"],
+        ))
+    for items in appendix.values():
+        items.sort(key=lambda a: a["id"])
+    return kept, appendix, writer_metadata(kept, appendix, metadata["items_considered"])
+
+
 def assemble_issue(
     today: str,
     featured: list[FeaturedItem],
@@ -514,6 +600,9 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
     if featured:
         writer_output = invoke_writer(prompt)
         save_writer_response(writer_output)
+        writer_output = fill_missing_summaries(today, featured, writer_output, rubric)
+        featured, appendix_by_section, metadata = demote_unwritten(
+            conn, featured, appendix_by_section, metadata, writer_output)
     else:
         # Edge case: zero featured items but appendix non-empty. Skip the LLM
         # entirely; the issue page can still render an appendix-only digest.

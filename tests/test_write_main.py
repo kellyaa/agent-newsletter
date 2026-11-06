@@ -235,3 +235,85 @@ class TestWriteMainRunDate:
         with patch("write.invoke_writer"):
             assert _run_main(db_path, issues_dir, prompt_file, monkeypatch) == 0
         assert [p.name for p in issues_dir.glob("*.md")] == ["2026-06-01.md"]
+
+
+class TestSilentWriterDrops:
+    """#587: a few dropped featured summaries must not fail the edition."""
+
+    @staticmethod
+    def _seed(db_path, n):
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        ids = [f"f{i}" for i in range(n)]
+        for i in ids:
+            _insert_featured(conn, i)
+        conn.close()
+        return ids
+
+    @staticmethod
+    def _out(ids):
+        return {"theme": "t", "items": [{"id": i, "summary": f"S {i}."} for i in ids]}
+
+    def _statuses(self, db_path):
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        rows = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM items")}
+        conn.close()
+        return rows
+
+    def test_follow_up_call_recovers_dropped_ids(self, db_path, issues_dir, prompt_file, monkeypatch):
+        ids = self._seed(db_path, 10)
+        calls = []
+
+        def fake(prompt):
+            calls.append(prompt)
+            return self._out(ids[:9]) if len(calls) == 1 else self._out(ids[9:])
+
+        with patch("write.invoke_writer", side_effect=fake):
+            _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        assert len(calls) == 2
+        assert '"id": "f9"' in calls[1] and '"id": "f0"' not in calls[1]
+        content = (issues_dir / f"{date.today().isoformat()}.md").read_text()
+        assert "S f9." in content
+        assert set(self._statuses(db_path).values()) == {"featured"}
+
+    def test_still_missing_items_are_demoted_with_warning(
+        self, db_path, issues_dir, prompt_file, monkeypatch, caplog
+    ):
+        ids = self._seed(db_path, 10)
+        with patch("write.invoke_writer", return_value=self._out(ids[:9])):
+            with caplog.at_level("WARNING", logger="write"):
+                _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        content = (issues_dir / f"{date.today().isoformat()}.md").read_text()
+        assert "S f8." in content
+        assert "S f9." not in content
+        assert "id: f9" in content or "f9" in content  # present as appendix entry
+        assert "items_featured_total: 9" in content
+        assert self._statuses(db_path)["f9"] == "appendix"
+        assert any("demoting" in r.message and "f9" in r.message for r in caplog.records)
+
+    def test_follow_up_cannot_key_summary_to_unrequested_item(
+        self, db_path, issues_dir, prompt_file, monkeypatch
+    ):
+        ids = self._seed(db_path, 10)
+        answers = [self._out(ids[:9]), self._out(["f0"])]  # follow-up answers the wrong id
+        with patch("write.invoke_writer", side_effect=answers):
+            _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        content = (issues_dir / f"{date.today().isoformat()}.md").read_text()
+        assert content.count("summary: \"S f0.\"") == 1
+        assert "S f9." not in content
+
+    def test_follow_up_failure_still_demotes(self, db_path, issues_dir, prompt_file, monkeypatch):
+        ids = self._seed(db_path, 10)
+        answers = [self._out(ids[:9]), RuntimeError("boom")]
+        with patch("write.invoke_writer", side_effect=answers):
+            _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        assert self._statuses(db_path)["f9"] == "appendix"
+
+    def test_too_many_missing_fails_the_stage(self, db_path, issues_dir, prompt_file, monkeypatch):
+        ids = self._seed(db_path, 10)
+        with patch("write.invoke_writer", return_value=self._out(ids[:7])):
+            with pytest.raises(RuntimeError, match="missing summaries for 3 of 10"):
+                _run_main(db_path, issues_dir, prompt_file, monkeypatch)
+        assert not list(issues_dir.glob("*.md"))
+        assert set(self._statuses(db_path).values()) == {"featured"}
