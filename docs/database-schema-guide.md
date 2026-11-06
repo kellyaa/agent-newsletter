@@ -106,6 +106,27 @@ Records every run, including failed ones. Helps diagnose repeated failures.
 | `tokens_out` | INTEGER | Output tokens |
 | `notes` | TEXT | Notes on the attempt (error details, model info, etc.) |
 
+#### `source_fetch_outcomes` — Per-source result of each fetch run
+One row per source per fetch run, written by `scripts/fetch.py` (issue #572). A source that returns zero items still gets a row, so a dead feed is distinguishable from a quiet one. Re-running fetch for the same day replaces that day's row. Rows older than 90 days are pruned at the end of each fetch.
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `run_date` | TEXT | Run date (`RUN_DATE`) |
+| `label` | TEXT | Collector label, `<family>/<source id>` (`gh/<owner>/<repo>` for releases); with `run_date` the primary key |
+| `family` | TEXT | `rss`, `arxiv`, `hn`, `reddit`, `html` or `gh` |
+| `source_id` | TEXT | The source's `id` in `sources.yaml` |
+| `items_seen` | INTEGER | Items the collector returned (0 on error) |
+| `items_new` | INTEGER | Items not already in `items` |
+| `error` | TEXT | `ExceptionType: message` when the collector raised, else NULL |
+| `fetched_at` | TIMESTAMP | When the source was fetched |
+
+```bash
+# Sources that returned nothing in the latest fetch
+sqlite3 editions/<slug>/state.db \
+  "SELECT label, error FROM source_fetch_outcomes \
+   WHERE run_date = (SELECT MAX(run_date) FROM source_fetch_outcomes) AND items_seen = 0"
+```
+
 #### `topics_covered` — Reserved for cross-day dedup
 Schema exists but **not currently used** (issue #4). Reserved for future topic-level dedup so "5th take on DSPy 2.5" can be down-weighted if already featured.
 
