@@ -35,6 +35,7 @@ pnpm --prefix site install && pnpm --prefix site build
 - URL policy (http(s) allowlist, canonicalization, item ids, reddit feed URL) lives in `scripts/urls.py`; do not re-implement it inline (`tests/test_url_policy_single_source.py` enforces this).
 - Ranker scoring (per-section LLM calls, content-filter bisection, output sanitising, thresholds/caps, unscored → appendix fallback) lives in `rank.score_candidates`; `rank.main` and `backfill.rank_with_optional_llm` both call it and must not orchestrate `invoke_ranker`/`rank_section`/`assign_statuses` themselves (`tests/test_rank_scoring_single_source.py` enforces this).
 - LLM role settings (`WRITER_*` / `RANKER_*` model, timeout, token cap and their defaults) are read only by `llm.writer_config()` / `llm.ranker_config()`; do not read them from the environment elsewhere (`tests/test_llm_role_config.py` enforces this).
+- The ids an LLM echoes back are short per-call aliases (`i1…iN`); aliasing, `_dup` tolerance and unknown-id handling live in `scripts/llm_ids.py`. `rank.py` and `write.py` call `alias_items`/`resolve_ids` and must not parse LLM ids themselves (`tests/test_llm_ids_single_source.py` enforces this).
 - Edition behaviour comes from `editions/<slug>/` config, never from hard-coded slugs in code.
 - A new script or documented path must be reflected in `README.md` / `CONTRIBUTING.md` (`tests/test_docs_paths.py` enforces this).
 - A PR labelled `hold` (or `on-hold` / `do-not-merge`) must not be merged until a human removes the label. Never remove it yourself.

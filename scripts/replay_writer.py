@@ -32,11 +32,9 @@ from write import (  # noqa: E402
     EDITION,
     ISSUES_DIR,
     PROMPT_PATH,
-    build_writer_input,
-    build_writer_prompt,
+    call_writer,
     featured_item_from_row,
     find_previous_newsletter,
-    invoke_writer,
     writer_metadata,
 )
 
@@ -134,12 +132,8 @@ def main() -> int:
     )
 
     prev = find_previous_newsletter(date)
-    payload = build_writer_input(date, featured, appendix_by_section, metadata, prev)
-
     rubric = prompts.render("write", EDITION, template_path=PROMPT_PATH)
-    prompt = build_writer_prompt(payload, rubric)
-
-    writer_output = invoke_writer(prompt)
+    writer_output = call_writer(date, featured, appendix_by_section, metadata, prev, rubric)
 
     out_path = EDITION.paths().logs / f"theme-replay-{date}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)

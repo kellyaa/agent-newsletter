@@ -92,8 +92,9 @@ class TestRankSectionContentFilter:
         def fake_invoke(prompt: str, label: str):
             if "t2" in prompt:
                 raise ContentFilterError("blocked")
-            ids = [f"i{k}" for k in range(4) if f"t{k}" in prompt]
-            return [{"id": i, "score": 6, "tags": [], "why": "ok"} for i in ids]
+            # The prompt carries per-call aliases (i1…), not the real ids.
+            sent = json.loads(prompt.split("```json\n")[1].split("\n```")[0])
+            return [{"id": it["id"], "score": 6, "tags": [], "why": "ok"} for it in sent]
 
         with patch("rank.invoke_ranker", side_effect=fake_invoke):
             out = rank_section("blogs", self._items(4), "rubric")

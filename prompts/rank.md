@@ -47,7 +47,7 @@ Return a single JSON object with a `rankings` array — no prose, no markdown, n
 {
   "rankings": [
     {
-      "id": "<exact id from input>",
+      "id": "<the item's id from the input, e.g. i3>",
       "score": <integer 0-10>,
       "tags": ["tag1", "tag2"],
       "why": "one sentence explaining the score"
@@ -57,7 +57,7 @@ Return a single JSON object with a `rankings` array — no prose, no markdown, n
 }
 ```
 
-`rankings` must include exactly one entry per input item. Do not add items, do not skip items, do not merge near-duplicates. The `id` must match the input verbatim.
+`rankings` must include exactly one entry per input item. Do not add items, do not skip items, do not merge near-duplicates. Each item's `id` is a short label such as `i1`; copy it exactly, with no suffix or change.
 
 ## Anti-patterns to avoid
 

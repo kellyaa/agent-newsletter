@@ -97,7 +97,7 @@ class TestReplayWriterMainNormal:
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
         mock_output = {"theme": "Test theme", "items": [{"id": "feat1", "summary": "s"}]}
-        with patch("replay_writer.invoke_writer", return_value=mock_output) as mock_writer:
+        with patch("write.invoke_writer", return_value=mock_output) as mock_writer:
             result = rw.main()
         assert result == 0
         mock_writer.assert_called_once()
@@ -124,7 +124,7 @@ class TestReplayWriterMainNormal:
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
         mock_output = {"theme": "My theme", "items": [{"id": "feat1", "summary": "ok"}]}
-        with patch("replay_writer.invoke_writer", return_value=mock_output):
+        with patch("write.invoke_writer", return_value=mock_output):
             rw.main()
         import edition
         log_path = edition.LOGS_ROOT / "agents" / "theme-replay-2026-06-01.json"
