@@ -10,11 +10,11 @@ Planning artifact from the strategist agent. It proposes priorities and is not a
 
 ## Near term
 
-1. **Writer failures drop a whole edition (#579).** Since the write stage began failing when a featured item has no writer summary (follow-up to #540), the `agents` edition failed all 5 attempts on 2026-11-06 and published no issue. The writer drops or mis-keys one 64-hex id per call, and each re-run features more items, so retries get less likely to succeed. The issue proposes recovering mis-keyed ids, retrying only the missing items, demoting to the appendix instead of aborting, and making re-runs idempotent. This is the highest priority: it is a live outage, and the `MISSED:` check from item 3 would flag it only after the fact.
+1. **One LLM id contract for rank and write (#586).** The writer outage in #579 is fixed: #584 re-keys mis-copied ids, #585 single-sourced the rank scoring core, and #588 recovers or demotes dropped summaries and stops failed re-runs from growing the featured set. What remains is the duplicated id handling. Both stages make the model copy 64-hex ids, but only the writer recovers mis-keys. In the ranker, a typo silently moves a featured-grade paper to the appendix with score 0. #586 proposes short per-call aliases (`i1…iN`) with one shared helper for aliasing and resolving, and an AST guard so neither stage parses LLM ids itself. It is the next hardening step, and it fits after #584 and #585, which have landed.
 2. **Cost visibility, not a cap.** The maintainer decided on #438 not to cap costs for now, so `BUDGET_USD` stays unenforced. `runs.cost_usd` is still NULL: the PR that would write it (#441) was closed without merging, so pricing is done downstream from `runs.tokens_in` / `tokens_out`. `docs/environment-configuration-reference.md` now says `MODEL_PRICES_USD` is not implemented (#549). #438 and #444 are closed. Reviving #441 would need a new issue.
-3. **Detect missed days and dead sources.** `scripts/watchdog.sh --check` prints `MISSED:` lines (#532, via `scripts/missed_days.py`). Dead sources are not yet recorded per fetch, so a dead feed looks like a quiet one. The maintainer approved the fix (recording per-source health, with a default "dead" threshold and an optional per-source override in `sources.yaml`). #572 tracks it as two PRs, in order: record a per-source outcome row on every fetch (including zero-item sources), then add a `DEAD:` line to `scripts/watchdog.sh --check`. The root `watchdog.sh` still notifies only through macOS `osascript`.
+3. **Detect missed days and dead sources (#572).** `scripts/watchdog.sh --check` prints `MISSED:` lines (#532, via `scripts/missed_days.py`). Dead sources are not yet recorded per fetch, so a dead feed looks like a quiet one. The maintainer approved the fix (recording per-source health, with a default "dead" threshold and an optional per-source override in `sources.yaml`). #572 tracks it as two PRs, in order: record a per-source outcome row on every fetch (including zero-item sources), then add a `DEAD:` line to `scripts/watchdog.sh --check`. The root `watchdog.sh` still notifies only through macOS `osascript`.
 
-Done since the last revision: the Astro 5 to 7 upgrade (#570, clears the `pnpm-audit` findings); the `pnpm-audit` job in `.github/workflows/security.yml` no longer has `continue-on-error`; the `content` branch rulesets (#537, verified by a maintainer); the ACMM L6 checklist issues (#509, #510, #511, #512, #515, #517 are all closed).
+Done since the last revision: the Astro 5 to 7 upgrade (#570, clears the `pnpm-audit` findings); the `pnpm-audit` job in `.github/workflows/security.yml` no longer has `continue-on-error`; the `content` branch rulesets (#537, verified by a maintainer); the ACMM L6 checklist issues (#509, #510, #511, #512, #515, #517 are all closed); the writer outage fixes (#579 via #584, #585, #588).
 
 ## Needs a maintainer decision
 
@@ -24,7 +24,7 @@ Done since the last revision: the Astro 5 to 7 upgrade (#570, clears the `pnpm-a
 ## Mid term
 
 - **Edition-count readiness.** Total run time is the sum of the editions' times (editions are not parallel). Decide at what edition count this needs attention, using measured per-edition wall time.
-- **Per-edition cost visibility.** The repository records no per-edition cost today (`docs/multi-edition-operations.md`). This follows from item 1 above.
+- **Per-edition cost visibility.** The repository records no per-edition cost today (`docs/multi-edition-operations.md`). This follows from item 2 above.
 
 ## Open questions for maintainers
 
