@@ -190,46 +190,20 @@ def age_out_for_synthetic_date(conn, target_date: str) -> int:
 
 
 def rank_with_optional_llm(conn, candidates: dict) -> dict:
-    """Rank candidates using rank.py's public functions.
+    """Rank candidates through rank.score_candidates, the daily run's core.
 
     Delegates to the canonical rank module instead of reimplementing the
-    scoring/status-assignment logic. This ensures threshold changes, burst-cap
-    policies, and valid-tag sets stay in sync automatically.
+    scoring/status-assignment logic, so the sandbox run gets the same
+    content-filter bisection, per-section failure isolation, output
+    sanitising, thresholds/caps and unscored -> appendix fallback as the
+    daily run. Usually no LLM call happens: on a missed-day backfill the
+    candidates are typically all prescored from prior runs.
     """
     import prompts
     import rank as rank_mod
-    from candidates import PAPERS_PRESCORED
 
-    scored_by_section: dict[str, list[dict]] = {s.value: [] for s in Section}
-
-    # Prescored papers: pass through with cached scores (no LLM needed).
-    for it in candidates.get(PAPERS_PRESCORED, []):
-        scored_by_section[Section.PAPERS].append({
-            "id": it["id"],
-            "score": it["score"],
-            "tags": it.get("tags", []),
-            "why": it.get("why", ""),
-        })
-
-    # Any section with unscored items needs the LLM.
     rubric = prompts.render("rank", rank_mod.EDITION, template_path=rank_mod.PROMPT_PATH)
-    for section in Section:
-        items = candidates.get(section, [])
-        if not items:
-            continue
-        log.info("invoking ranker LLM for %s (%d unscored)", section, len(items))
-        prompt = rank_mod.build_prompt(section, items, rubric)
-        scored = rank_mod.invoke_ranker(prompt, label=section)
-        # Same validation rank.rank_section applies: drop malformed, unknown
-        # or duplicate entries so they can't crash assign_statuses or take a
-        # featured slot.
-        scored = rank_mod.sanitize_rankings(
-            scored, {it["id"] for it in items}, section,
-        )
-        scored_by_section[section].extend(scored)
-
-    # Use rank.py's assign_statuses for threshold/cap logic.
-    decisions = rank_mod.assign_statuses(scored_by_section)
+    decisions = rank_mod.score_candidates(candidates, rubric)
 
     # Persist using rank.py's persist function.
     counts = rank_mod.persist(conn, decisions)

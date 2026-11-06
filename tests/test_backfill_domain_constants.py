@@ -73,10 +73,16 @@ def test_rank_with_optional_llm_ranks_every_models_section(monkeypatch):
     candidates = {s.value: [{"id": f"{s.value}-1"}] for s in Section}
     candidates["papers_prescored"] = [{"id": "pp", "score": 7}]
 
-    assert backfill.rank_with_optional_llm(None, candidates) == {}
+    decisions = backfill.rank_with_optional_llm(None, candidates)
     assert invoked == [s.value for s in Section]
     assert set(captured) == {s.value for s in Section}
-    assert [it["id"] for it in captured[Section.PAPERS]] == ["pp", "papers-1"]
+    assert sorted(it["id"] for it in captured[Section.PAPERS]) == ["papers-1", "pp"]
+    # fake_assign decided nothing, so every candidate takes the shared
+    # unscored -> appendix fallback, keyed by its models.Section.
+    assert {iid: d["section"] for iid, d in decisions.items()} == {
+        **{f"{s.value}-1": s.value for s in Section}, "pp": Section.PAPERS.value,
+    }
+    assert {d["status"] for d in decisions.values()} == {Status.APPENDIX}
 
 
 @pytest.mark.parametrize("section", list(Section))
