@@ -51,7 +51,9 @@ export function main(argv) {
     return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : dflt;
   };
   const labels = argv.flatMap((a, i) => (a === "--label" && argv[i + 1] ? [argv[i + 1]] : []));
-  const file = argv.find((a) => !a.startsWith("--"));
+  // Skip option values so `--repo o/n backlog.md` finds the file, not `o/n`.
+  const valued = new Set(["--repo", "--label"]);
+  const file = argv.find((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
   if (!file) {
     console.error(
       "usage: node scripts/generate-issues.mjs <backlog.md> [--repo owner/name] [--label <label>]… [--create]",

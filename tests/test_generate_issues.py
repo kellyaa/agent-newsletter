@@ -82,6 +82,21 @@ def test_dry_run_prints_plan_and_skips_open(tmp_path):
     assert not log.exists()  # dry run never creates
 
 
+def test_options_before_backlog_file(tmp_path):
+    backlog = tmp_path / "backlog.md"
+    backlog.write_text(BACKLOG)
+    gh_dir = tmp_path / "bin"
+    gh_dir.mkdir()
+    _stub_gh_with_open(gh_dir, [])
+    env = {**os.environ, "PATH": f"{gh_dir}:{os.environ['PATH']}"}
+    r = subprocess.run(
+        ["node", str(SCRIPT), "--repo", "kellyaa/agent-newsletter", "--label", "x", str(backlog)],
+        cwd=tmp_path, capture_output=True, text=True, env=env,
+    )
+    assert r.returncode == 0, r.stderr
+    assert "would create:" in r.stdout
+
+
 def _stub_gh_with_open(dir_: Path, titles: list[str]) -> Path:
     """A fake `gh` answering `issue list` with `titles`; `issue create` logs its argv."""
     log = dir_.parent / "gh-calls.log"
