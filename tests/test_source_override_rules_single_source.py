@@ -109,3 +109,13 @@ def test_new_edition_scaffolds_models_reddit_default(monkeypatch, value):
         sleep=lambda _s: None)
     assert dropped == []
     assert out["reddit"][0]["limit"] == REDDIT_DEFAULT_LIMIT
+
+
+@pytest.mark.parametrize("value", [0, -3, True, "5", 2.5])
+def test_lint_rejects_bad_dead_after_days(editions_dir, value):
+    """A dead_after_days dead_sources would discard is a lint error."""
+    dest = _clone_agents(editions_dir)
+    (dest / "sources.yaml").write_text(yaml.safe_dump(
+        {"rss": [{"id": "r", "name": "R", "url": "https://example.com/feed", "dead_after_days": value}]}))
+    assert any("dead_after_days must be a positive integer" in e
+               for e in check_edition.lint("demo").errors)

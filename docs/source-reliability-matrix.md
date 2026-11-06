@@ -4,9 +4,10 @@ What breaks in each kind of feed source, how it shows up, and what to do. It
 complements [adding-feed-sources-guide.md](adding-feed-sources-guide.md) (writing
 adapters) and [debugging-guide.md](debugging-guide.md) (whole-pipeline triage).
 
-**A note on numbers.** This repository does not record per-source uptime or latency,
-so this guide gives **no uptime percentages or SLAs**; any such figure would be a
-guess. What it gives is (a) the failure modes the code and project history document,
+**A note on numbers.** This repository records, per source and per fetch run, how many
+items were seen and any error (the `source_fetch_outcomes` table, kept 90 days), but
+no uptime percentages or latency, so this guide gives **no uptime percentages or
+SLAs**; any such figure would be a guess. What it gives is (a) the failure modes the code and project history document,
 (b) how each failure is surfaced, and (c) queries to measure reliability on your own
 data, section 6.
 
@@ -16,7 +17,12 @@ Understanding this tells you what a failure costs.
 
 - Each source runs inside its own try/except in `fetch.py:main()`. An exception is
   logged as `<family>/<id>: collector failed: ...` and counted in `errors=N`; the
-  other sources carry on.
+  other sources carry on. Either way, the source's outcome (items seen, items new,
+  error) is written to `source_fetch_outcomes`, including the zero-item case.
+- A feed that returns zero items without raising looks like a quiet one in the log.
+  `./scripts/watchdog.sh --check` prints `DEAD: <slug>/<source> no items for N days`
+  when every fetch in the last N days (default 7, or the source's `dead_after_days`)
+  saw zero items or failed. See `scripts/dead_sources.py`.
 - `fetch` exits 0 as long as at least one source produced items. It only fails (exit
   1) if **every** collector failed and nothing was seen. One dead source never stops
   an issue.
@@ -129,7 +135,17 @@ simply no longer refreshed. Commenting out is preferred over deleting, so the ne
 
 ## 6. Measuring reliability yourself
 
-Because nothing aggregates per-source health, derive it.
+The `DEAD:` line from `./scripts/watchdog.sh --check` (section 1) flags sources that
+have gone quiet. To measure further, derive it.
+
+**From the outcome table**, per-source history for the last 90 days:
+
+```bash
+sqlite3 editions/<slug>/state.db \
+  "SELECT label, COUNT(*) AS runs, SUM(error IS NOT NULL) AS failed,
+          SUM(items_seen = 0) AS empty, MAX(run_date) AS last_run
+   FROM source_fetch_outcomes GROUP BY label ORDER BY empty DESC, failed DESC"
+```
 
 **From the logs** (one edition, all retained days):
 

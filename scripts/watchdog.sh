@@ -31,6 +31,9 @@
 # day on which a draft/live edition has no run_attempts row at all (run.sh never
 # started, so there is no log to heal; scripts/missed_days.py, issue #519). It is
 # informational: it does not change STATUS or the exit code, and works off macOS.
+# Likewise one `DEAD: <slug>/<source> no items for N days` line per source whose
+# recorded fetches all came back empty or failed for N days (default 7, or the
+# source's `dead_after_days` in sources.yaml; scripts/dead_sources.py, #572).
 #
 # Paused editions are not checked. Per-edition logs are logs/<slug>/run-DATE.log
 # (written by scripts/run_edition.sh); a run is complete iff its log has DONE.
@@ -50,7 +53,7 @@ CHECK_ONLY=false
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=true ;;
-    -h|--help) sed -n '3,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '3,41p' "$0"; exit 0 ;;
     *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -96,6 +99,14 @@ MISSED_OUT="$("${PY_RUN[@]}" scripts/missed_days.py 2>/dev/null || true)"
 if [ -n "$MISSED_OUT" ]; then
   say "days with no run_attempts row (the scheduled run never started):"
   printf '%s\n' "$MISSED_OUT"
+fi
+
+# Sources whose fetches have come back empty for days. Same read-only,
+# informational contract as the MISSED: lines above.
+DEAD_OUT="$("${PY_RUN[@]}" scripts/dead_sources.py 2>/dev/null || true)"
+if [ -n "$DEAD_OUT" ]; then
+  say "sources with no items for days (silently dead feeds):"
+  printf '%s\n' "$DEAD_OUT"
 fi
 
 log_file() { echo "$REPO_ROOT/logs/$1/run-$DATE_TODAY.log"; }

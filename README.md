@@ -46,6 +46,7 @@ scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish �
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines
+scripts/dead_sources.py — lists sources whose fetches have come back empty or failed for days (`dead_after_days`, default 7); printed by `scripts/watchdog.sh` as `DEAD:` lines
 scripts/watchdog.sh     — self-heal wrapper for the daily run: re-runs `run.sh --edition …` for editions whose log lacks `DONE`; see "Self-heal watchdog" below (distinct from the root `watchdog.sh`)
 watchdog.sh             — fires macOS notification if the `content` branch has no successful `newsletter: <date> daily run` commit in >36h (see §Troubleshooting)
 launchd/                — plists + install.sh for the two daily/hourly jobs
@@ -318,6 +319,8 @@ Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier)
 | `STATUS: FAILED <date> <slug>:<stage> …` | worst-of: names each edition that failed and its stage | 1 |
 
 Before the `EDITION:` lines it also prints `MISSED: <slug> <date>` for each of the last 7 days (excluding today) on which a draft/live edition has **no `run_attempts` row**, i.e. `run.sh` never started, so there is no log to heal and `run.sh --failed` has nothing to re-run. These lines are informational (they do not change `STATUS:` or the exit code), need no `osascript`, and are read-only. Days before the edition's first recorded attempt are not reported. Run it alone with `uv run scripts/missed_days.py [--days N]` (exit 1 if any gap). A missed day cannot be regenerated faithfully, since a re-run only covers the current fetch window.
+
+It also prints `DEAD: <slug>/<source> no items for N days` for each source whose recorded fetches (`source_fetch_outcomes`) were all empty or failed for the last N days: 7 by default, or the source's `dead_after_days` in `sources.yaml` (slow publishers need it). A source with no recorded fetches is not reported, and a new source gets a grace period of N days. Same contract as `MISSED:` (informational, read-only, no `osascript`); run it alone with `uv run scripts/dead_sources.py [--days N]` (exit 1 if any).
 
 ```bash
 ./scripts/watchdog.sh          # check, and run the pipeline if needed

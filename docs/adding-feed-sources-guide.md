@@ -141,6 +141,7 @@ the page markup changes.
        url: https://example.com/feed.xml
        keyword_gate_bypass: true         # only for low-volume, hand-picked blogs
        recency_days: 90                  # only for slow publishers
+       dead_after_days: 90               # only for slow publishers (default 7)
    ```
 
 2. Check the feed yourself first: `curl -sI <url>` should return 200 with an XML
@@ -157,7 +158,9 @@ the page markup changes.
 4. Choose overrides deliberately (see the comments at the top of
    `editions/agents/sources.yaml`): `section:` (papers | news | blogs) when the
    family default is wrong; `keyword_gate_bypass: true` sparingly;
-   `recency_days:` for slow publishers.
+   `recency_days:` for slow publishers. A slow publisher also needs
+   `dead_after_days:` (default 7), or the watchdog reports it as `DEAD:` between
+   posts.
 
 ## 4. Job B: add a new adapter family
 
