@@ -94,6 +94,23 @@ def test_new_source_gets_a_grace_period_equal_to_its_threshold():
     assert not dead_sources.is_dead(rows, TODAY, 7)
 
 
+def test_window_is_exactly_the_last_n_days_today_included():
+    """days=3 covers today and the two days before it; a healthy day 3 ago is outside."""
+    rows = [(_day(0), False), (_day(1), False), (_day(2), False), (_day(3), True)]
+    assert dead_sources.is_dead(rows, TODAY, 3)
+
+
+def test_a_healthy_run_on_the_first_day_of_the_window_saves_the_source():
+    rows = [(_day(0), False), (_day(1), False), (_day(2), True)]
+    assert not dead_sources.is_dead(rows, TODAY, 3)
+
+
+def test_source_first_seen_exactly_threshold_days_ago_is_dead():
+    """The grace period ends once the first row is as old as the window's first day."""
+    rows = [(_day(n), False) for n in range(0, 3)]
+    assert dead_sources.is_dead(rows, TODAY, 3)
+
+
 def test_source_with_no_rows_in_the_window_is_not_dead():
     assert not dead_sources.is_dead([(_day(30), False)], TODAY, 7)
 
@@ -196,6 +213,13 @@ def test_main_days_sets_the_default_threshold(editions, capsys):
     _record(editions, "agents", "rss/quiet", {n: 0 for n in range(0, 4)})
     assert dead_sources.main(["--days", "3", "--today", TODAY.isoformat()]) == 1
     assert capsys.readouterr().out == "DEAD: agents/rss/quiet no items for 3 days\n"
+
+
+def test_main_accepts_a_one_day_threshold(editions, capsys):
+    """--days 1 is the smallest valid threshold: a source empty today is dead."""
+    _record(editions, "agents", "rss/quiet", {0: 0})
+    assert dead_sources.main(["--days", "1", "--today", TODAY.isoformat()]) == 1
+    assert capsys.readouterr().out == "DEAD: agents/rss/quiet no items for 1 days\n"
 
 
 def test_main_rejects_non_positive_days(editions):
