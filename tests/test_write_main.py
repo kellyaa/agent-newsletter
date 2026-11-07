@@ -70,7 +70,7 @@ def _insert_appendix(conn, item_id, section="blogs"):
 def _run_main(db_path, issues_dir, prompt_file, monkeypatch):
     import write as write_mod
     import db as db_mod
-    monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+    monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
     monkeypatch.setattr(write_mod, "PROMPT_PATH", prompt_file)
     monkeypatch.setattr(write_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(write_mod, "init_db", lambda: db_mod.init_db(db_path))
@@ -81,7 +81,7 @@ class TestWriteMainGuards:
     def test_returns_2_when_prompt_missing(self, db_path, issues_dir, tmp_path, monkeypatch):
         import write as write_mod
         import db as db_mod
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(write_mod, "PROMPT_PATH", tmp_path / "nonexistent.md")
         monkeypatch.setattr(write_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(write_mod, "init_db", lambda: db_mod.init_db(db_path))

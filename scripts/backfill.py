@@ -224,7 +224,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     """
     import write as write_mod
 
-    out_path = write_mod.ISSUES_DIR / f"{target_date}.md"
+    out_path = write_mod.issues_dir() / f"{target_date}.md"
     if out_path.exists() and not force:
         log.error(
             "%s already exists (%d bytes); pass --force to overwrite",
