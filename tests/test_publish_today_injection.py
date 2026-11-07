@@ -51,7 +51,7 @@ def wired(tmp_path, monkeypatch):
 
     issues = tmp_path / "issues"
     issues.mkdir()
-    monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues)
+    monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues)
     monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.delenv("LLM_USAGE_LOG", raising=False)

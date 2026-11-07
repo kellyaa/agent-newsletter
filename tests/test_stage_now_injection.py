@@ -45,7 +45,7 @@ def test_fetch_main_stamps_injected_now(tmp_path, monkeypatch):
         source="rss:blog", url="https://example.com/1", title="T",
         author=None, published_at=None, raw_text="body",
     )
-    monkeypatch.setattr(fetch_mod, "SOURCES_PATH", sources)
+    monkeypatch.setattr(fetch_mod, "sources_path", lambda: sources)
     monkeypatch.setattr(fetch_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(fetch_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setattr(fetch_mod, "fetch_rss", lambda src, **kw: [item])

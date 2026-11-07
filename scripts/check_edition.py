@@ -18,7 +18,6 @@ reported in the table but does not fail the check; networks are flaky).
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import shutil
 import sys
@@ -190,19 +189,12 @@ def lint(slug: str) -> LintResult:
 
 def dry_run(ed: Edition, sources: dict) -> list[SourceCount]:
     """Fetch every source into a throwaway DB and apply the recency + keyword gates."""
-    # fetch/db read their edition at import time, so select this one before
-    # importing them. The gates come from gates.py, which loads no edition, so
-    # the prefilter stage module is never imported here.
-    previous = os.environ.get("EDITION")
-    os.environ["EDITION"] = ed.slug
-    try:
-        import db
-        import fetch
-    finally:
-        if previous is None:
-            del os.environ["EDITION"]
-        else:
-            os.environ["EDITION"] = previous
+    # db and fetch resolve their edition at call time, and this function passes
+    # every path explicitly, so it needs no EDITION and never touches the
+    # environment. The gates come from gates.py, which loads no edition, so the
+    # prefilter stage module is never imported here.
+    import db
+    import fetch
 
     keyword_re = ed.keyword_re()
     now = datetime.now(timezone.utc)
