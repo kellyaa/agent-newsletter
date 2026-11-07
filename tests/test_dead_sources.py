@@ -143,6 +143,35 @@ def test_find_dead_skips_a_db_without_the_outcome_table(editions):
     assert dead_sources.find_dead(editions, TODAY, 7) == []
 
 
+def test_configured_thresholds_is_none_for_a_missing_file(tmp_path):
+    assert dead_sources.configured_thresholds(tmp_path / "nope.yaml", 7) is None
+
+
+def test_configured_thresholds_is_none_for_invalid_yaml(tmp_path):
+    f = tmp_path / "sources.yaml"
+    f.write_text("rss: [unclosed\n")
+    assert dead_sources.configured_thresholds(f, 7) is None
+
+
+@pytest.mark.parametrize("text", ["", "- just\n- a list\n", "plain scalar\n"])
+def test_configured_thresholds_is_none_when_top_level_is_not_a_mapping(tmp_path, text):
+    f = tmp_path / "sources.yaml"
+    f.write_text(text)
+    assert dead_sources.configured_thresholds(f, 7) is None
+
+
+def test_configured_thresholds_skips_non_mapping_entries(tmp_path):
+    f = tmp_path / "sources.yaml"
+    f.write_text("rss:\n  - just-a-string\n  - id: ok\n    url: https://example.com/f\n")
+    assert dead_sources.configured_thresholds(f, 7) == {"rss/ok": 7}
+
+
+def test_find_dead_skips_an_edition_with_unreadable_sources_yaml(editions):
+    _record(editions, "agents", "rss/quiet", ZERO_WEEK)
+    (dead_sources.edition.EDITIONS_DIR / "agents" / "sources.yaml").write_text("rss: [unclosed\n")
+    assert dead_sources.find_dead(editions, TODAY, 7) == []
+
+
 def test_fetch_outcomes_is_read_only(tmp_path):
     path = tmp_path / "state.db"
     db_mod.init_db(path)
