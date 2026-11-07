@@ -26,26 +26,20 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 import edition
-from db import content_root
+from db import content_root, load_attempt_dates
+from models import EditionStatus
 
 DEFAULT_DAYS = 7
 
 
 def attempt_dates(db_file: Path) -> set[str]:
     """Every ``run_attempts.date`` in `db_file`; empty if it has no such table."""
-    conn = sqlite3.connect(f"{db_file.resolve().as_uri()}?mode=ro", uri=True, timeout=30)
-    try:
-        return {r[0] for r in conn.execute("SELECT DISTINCT date FROM run_attempts")}
-    except sqlite3.OperationalError:
-        return set()
-    finally:
-        conn.close()
+    return load_attempt_dates(db_file)
 
 
 def missed_dates(recorded: set[str], today: date, days: int) -> list[str]:
@@ -61,7 +55,7 @@ def find_missed(root: Path, today: date, days: int) -> list[tuple[str, str]]:
     """``(slug, date)`` for every missed day of every draft/live edition."""
     out: list[tuple[str, str]] = []
     for slug, ed, _err in edition.discover():
-        if ed is not None and ed.status == "paused":
+        if ed is not None and ed.status == EditionStatus.PAUSED:
             continue
         db_file = edition.runtime_paths(root, slug).state_db
         if not db_file.exists():

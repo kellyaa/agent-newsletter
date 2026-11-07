@@ -192,6 +192,45 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def connect_readonly(path: Path) -> sqlite3.Connection:
+    """Open an existing state DB read-only (``mode=ro``); never creates it.
+
+    For the watchdog readers (missed_days, dead_sources), which inspect
+    every edition's DB and must not create or migrate one.
+    """
+    return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True, timeout=30)
+
+
+def load_attempt_dates(path: Path) -> set[str]:
+    """Every distinct ``run_attempts.date`` in the DB at `path` (read-only).
+
+    Empty if the DB has no ``run_attempts`` table yet.
+    """
+    conn = connect_readonly(path)
+    try:
+        return {r[0] for r in conn.execute("SELECT DISTINCT date FROM run_attempts")}
+    except sqlite3.OperationalError:
+        return set()
+    finally:
+        conn.close()
+
+
+def load_source_fetch_outcomes(path: Path) -> list[tuple[str, str, int, str | None]]:
+    """``(label, run_date, items_seen, error)`` for every outcome row (read-only).
+
+    Empty if the DB has no ``source_fetch_outcomes`` table yet.
+    """
+    conn = connect_readonly(path)
+    try:
+        return [tuple(r) for r in conn.execute(
+            "SELECT label, run_date, items_seen, error FROM source_fetch_outcomes"
+        )]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
 def init_db(path: Path | None = None) -> None:
     conn = connect(path)
     try:

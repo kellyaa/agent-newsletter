@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sqlite3
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -40,8 +39,8 @@ from pathlib import Path
 import yaml
 
 import edition
-from db import content_root
-from models import SourceFamily, is_positive_int
+from db import content_root, load_source_fetch_outcomes
+from models import EditionStatus, SourceFamily, is_positive_int, source_label
 
 log = logging.getLogger("dead_sources")
 
@@ -51,8 +50,8 @@ DEFAULT_DAYS = 7
 def configured_thresholds(sources_file: Path, default: int) -> dict[str, int] | None:
     """``{label: dead_after_days}`` for every source in `sources_file`.
 
-    None when the file is missing or unreadable. Labels match the ones fetch
-    records (``<family>/<id>``, ``gh/<owner>/<repo>``).
+    None when the file is missing or unreadable. Labels come from
+    ``models.source_label``, the same function fetch records them with.
     """
     try:
         data = yaml.safe_load(sources_file.read_text(encoding="utf-8"))
@@ -66,10 +65,7 @@ def configured_thresholds(sources_file: Path, default: int) -> dict[str, int] | 
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict):
                 continue
-            if family is SourceFamily.GITHUB_RELEASES:
-                label = f"gh/{entry.get('owner')}/{entry.get('repo')}"
-            else:
-                label = f"{family.value}/{entry.get('id')}"
+            label = source_label(family, entry)
             value = entry.get("dead_after_days")
             if value is not None and not is_positive_int(value):
                 log.warning("source %s: invalid dead_after_days %r (must be positive int); ignoring",
@@ -81,17 +77,8 @@ def configured_thresholds(sources_file: Path, default: int) -> dict[str, int] | 
 
 def fetch_outcomes(db_file: Path) -> dict[str, list[tuple[str, bool]]]:
     """``{label: [(run_date, produced_items), ...]}``; empty if the table is missing."""
-    conn = sqlite3.connect(f"{db_file.resolve().as_uri()}?mode=ro", uri=True, timeout=30)
-    try:
-        rows = conn.execute(
-            "SELECT label, run_date, items_seen, error FROM source_fetch_outcomes"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return {}
-    finally:
-        conn.close()
     out: dict[str, list[tuple[str, bool]]] = {}
-    for label, run_date, seen, error in rows:
+    for label, run_date, seen, error in load_source_fetch_outcomes(db_file):
         out.setdefault(label, []).append((run_date, error is None and seen > 0))
     return out
 
@@ -107,7 +94,7 @@ def find_dead(root: Path, today: date, default_days: int) -> list[tuple[str, str
     """``(slug, label, days)`` for every dead source of every draft/live edition."""
     out: list[tuple[str, str, int]] = []
     for slug, ed, _err in edition.discover():
-        if ed is None or ed.status == "paused":
+        if ed is None or ed.status == EditionStatus.PAUSED:
             continue
         db_file = edition.runtime_paths(root, slug).state_db
         if not db_file.exists():

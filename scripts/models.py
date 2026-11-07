@@ -82,6 +82,18 @@ SOURCE_REQUIRED_KEYS: dict[SourceFamily, frozenset[str]] = {
 }
 
 
+def source_label(family: SourceFamily, entry: dict) -> str:
+    """The per-source label fetch logs and records in ``source_fetch_outcomes``.
+
+    ``<family>/<id>``, except GitHub releases: ``gh/<owner>/<repo>``.
+    fetch.iter_collectors writes it and dead_sources.py joins sources.yaml
+    entries to outcome rows by it, so both must build it here.
+    """
+    if family is SourceFamily.GITHUB_RELEASES:
+        return f"gh/{entry.get('owner')}/{entry.get('repo')}"
+    return f"{family.value}/{entry.get('id')}"
+
+
 # Optional per-entry sources.yaml overrides. fetch applies them (falling back
 # with a warning on a bad value), check_edition rejects bad values, and
 # new_edition only emits valid ones; all three read the rules from here so
