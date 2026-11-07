@@ -18,9 +18,10 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import edition
-from db import CONTENT_ROOT, connect, init_db, load_stage_stats, run_date
+from db import connect, content_root, init_db, load_stage_stats, run_date
 from db import (
     count_featured_by_section,
     count_items_in_status,
@@ -38,7 +39,21 @@ logging.basicConfig(
 )
 log = logging.getLogger("publish")
 
-ISSUES_DIR = edition.runtime_paths(CONTENT_ROOT).issues_dir
+def issues_dir() -> Path:
+    """The selected edition's issue folder, resolved from the env at call time.
+
+    Reads ``EDITION`` / ``CONTENT_ROOT`` on every call (like :func:`db.db_path`),
+    so ``import publish`` needs no edition and never pins a stale one (#446).
+    """
+    return edition.runtime_paths(content_root()).issues_dir
+
+
+def __getattr__(name: str):
+    # Deprecated alias for issues_dir(), kept for existing readers; resolved
+    # lazily so importing this module does not require an edition.
+    if name == "ISSUES_DIR":
+        return issues_dir()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 MIN_FEATURED_FOR_PUBLISH = 1  # tunable; lower = more permissive
 MIN_FILE_SIZE_BYTES = 400     # frontmatter+body should comfortably exceed this
@@ -107,7 +122,7 @@ def main(today: str | None = None) -> int:
     init_db()
     if today is None:
         today = run_date()
-    issue_path = ISSUES_DIR / f"{today}.md"
+    issue_path = issues_dir() / f"{today}.md"
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)
         return ExitCode.MISSING_INPUT
