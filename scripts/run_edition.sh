@@ -46,7 +46,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=true ;;
     --refetch) REFETCH=true; FORCE=true ;;
-    -h|--help) sed -n '3,36p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR>=3 { if (/^#/) print; else exit }' "$0"; exit 0 ;;
     *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done

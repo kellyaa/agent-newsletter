@@ -53,7 +53,7 @@ CHECK_ONLY=false
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=true ;;
-    -h|--help) sed -n '3,41p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR>=3 { if (/^#/) print; else exit }' "$0"; exit 0 ;;
     *) printf 'unknown arg: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done

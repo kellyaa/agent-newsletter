@@ -50,7 +50,7 @@ while [ "$#" -gt 0 ]; do
     --edition=*) EDITIONS_WANTED+=("${1#--edition=}") ;;
     -h|--help)
       # Print the header comment (stops output from going to the run log).
-      sed -n '3,30p' "$0"
+      awk 'NR>=3 { if (/^#/) print; else exit }' "$0"
       exit 0
       ;;
     *) printf 'unknown arg: %s\n' "$1" >&2; exit 2 ;;
