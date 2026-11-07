@@ -396,3 +396,52 @@ def test_no_notification_tool_still_records_the_fire(tmp_path):
     assert p.returncode == 0, p.stderr
     assert "watchdog: STALE" in p.stdout
     assert (repo / "logs" / "watchdog-last-fire").exists()
+
+
+def _run_with_stubs(repo: Path, tools: tuple[str, ...], extra_env: dict[str, str] | None = None) -> Path:
+    """Run watchdog.sh with only the named notifier tools on PATH, each logging its argv."""
+    bin_dir = repo / "stub-bin"
+    bin_dir.mkdir()
+    calls = repo / "stub-calls.txt"
+    for tool in ("bash", "git", "date", "cat", "mkdir", "dirname", "sort", "head"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    for tool in tools:
+        stub = bin_dir / tool
+        stub.write_text(f'#!/bin/sh\necho "{tool} $*" >> "{calls}"\nexit 0\n')
+        stub.chmod(0o755)
+    env = {"PATH": str(bin_dir), "STALE_HOURS": "36", **(extra_env or {})}
+    subprocess.run([str(bin_dir / "bash"), str(repo / "watchdog.sh")], cwd=repo, env=env,
+                   capture_output=True, text=True, check=True)
+    return calls
+
+
+def test_stale_run_uses_notify_send_when_osascript_is_absent(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+
+    calls = _run_with_stubs(repo, ("notify-send",))
+
+    sent = calls.read_text()
+    assert "notify-send Newsletter pipeline appears stuck" in sent
+    assert "Check logs/run-*.log." in sent
+
+
+def test_stale_run_posts_to_webhook_when_configured(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+
+    calls = _run_with_stubs(repo, ("curl",),
+                            {"WATCHDOG_WEBHOOK_URL": "https://ntfy.example/topic"})
+
+    sent = calls.read_text()
+    assert "https://ntfy.example/topic" in sent
+    assert "Check logs/run-*.log." in sent
+
+
+def test_webhook_is_not_called_when_unset(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+
+    calls = _run_with_stubs(repo, ("curl",))
+
+    assert not calls.exists()

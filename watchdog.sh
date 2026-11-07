@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Watchdog: fires a macOS notification if the newsletter pipeline appears stuck.
+# Watchdog: fires a notification (macOS osascript, Linux notify-send, and/or a
+# WATCHDOG_WEBHOOK_URL POST) if the newsletter pipeline appears stuck.
 #
 # Triggered hourly by ~/Library/LaunchAgents/com.kelly.agent-newsletter-watchdog.plist.
 # Definition of "stuck": the newest successful daily-run commit
@@ -19,11 +20,20 @@ STALE_HOURS="${STALE_HOURS:-36}"
 STATE_FILE="$REPO_ROOT/logs/watchdog-last-fire"
 mkdir -p "$REPO_ROOT/logs"
 
+# Alert channels: macOS osascript, else Linux notify-send. WATCHDOG_WEBHOOK_URL
+# (e.g. an ntfy topic URL) is additive: when set, the message is also POSTed
+# there, which works on a headless host with no desktop session.
 notify() {
   local title="$1"; shift
   local message="$1"; shift
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display notification \"${message//\"/\\\"}\" with title \"${title//\"/\\\"}\"" \
+      >/dev/null 2>&1 || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "$title" "$message" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${WATCHDOG_WEBHOOK_URL:-}" ] && command -v curl >/dev/null 2>&1; then
+    curl -fsS -m 10 -H "Title: $title" -d "$message" "$WATCHDOG_WEBHOOK_URL" \
       >/dev/null 2>&1 || true
   fi
 }

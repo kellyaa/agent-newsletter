@@ -106,7 +106,7 @@ Logs: `logs/run-DATE.log` is the orchestrator summary (one line per edition); `l
 - **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `another run holds .watchdog.lock; exiting without doing anything` and **exits 0**, so a scheduled job looks healthy while never running the pipeline (see Troubleshooting §3)
 - The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `editions/agents/sources.yaml` (disabled by default since 2026-05-14)
 
-The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. The only macOS-only feature is `watchdog.sh`, which uses `osascript` for desktop notifications (gracefully no-ops on non-macOS).
+The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. `watchdog.sh` notifies via `osascript` on macOS and `notify-send` on Linux desktops; on a headless host set `WATCHDOG_WEBHOOK_URL` to POST the alert (e.g. to an ntfy topic). With none of these available it no-ops.
 
 ```bash
 # Python deps

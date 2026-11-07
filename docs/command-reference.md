@@ -13,7 +13,7 @@ Quick lookup for all pipeline, testing, and operational commands. For detailed u
 | `./run.sh --edition X` | Run one edition (repeatable; paused editions allowed) | [README.md](../README.md#daily-pipeline) |
 | `./run.sh --force` | Reset today's post-fetch state; skip re-fetch (safe on arXiv) | [README.md](../README.md#daily-pipeline) |
 | `./run.sh --refetch --edition X` | Also re-fetch from all sources (use sparingly; arXiv rate-limits) | [README.md](../README.md#daily-pipeline) |
-| `./watchdog.sh` | Fire macOS notification if no successful run in >36h (STALE_HOURS) | [README.md](../README.md#troubleshooting-a-stalled-run) |
+| `./watchdog.sh` | Notify (macOS `osascript`, Linux `notify-send`, optional `WATCHDOG_WEBHOOK_URL` POST) if no successful run in >36h (STALE_HOURS) | [README.md](../README.md#troubleshooting-a-stalled-run) |
 | `./scripts/watchdog.sh` | Self-heal wrapper: check and re-run failed editions | [README.md](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
 | `./scripts/watchdog.sh --check` | Check only; never run the pipeline | [README.md](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
 | `./launchd/install.sh` | Install daily-run and hourly-watchdog launchd jobs (macOS) | [README.md](../README.md#scheduling-macos) |
@@ -108,6 +108,7 @@ Set in `.env` or export before running:
 | `WRITER_TIMEOUT_S` | Writer timeout (default 1200) | `WRITER_TIMEOUT_S=1800` |
 | `SHOW_DRAFTS=1` | Include draft editions in site build | `SHOW_DRAFTS=1 pnpm --prefix site dev` |
 | `FETCH_ALLOW_PRIVATE_HOSTS` | Allow fetching from RFC-1918 addresses (SSRF guard) | `FETCH_ALLOW_PRIVATE_HOSTS=1` |
+| `WATCHDOG_WEBHOOK_URL` | Optional URL the root `watchdog.sh` POSTs the stale-pipeline alert to (ntfy-style: title header, message body); additive to desktop notifiers | `WATCHDOG_WEBHOOK_URL=https://ntfy.sh/my-topic` |
 | `STALE_HOURS` | Hours without successful run before watchdog alerts (default 36) | `STALE_HOURS=48` |
 
 See [docs/environment-configuration-reference.md](environment-configuration-reference.md) for complete reference.
