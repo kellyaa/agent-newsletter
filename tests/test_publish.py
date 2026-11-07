@@ -132,7 +132,7 @@ class TestMainMissingFile:
         # Point ISSUES_DIR to an empty directory
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         # Patch connect/init_db to use our test DB
         import db as db_mod
@@ -158,7 +158,7 @@ class TestMainFileTooSmall:
         issues_dir.mkdir()
         small_file = issues_dir / "2026-06-01.md"
         small_file.write_text("tiny")  # << MIN_FILE_SIZE_BYTES
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
@@ -185,7 +185,7 @@ class TestMainFileTooSmall:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + delta))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
@@ -210,7 +210,7 @@ class TestMainEmptyIssue:
         issue_file = issues_dir / "2026-06-01.md"
         # Write a file that passes the size check but has no DB items
         issue_file.write_text("x" * (MIN_FILE_SIZE_BYTES + 10))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         import db as db_mod
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
@@ -241,7 +241,7 @@ class TestMainAppendixOnlyIssue:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 10))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
         monkeypatch.setenv("RUN_DATE", "2026-06-01")
@@ -279,7 +279,7 @@ class TestMainNormalPublish:
         issues_dir.mkdir()
         issue_file = issues_dir / "2026-06-01.md"
         issue_file.write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         def _make_conn():
             return db_mod.connect(db_path)
@@ -319,7 +319,7 @@ class TestMainNormalPublish:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
@@ -348,7 +348,7 @@ class TestMainNormalPublish:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
@@ -381,7 +381,7 @@ class TestMainIdempotentSkip:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("x" * (MIN_FILE_SIZE_BYTES + 50))
-        monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
 
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
@@ -405,7 +405,7 @@ def publish_env(db_path, tmp_path, monkeypatch):
     issues_dir = tmp_path / "issues"
     issues_dir.mkdir()
     (issues_dir / "2026-06-01.md").write_text("x" * (publish_mod.MIN_FILE_SIZE_BYTES + 50))
-    monkeypatch.setattr(publish_mod, "ISSUES_DIR", issues_dir)
+    monkeypatch.setattr(publish_mod, "issues_dir", lambda: issues_dir)
     monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setenv("RUN_DATE", "2026-06-01")
