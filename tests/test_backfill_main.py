@@ -433,7 +433,7 @@ class TestRunWriterForDate:
 
         import backfill
         monkeypatch.setattr(backfill, "REPO", tmp_path)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
 
         result = bf.run_writer_for_date(conn, "2026-07-15", force=False)
         conn.close()
@@ -454,7 +454,7 @@ class TestRunWriterForDate:
         monkeypatch.setattr(backfill, "REPO", tmp_path)
         issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
 
@@ -475,7 +475,7 @@ class TestRunWriterForDate:
 
         issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
 
         # Mock invoke_writer to avoid LLM call
         fake_output = {"theme": "AI agents reshape enterprise workflows",
@@ -509,7 +509,7 @@ class TestRunWriterForDate:
 
         issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         out_path = issues_dir / "2026-07-15.md"
         out_path.write_text("old content")
 
@@ -836,7 +836,7 @@ class TestBackfillMainEdgeCases:
         monkeypatch.setattr(backfill, "REPO", tmp_path)
         issues_dir = tmp_path / "editions" / "agents" / "issues"
         issues_dir.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
 
@@ -897,7 +897,7 @@ class TestRunWriterForDateContentRoot:
         # Set write_mod.ISSUES_DIR to a separate directory (simulates CONTENT_ROOT worktree)
         content_issues = tmp_path / "content" / "editions" / "agents" / "issues"
         content_issues.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: content_issues)
 
         # REPO points to tmp_path; old hardcoded path would land here
         monkeypatch.setattr(bf, "REPO", tmp_path)
@@ -982,7 +982,7 @@ class TestRunWriterForDateContentRoot:
         # Pre-create the file in the write_mod location
         (content_issues / "2026-07-15.md").write_text("existing content")
 
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: content_issues)
         monkeypatch.setattr(bf, "REPO", tmp_path)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")
@@ -1010,7 +1010,7 @@ class TestRunWriterForDateContentRoot:
         existing = content_issues / "2026-07-15.md"
         existing.write_text("stale content")
 
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", content_issues)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: content_issues)
         monkeypatch.setattr(bf, "REPO", tmp_path)
         (tmp_path / "prompts").mkdir(exist_ok=True)
         (tmp_path / "prompts" / "write.md").write_text("rubric")

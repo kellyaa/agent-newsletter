@@ -173,7 +173,7 @@ class TestLoadFromIssueFile:
         import replay_writer as rw_mod
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         with pytest.raises(FileNotFoundError):
             load_from_issue_file(db, "2026-06-01")
 
@@ -183,7 +183,7 @@ class TestLoadFromIssueFile:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         _write_issue(issues_dir, "2026-06-01", ["missing-id"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert featured == []
 
@@ -193,7 +193,7 @@ class TestLoadFromIssueFile:
         issues_dir.mkdir()
         _insert_item(db, "p1", section="papers", score=9, title="My Paper")
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert len(featured) == 1
         assert featured[0]["id"] == "p1"
@@ -208,7 +208,7 @@ class TestLoadFromIssueFile:
         _insert_item(db, "p1", section="news", score=7, tags=["evals"],
                      raw_text="Short abstract", title="News Article")
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         item = featured[0]
         assert "id" in item
@@ -231,7 +231,7 @@ class TestLoadFromIssueFile:
         long_text = "x" * (RAW_TEXT_MAX + 200)
         _insert_item(db, "p1", raw_text=long_text)
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert featured[0]["raw_text"].endswith("\n...[truncated]")
         assert len(featured[0]["raw_text"]) <= RAW_TEXT_MAX + len("\n...[truncated]")
@@ -242,7 +242,7 @@ class TestLoadFromIssueFile:
         issues_dir.mkdir()
         _insert_item(db, "p1", raw_text="Short abstract")
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert featured[0]["raw_text"] == "Short abstract"
 
@@ -252,7 +252,7 @@ class TestLoadFromIssueFile:
         issues_dir.mkdir()
         _insert_item(db, "p1", tags=["evals", "research"])
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert featured[0]["tags"] == ["evals", "research"]
 
@@ -274,7 +274,7 @@ class TestLoadFromIssueFile:
             "---\nBody\n"
         )
         (issues_dir / "2026-06-01.md").write_text(issue_md)
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         _, appendix, metadata = load_from_issue_file(db, "2026-06-01")
         assert len(appendix["papers"]) == 1
         assert appendix["papers"][0]["id"] == "a1"
@@ -287,7 +287,7 @@ class TestLoadFromIssueFile:
         issues_dir.mkdir()
         _insert_item(db, "p1")
         _write_issue(issues_dir, "2026-06-01", ["p1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         _, _, metadata = load_from_issue_file(db, "2026-06-01")
         assert metadata["items_considered"] is None
 
@@ -300,7 +300,7 @@ class TestLoadFromIssueFile:
         _insert_item(db, "p-hi", section="papers", score=9)
         _insert_item(db, "n1", section="news", score=8)
         _write_issue(issues_dir, "2026-06-01", ["n1", "p-lo", "p-hi"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         ids = [it["id"] for it in featured]
         # papers (section_rank=0) before news (section_rank=1)
@@ -317,7 +317,7 @@ class TestLoadFromIssueFile:
         _insert_item(db, "p2", section="papers")
         _insert_item(db, "n1", section="news")
         _write_issue(issues_dir, "2026-06-01", ["p1", "p2", "n1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
         _, _, metadata = load_from_issue_file(db, "2026-06-01")
         assert metadata["items_featured_papers"] == 2
         assert metadata["items_featured_news"] == 1
@@ -348,7 +348,7 @@ class TestLoadFromIssueFile:
         db.commit()
 
         _write_issue(issues_dir, "2026-06-01", ["mt1"])
-        monkeypatch.setattr(rw_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw_mod, "issues_dir", lambda: issues_dir)
 
         featured, _, _ = load_from_issue_file(db, "2026-06-01")
         assert len(featured) == 1

@@ -73,7 +73,7 @@ class TestReplayWriterMainNoFeatured:
         issues_dir.mkdir()
         _write_issue(issues_dir, "2026-06-01", [])
         monkeypatch.setattr("sys.argv", ["replay_writer.py", "2026-06-01"])
-        monkeypatch.setattr(rw, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
         assert rw.main() == 1
@@ -92,7 +92,7 @@ class TestReplayWriterMainNormal:
         conn.close()
         _write_issue(issues_dir, "2026-06-01", ["feat1"])
         monkeypatch.setattr("sys.argv", ["replay_writer.py", "2026-06-01"])
-        monkeypatch.setattr(rw, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(rw, "PROMPT_PATH", prompt_file)
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))
@@ -104,7 +104,7 @@ class TestReplayWriterMainNormal:
         # Same prompt builder as write.py: edition-named preamble and the
         # untrusted-input notice ahead of the fetched content.
         prompt = mock_writer.call_args.args[0]
-        assert f"today's {rw.EDITION.name} newsletter" in prompt
+        assert f"today's {rw.edition.current().name} newsletter" in prompt
         assert "UNTRUSTED DATA" in prompt
 
     def test_writes_log_file(self, db_path, tmp_path, monkeypatch):
@@ -119,7 +119,7 @@ class TestReplayWriterMainNormal:
         conn.close()
         _write_issue(issues_dir, "2026-06-01", ["feat1"])
         monkeypatch.setattr("sys.argv", ["replay_writer.py", "2026-06-01"])
-        monkeypatch.setattr(rw, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(rw, "issues_dir", lambda: issues_dir)
         monkeypatch.setattr(rw, "PROMPT_PATH", prompt_file)
         monkeypatch.setattr(rw, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rw, "init_db", lambda: db_mod.init_db(db_path))

@@ -117,7 +117,7 @@ class TestReplayWriterRawTextLimit:
             "appendix:\n  papers: []\n  news: []\n  blogs: []\n"
             "---\nbody\n"
         )
-        monkeypatch.setattr(rw, "ISSUES_DIR", issues)
+        monkeypatch.setattr(rw, "issues_dir", lambda: issues)
 
     def test_exactly_at_limit_is_untouched(self, db, tmp_path, monkeypatch):
         self._issue(tmp_path, monkeypatch)
