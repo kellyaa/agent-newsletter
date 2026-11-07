@@ -81,6 +81,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [llm-integration-guide.md](llm-integration-guide.md) | Add new LLM calls; structured output; retries; timeouts |
 | [code-patterns-guide.md](code-patterns-guide.md) | Common patterns used across the project (DB access, config loading) when writing new code |
 | [testing-patterns-guide.md](testing-patterns-guide.md) | How tests are organized; fixture patterns; e2e and unit test suites |
+| [dependency-management-guide.md](dependency-management-guide.md) | Adding and managing Python and Node.js dependencies; lockfile workflow |
 | [review-rubric.md](review-rubric.md) | What constitutes good code in this project (clarity, coverage, idempotency) |
 | [quality.md](quality.md) | Code quality standards: coverage gate, test patterns, type hints |
 
