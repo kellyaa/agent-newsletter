@@ -261,7 +261,7 @@ class TestBackfillContentRoot:
         monkeypatch.setattr(bf, "REPO", tmp_path)
         expected_issues_dir = tmp_path / "editions" / "agents" / "issues"
         expected_issues_dir.mkdir(parents=True)
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", expected_issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: expected_issues_dir)
 
         fake_output = {"theme": "AI agents", "items": [{"id": "feat1", "summary": "Paper."}]}
         monkeypatch.setattr(write_mod, "invoke_writer", lambda p: fake_output)

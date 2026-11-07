@@ -25,16 +25,16 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import edition  # noqa: E402
 import prompts  # noqa: E402
 from db import connect, init_db, load_item_by_id  # noqa: E402
 from models import FeaturedItem, Section  # noqa: E402
 from write import (  # noqa: E402
-    EDITION,
-    ISSUES_DIR,
     PROMPT_PATH,
     call_writer,
     featured_item_from_row,
     find_previous_newsletter,
+    issues_dir,
     writer_metadata,
 )
 
@@ -64,7 +64,7 @@ def load_from_issue_file(conn, date: str):
     of what shipped). Full item data (raw_text, score, tags, why) is looked
     up in state.db by id.
     """
-    issue_path = ISSUES_DIR / f"{date}.md"
+    issue_path = issues_dir() / f"{date}.md"
     if not issue_path.exists():
         raise FileNotFoundError(f"no archived issue at {issue_path}")
 
@@ -132,10 +132,10 @@ def main() -> int:
     )
 
     prev = find_previous_newsletter(date)
-    rubric = prompts.render("write", EDITION, template_path=PROMPT_PATH)
+    rubric = prompts.render("write", edition.current(), template_path=PROMPT_PATH)
     writer_output = call_writer(date, featured, appendix_by_section, metadata, prev, rubric)
 
-    out_path = EDITION.paths().logs / f"theme-replay-{date}.json"
+    out_path = edition.current().paths().logs / f"theme-replay-{date}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
         "date": date,

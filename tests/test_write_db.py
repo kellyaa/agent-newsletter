@@ -238,7 +238,7 @@ class TestLoadTodayItemsAppendix:
 class TestFindPreviousNewsletter:
     def test_returns_none_when_issues_dir_absent(self, tmp_path, monkeypatch):
         import write as write_mod
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", tmp_path / "nonexistent")
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: tmp_path / "nonexistent")
         result = find_previous_newsletter("2026-06-10")
         assert result is None
 
@@ -248,7 +248,7 @@ class TestFindPreviousNewsletter:
         issues_dir.mkdir()
         # Only a file AFTER the target date
         (issues_dir / "2026-06-20.md").write_text("future")
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         result = find_previous_newsletter("2026-06-10")
         assert result is None
 
@@ -259,7 +259,7 @@ class TestFindPreviousNewsletter:
         (issues_dir / "2026-06-05.md").write_text("old issue")
         (issues_dir / "2026-06-08.md").write_text("recent issue")
         (issues_dir / "2026-06-15.md").write_text("future issue")
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         result = find_previous_newsletter("2026-06-10")
         assert result == "recent issue"
 
@@ -268,7 +268,7 @@ class TestFindPreviousNewsletter:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-01.md").write_text("---\ndate: 2026-06-01\n---\nBody text")
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         result = find_previous_newsletter("2026-06-10")
         assert isinstance(result, str)
         assert "Body text" in result
@@ -280,7 +280,7 @@ class TestFindPreviousNewsletter:
         issues_dir.mkdir()
         (issues_dir / "2026-06-10.md").write_text("today")
         (issues_dir / "2026-06-09.md").write_text("yesterday")
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         result = find_previous_newsletter("2026-06-10")
         assert result == "yesterday"
 
@@ -289,7 +289,7 @@ class TestFindPreviousNewsletter:
         issues_dir = tmp_path / "issues"
         issues_dir.mkdir()
         (issues_dir / "2026-06-10.md").write_text("today")
-        monkeypatch.setattr(write_mod, "ISSUES_DIR", issues_dir)
+        monkeypatch.setattr(write_mod, "issues_dir", lambda: issues_dir)
         result = find_previous_newsletter("2026-06-10")
         assert result is None
 
@@ -393,7 +393,7 @@ class TestBuildWriterPromptEditionName:
         import dataclasses
         import write
         other = dataclasses.replace(write.EDITION, name="Engineering with AI Daily")
-        monkeypatch.setattr(write, "EDITION", other)
+        monkeypatch.setattr(write.edition, "current", lambda: other)
         prompt = write.build_writer_prompt({}, "RUBRIC")
         assert "today's Engineering with AI Daily newsletter" in prompt
         assert "AI Agents" not in prompt

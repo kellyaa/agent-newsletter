@@ -67,7 +67,7 @@ def core(tmp_path, monkeypatch):
     issues = tmp_path / "issues"
     prompt = tmp_path / "write.md"
     prompt.write_text(base_template("write"))
-    monkeypatch.setattr(write_mod, "ISSUES_DIR", issues)
+    monkeypatch.setattr(write_mod, "issues_dir", lambda: issues)
     monkeypatch.setattr(write_mod, "PROMPT_PATH", prompt)
     monkeypatch.setattr(
         write_mod, "invoke_writer",

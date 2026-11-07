@@ -20,9 +20,9 @@ from pathlib import Path
 import edition
 import prompts
 from db import (
-    CONTENT_ROOT,
     REPO_ROOT,
     connect,
+    content_root,
     count_items_seen_on,
     demote_featured_to_appendix,
     init_db,
@@ -40,19 +40,40 @@ logging.basicConfig(
 )
 log = logging.getLogger("write")
 
-EDITION = edition.current()
 # Base template; main() renders it with the edition's fragments.
 PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
-ISSUES_DIR = edition.runtime_paths(CONTENT_ROOT).issues_dir
+
+
+def issues_dir() -> Path:
+    """The selected edition's issue folder, resolved from the env at call time.
+
+    Reads ``EDITION`` / ``CONTENT_ROOT`` on every call (like :func:`db.db_path`),
+    so ``import write`` needs no edition and never pins a stale one (#446).
+    """
+    return edition.runtime_paths(content_root()).issues_dir
+
+
+# Deprecated module attributes, resolved lazily so importing this module does
+# not require an edition. The edition's reader profile comes from
+# editions/<slug>/edition.yaml.
+_LAZY_ALIASES = {
+    "EDITION": lambda: edition.current(),
+    "ISSUES_DIR": lambda: issues_dir(),
+    "READER_PROFILE": lambda: edition.current().reader_profile,
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_ALIASES:
+        return _LAZY_ALIASES[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Model, timeout and token cap: env-driven, single-sourced in llm.writer_config().
 WRITER = writer_config()
 
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
-
-# Reader profile comes from editions/<slug>/edition.yaml.
-READER_PROFILE = EDITION.reader_profile
 
 # JSON Schema enforced by Claude Code. The LLM must return exactly this shape.
 WRITER_SCHEMA = {
@@ -162,9 +183,10 @@ def load_today_items(
 
 
 def find_previous_newsletter(today: str) -> str | None:
-    if not ISSUES_DIR.exists():
+    folder = issues_dir()
+    if not folder.exists():
         return None
-    prior = sorted(p for p in ISSUES_DIR.glob("*.md") if p.stem < today)
+    prior = sorted(p for p in folder.glob("*.md") if p.stem < today)
     if not prior:
         return None
     return prior[-1].read_text()
@@ -173,7 +195,7 @@ def find_previous_newsletter(today: str) -> str | None:
 def build_writer_input(date: str, featured, appendix_by_section, metadata, prev) -> dict:
     payload = {
         "date": date,
-        "reader_profile": READER_PROFILE,
+        "reader_profile": edition.current().reader_profile,
         "featured": featured,
         "appendix": appendix_by_section,
         "metadata": metadata,
@@ -186,7 +208,7 @@ def build_writer_input(date: str, featured, appendix_by_section, metadata, prev)
 def build_writer_prompt(payload: dict, rubric: str) -> str:
     """Full writer prompt: untrusted-input notice, input JSON, then the rubric."""
     return (
-        f"You are writing today's {EDITION.name} newsletter prose. The input JSON "
+        f"You are writing today's {edition.current().name} newsletter prose. The input JSON "
         "is below; the rubric and output schema follow.\n\n"
         f"{prompts.UNTRUSTED_INPUT_NOTICE}\n\n"
         f"## Input\n\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n\n"
@@ -205,7 +227,7 @@ def save_writer_response(out) -> Path:
     without spending another writer call. Only the daily run saves it:
     backfill and replay must leave the live logs alone.
     """
-    path = EDITION.paths().logs / "write.response.json"
+    path = edition.current().paths().logs / "write.response.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False))
     return path
@@ -222,7 +244,7 @@ def invoke_writer(prompt: str) -> dict:
         max_tokens=WRITER.max_tokens,
     )
     if not isinstance(out, dict) or "items" not in out:
-        debug_path = EDITION.paths().logs / "writer-output.json"
+        debug_path = edition.current().paths().logs / "writer-output.json"
         debug_path.parent.mkdir(parents=True, exist_ok=True)
         debug_path.write_text(json.dumps(out, indent=2))
         raise RuntimeError(f"writer returned no items; output at {debug_path}")
@@ -557,7 +579,7 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
     rendered rubric is also written under ``logs/<slug>/`` (backfills skip it
     so a sandbox run leaves the live logs untouched).
     """
-    out_path = ISSUES_DIR / f"{today}.md"
+    out_path = issues_dir() / f"{today}.md"
     if out_path.exists() and not force:
         log.info(
             "write: skip — %s already exists (%d bytes); delete to rerun",
@@ -583,7 +605,7 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
     prev = find_previous_newsletter(today)
 
     render = prompts.render_and_log if log_prompt else prompts.render
-    rubric = render("write", EDITION, template_path=PROMPT_PATH)
+    rubric = render("write", edition.current(), template_path=PROMPT_PATH)
 
     if featured:
         writer_output = call_writer(
@@ -598,7 +620,7 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
 
     issue_md = assemble_issue(today, featured, appendix_by_section, metadata, writer_output)
 
-    ISSUES_DIR.mkdir(parents=True, exist_ok=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(issue_md)
     log.info("wrote %s (%d bytes)", out_path, len(issue_md))
     return out_path
