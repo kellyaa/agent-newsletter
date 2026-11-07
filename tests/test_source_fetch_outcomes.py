@@ -17,7 +17,7 @@ def run(tmp_path, monkeypatch):
     db_path = tmp_path / "state.db"
     sources_path = tmp_path / "sources.yaml"
     monkeypatch.setenv("RUN_DATE", RUN_DATE)
-    monkeypatch.setattr(fetch_mod, "SOURCES_PATH", sources_path)
+    monkeypatch.setattr(fetch_mod, "sources_path", lambda: sources_path)
     monkeypatch.setattr(fetch_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(fetch_mod, "init_db", lambda: db_mod.init_db(db_path))
 
