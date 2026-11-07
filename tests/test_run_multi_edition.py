@@ -134,17 +134,29 @@ def fx(tmp_path):
     return repo, remote, env
 
 
+_PINNED_TODAY: str | None = None
+
+
 def _run(repo: Path, env: dict, *args: str, **extra) -> subprocess.CompletedProcess:
     # run.sh derives the date from `date +%F`; RUN_DATE is exported *by* run.sh,
-    # so the log paths below use today's real date.
+    # so the log paths below use today's real date. Pin that date at launch so a
+    # UTC-midnight rollover between run.sh and the later assertions can't make
+    # _today() disagree with the files run.sh wrote.
+    global _PINNED_TODAY
+    _PINNED_TODAY = _real_today()
     return subprocess.run(
         ["bash", str(repo / "run.sh"), *args], cwd=repo, env={**env, **extra},
         capture_output=True, text=True, timeout=120,
     )
 
 
-def _today() -> str:
+def _real_today() -> str:
     return subprocess.run(["date", "+%F"], capture_output=True, text=True).stdout.strip()
+
+
+def _today() -> str:
+    """The date of the most recent run.sh launch (falls back to the real date)."""
+    return _PINNED_TODAY or _real_today()
 
 
 def _remote_files(remote: Path, branch="content") -> set[str]:
