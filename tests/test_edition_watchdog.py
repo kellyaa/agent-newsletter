@@ -148,6 +148,22 @@ def test_exit_zero_without_done_marker_is_not_success(repo):
     assert out[-1] == f"STATUS: FAILED {d} beta:no-done-marker"
 
 
+def test_done_marker_wins_over_nonzero_run_exit_code(repo):
+    # Editions are judged by their own log, not by run.sh's exit code: a DONE
+    # marker means HEALED even if run.sh exited non-zero afterwards.
+    d = _today()
+    _log(repo, "agents", DONE)
+    p, out = _wd(repo, RUN_BEHAVIOUR="beta=ok", RUN_RC="9")
+    assert p.returncode == 0
+    assert out == [f"EDITION: agents ALREADY_RAN {d}", f"EDITION: beta HEALED {d}", f"STATUS: HEALED {d}"]
+
+
+def test_failure_report_includes_run_sh_exit_code(repo):
+    _log(repo, "agents", DONE)
+    p, _ = _wd(repo, RUN_BEHAVIOUR="beta=fail:rank", RUN_RC="7")
+    assert "run.sh rc=7; failed editions: beta:rank" in p.stdout
+
+
 def test_log_without_done_or_failed_marker_after_run_is_no_done_marker(repo):
     d = _today()
     _log(repo, "agents", DONE)
