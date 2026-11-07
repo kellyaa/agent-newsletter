@@ -239,3 +239,160 @@ def test_main_head_with_per_edition_newsletter_subject_is_a_baseline(tmp_path):
 
     assert "not a newsletter commit" not in result.stdout
     assert "watchdog: STALE" in result.stdout
+
+
+# ─── notification, throttle window and thresholds ─────────────────────────
+# The fake osascript above discards its arguments, so nothing pinned that a
+# stale pipeline actually notifies (or that healthy/throttled runs stay quiet).
+
+
+def _run_recording(repo: Path, *, stale_hours: int = 36,
+                   extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess, Path]:
+    """Run watchdog.sh with an osascript stub that logs each call's argv."""
+    bin_dir = repo / "rec-bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = repo / "osascript-calls.txt"
+    stub = bin_dir / "osascript"
+    stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{calls}"\nexit 0\n')
+    stub.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["STALE_HOURS"] = str(stale_hours)
+    env.update(extra_env or {})
+    p = subprocess.run(["bash", str(repo / "watchdog.sh")], cwd=repo, env=env,
+                       capture_output=True, text=True, check=True)
+    return p, calls
+
+
+def _hours_ago(hours: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - hours * 3600))
+
+
+def test_stale_run_sends_notification_with_age_and_log_hint(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+
+    _, calls = _run_recording(repo)
+
+    sent = calls.read_text()
+    assert "display notification" in sent
+    assert "Newsletter pipeline appears stuck" in sent
+    assert "Check logs/run-*.log." in sent
+
+
+def test_healthy_run_sends_no_notification(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run")
+
+    _, calls = _run_recording(repo)
+
+    assert not calls.exists()
+
+
+def test_throttled_run_sends_no_notification(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+    state = repo / "logs" / "watchdog-last-fire"
+    state.parent.mkdir(parents=True)
+    state.write_text(f"{int(time.time()) - 60}\n")
+
+    _, calls = _run_recording(repo)
+
+    assert not calls.exists()
+
+
+def test_fire_older_than_four_hours_ago_notifies_again(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+    state = repo / "logs" / "watchdog-last-fire"
+    state.parent.mkdir(parents=True)
+    state.write_text(f"{int(time.time()) - 4 * 3600 - 60}\n")
+
+    p, calls = _run_recording(repo)
+
+    assert "watchdog: STALE" in p.stdout
+    assert "throttled" not in p.stdout
+    assert "display notification" in calls.read_text()
+    assert abs(int(state.read_text()) - int(time.time())) <= 5
+
+
+def test_fire_just_inside_four_hour_window_is_still_throttled(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+    state = repo / "logs" / "watchdog-last-fire"
+    state.parent.mkdir(parents=True)
+    state.write_text(f"{int(time.time()) - 4 * 3600 + 120}\n")
+
+    p, calls = _run_recording(repo)
+
+    assert "throttled" in p.stdout
+    assert not calls.exists()
+
+
+def test_commit_just_inside_stale_hours_is_ok(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_hours_ago(35.5))
+
+    p, calls = _run_recording(repo, stale_hours=36)
+
+    assert "watchdog: ok (last commit 35h ago)" in p.stdout
+    assert not calls.exists()
+
+
+def test_commit_at_stale_hours_is_stale(tmp_path):
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_hours_ago(36.5))
+
+    p, calls = _run_recording(repo, stale_hours=36)
+
+    assert "watchdog: STALE — last commit 36h ago" in p.stdout
+    assert "display notification" in calls.read_text()
+
+
+def test_notification_text_escapes_double_quotes(tmp_path):
+    """notify() backslash-escapes `"` so the AppleScript string stays closed."""
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+    script = (repo / "watchdog.sh").read_text()
+    script = script.replace('"Newsletter pipeline appears stuck"', '\'Say "hi"\'')
+    (repo / "watchdog.sh").write_text(script)
+
+    _, calls = _run_recording(repo)
+
+    assert 'with title \\"' not in calls.read_text()
+    assert 'with title "Say \\"hi\\""' in calls.read_text()
+
+
+def test_content_worktree_is_preferred_over_refs(tmp_path):
+    """A live CONTENT_WORKTREE decides staleness, not the main-branch HEAD."""
+    repo = _repo_with_main_edit(tmp_path)
+    _content_commit(repo, "newsletter(agents): 2000-01-01 daily run",
+                    date=_old_commit_date())
+    wt = tmp_path / "content-wt"
+    _git(repo, "worktree", "add", "-q", str(wt), "content")
+
+    p, _ = _run_recording(repo, extra_env={"CONTENT_WORKTREE": str(wt)})
+
+    assert "using newest daily-run commit on the content branch" in p.stdout
+    assert "watchdog: STALE" in p.stdout
+
+
+def test_no_notification_tool_still_records_the_fire(tmp_path):
+    """Without osascript (Linux) the run must not fail; it still throttles."""
+    repo = _watchdog_repo(tmp_path, subject="newsletter: daily run",
+                          commit_date=_old_commit_date())
+    env = os.environ.copy()
+    env["STALE_HOURS"] = "36"
+    bin_dir = repo / "min-bin"
+    bin_dir.mkdir()
+    for tool in ("bash", "git", "date", "cat", "mkdir", "dirname", "sort", "head"):
+        src = shutil.which(tool)
+        assert src, tool
+        (bin_dir / tool).symlink_to(src)
+    env["PATH"] = str(bin_dir)
+
+    p = subprocess.run([str(bin_dir / "bash"), str(repo / "watchdog.sh")], cwd=repo, env=env,
+                       capture_output=True, text=True)
+
+    assert p.returncode == 0, p.stderr
+    assert "watchdog: STALE" in p.stdout
+    assert (repo / "logs" / "watchdog-last-fire").exists()
