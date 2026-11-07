@@ -63,7 +63,7 @@ def _run_main(db_path, prompt_path, monkeypatch):
     import candidates as candidates_mod
 
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", prompt_path)
-    monkeypatch.setattr(rank_mod, "RANKED_PATH", prompt_path.parent / "ranked.json")
+    monkeypatch.setattr(rank_mod, "ranked_path", lambda: prompt_path.parent / "ranked.json")
     monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
     # Point candidates.py's own connect() at the test DB so
@@ -85,7 +85,7 @@ class TestRankMainGuards:
         import rank as rank_mod
         import db as db_mod
         monkeypatch.setattr(rank_mod, "PROMPT_PATH", prompt_path.parent / "missing_rank.md")
-        monkeypatch.setattr(rank_mod, "RANKED_PATH", prompt_path.parent / "ranked.json")
+        monkeypatch.setattr(rank_mod, "ranked_path", lambda: prompt_path.parent / "ranked.json")
         monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
         result = rank_mod.main()

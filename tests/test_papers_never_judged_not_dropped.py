@@ -70,7 +70,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(pf_mod, "connect", connect)
     monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", rubric)
-    monkeypatch.setattr(rank_mod, "RANKED_PATH", tmp_path / "ranked.json")
+    monkeypatch.setattr(rank_mod, "ranked_path", lambda: tmp_path / "ranked.json")
     monkeypatch.setattr(rank_mod, "connect", connect)
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
     # Real load_candidates_from_db() is used (not monkeypatched); only its

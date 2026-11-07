@@ -199,10 +199,11 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     daily run. Usually no LLM call happens: on a missed-day backfill the
     candidates are typically all prescored from prior runs.
     """
+    import edition
     import prompts
     import rank as rank_mod
 
-    rubric = prompts.render("rank", rank_mod.EDITION, template_path=rank_mod.PROMPT_PATH)
+    rubric = prompts.render("rank", edition.current(), template_path=rank_mod.PROMPT_PATH)
     decisions = rank_mod.score_candidates(candidates, rubric)
 
     # Persist using rank.py's persist function.
