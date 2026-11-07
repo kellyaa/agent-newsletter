@@ -7,6 +7,7 @@ This directory contains comprehensive guides for operating, extending, and under
 ### I want to…
 
 - **Look up a command** → [command-reference.md](command-reference.md)
+- **Contribute for the first time** → [getting-started-guide.md](getting-started-guide.md), then [Start here](../CONTRIBUTING.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
@@ -32,6 +33,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [repository-branches-and-worktrees.md](repository-branches-and-worktrees.md) | Two-branch model, worktree layout, main vs content |
 | [risk-tiers.md](risk-tiers.md) | Change review expectations by what you touch (tier 0–3) |
 | [agent-boundaries.md](agent-boundaries.md) | What AI agents may and may not do here (summary of AGENTS.md and the policy file) |
+| [multi-agent.md](multi-agent.md) | How several AI agents work in the repo at once without colliding (roles, coordination) |
 | [strategy.md](strategy.md) | Index of where direction, roadmap, health and agent activity are recorded |
 
 ### Operations
@@ -39,8 +41,11 @@ This directory contains comprehensive guides for operating, extending, and under
 | Guide | Purpose |
 |-------|---------|
 | [operations-and-maintenance.md](operations-and-maintenance.md) | Daily checks, run model, where things live, when to investigate |
+| [operations-runbook.md](operations-runbook.md) | Fast lookup for common operational tasks; quick-reference companion to operations-and-maintenance |
 | [ai-ops-runbook.md](ai-ops-runbook.md) | Index for incidents: pipeline health, recovery, cost, and handling agent-authored changes |
 | [debugging-guide.md](debugging-guide.md) | Stage-by-stage failure diagnosis, common errors, recovery steps |
+| [database-recovery-guide.md](database-recovery-guide.md) | Recover a corrupted or inconsistent `state.db`; advanced troubleshooting beyond the debugging guide |
+| [monitoring-and-alerting-integration.md](monitoring-and-alerting-integration.md) | Integrate pipeline health with external monitoring and alerting systems |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
 | [performance-and-cost-guide.md](performance-and-cost-guide.md) | Where tokens and wall time go; cost measurement and tracking |
 | [source-reliability-matrix.md](source-reliability-matrix.md) | Which sources fail how often; fallback and retry behavior |
@@ -53,6 +58,8 @@ This directory contains comprehensive guides for operating, extending, and under
 | [edition-tuning-guide.md](edition-tuning-guide.md) | How to adjust a live edition's output: keyword gates, sources, prompt |
 | [prefilter-gates-guide.md](prefilter-gates-guide.md) | Recency window, keyword matching, section assignment, dedup rules |
 | [ranking-rubric.md](ranking-rubric.md) | The four rubric axes, section-specific thresholds, featured/appendix cutoffs |
+| [customizing-ranking-rubric.md](customizing-ranking-rubric.md) | How to safely modify or tune the ranking rubric for a new or existing edition |
+| [environment-configuration-reference.md](environment-configuration-reference.md) | Complete reference for every environment variable the pipeline reads |
 | [prompt-slots-guide.md](prompt-slots-guide.md) | Editing rank and write prompt fragments without breaking the pipeline |
 
 ### Sources & Data
@@ -62,14 +69,17 @@ This directory contains comprehensive guides for operating, extending, and under
 | [adding-feed-sources-guide.md](adding-feed-sources-guide.md) | Add an RSS, arXiv, HN, Reddit, or HTML source to an edition |
 | [extending-pipeline-sources.md](extending-pipeline-sources.md) | Add a new source family (e.g., authenticated API); adapter pattern |
 | [database-schema-guide.md](database-schema-guide.md) | `items`, `runs`, `run_attempts` schema; common queries |
+| [sql-export-and-analysis-guide.md](sql-export-and-analysis-guide.md) | Export `state.db` for external analysis, build custom reports, audit pipeline decisions |
 | [metrics.md](metrics.md) | Summary of all recorded metrics (see `metrics/` for column docs) |
 
 ### Development
 
 | Guide | Purpose |
 |-------|---------|
+| [getting-started-guide.md](getting-started-guide.md) | First-time contributor walkthrough: understand the codebase, set up, make your first change |
 | [site-development-guide.md](site-development-guide.md) | Run the Astro dev server, understand the content model, edit pages |
 | [llm-integration-guide.md](llm-integration-guide.md) | Add new LLM calls; structured output; retries; timeouts |
+| [code-patterns-guide.md](code-patterns-guide.md) | Common patterns used across the project (DB access, config loading) when writing new code |
 | [testing-patterns-guide.md](testing-patterns-guide.md) | How tests are organized; fixture patterns; e2e and unit test suites |
 | [review-rubric.md](review-rubric.md) | What constitutes good code in this project (clarity, coverage, idempotency) |
 | [quality.md](quality.md) | Code quality standards: coverage gate, test patterns, type hints |
