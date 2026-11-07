@@ -864,7 +864,7 @@ class TestFetchMain:
     def _run_main(self, db_path, sources_path, monkeypatch):
         import fetch as fetch_mod
         import db as db_mod
-        monkeypatch.setattr(fetch_mod, "SOURCES_PATH", sources_path)
+        monkeypatch.setattr(fetch_mod, "sources_path", lambda: sources_path)
         monkeypatch.setattr(fetch_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(fetch_mod, "init_db", lambda: db_mod.init_db(db_path))
         return fetch_mod.main()

@@ -13,6 +13,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlsplit
 
@@ -39,7 +40,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("fetch")
 
-SOURCES_PATH = edition.current().paths().sources
 
 # The HTTP client lives in net.py (shared with new_edition.py). These names
 # stay as fetch-module attributes because tests and check_edition patch or
@@ -511,8 +511,17 @@ def upsert_items(
 
 # ---------- Driver ----------
 
-def load_sources() -> dict:
-    with open(SOURCES_PATH) as f:
+def sources_path() -> Path:
+    """The selected edition's ``sources.yaml``, resolved from ``EDITION`` at call time.
+
+    Not bound at import, so ``import fetch`` works with no edition selected and
+    check_edition can import it without patching the environment (#446).
+    """
+    return edition.current().paths().sources
+
+
+def load_sources(path: Path | None = None) -> dict:
+    with open(path or sources_path()) as f:
         return yaml.safe_load(f)
 
 
