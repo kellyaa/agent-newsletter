@@ -141,6 +141,9 @@ class MetaKey(StrEnum):
 
     # Run date for which fetch completed; fetch sets it, reset_day --refetch clears it.
     FETCH_DONE = "fetch_completed_date"
+    # sha256 of the rendered rank prompt; prefilter compares and writes it,
+    # migrate_layout seeds it from the legacy .rubric_hash file.
+    RUBRIC_HASH = "rubric_hash"
 
 
 class ExitCode(IntEnum):
