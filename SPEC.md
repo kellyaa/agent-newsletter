@@ -153,7 +153,7 @@ If more items clear the threshold than the cap allows, take the top-N by score w
 **Adaptive papers cap (deployed 2026-06-09).** Motivated by a simulation that found ~63% score-10 miss rate under sustained score inflation with the static cap=5. The burst trigger fires on the score-10 count specifically (not the score-7+ count the simulator used) so it activates exactly when top-quality supply is the problem. **Burn-in review completed 2026-10-15 (see issue #121 for tracking).** The burst cap fires appropriately: observed 14 firing events across ~160 days of operation, with score-10 papers at 6.5% frequency. Configuration (burst_trigger_count=10) is stable and optimal; no tuning needed.
 
 Also emit:
-- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning and possible future facets) — they no longer drive section grouping. (The `topics_covered` table is a reserved stub for future cross-day topic dedup — see #4; it is not currently written to or read from.)
+- **Tags** from a closed vocabulary: `frameworks`, `tool-use`, `memory`, `planning`, `evals`, `code-agents`, `devops-agents`, `observability`, `safety`, `research`, `infra`, `multi-agent`, `cost-latency`. Tags are now informational (used for the ranker's own reasoning and possible future facets) — they no longer drive section grouping.
 - **Section assignment**: `papers` | `news` | `blogs`. See "Section assignment" under the Writer step for the default rules and override criteria.
 
 Writes scores, tags, and section back to `state.db`. Sets `status` to `featured`, `appendix`, `dropped`, or (for papers losing the cap) `candidate` — **`ranked` is never written as a status value**; `rank.py` transitions directly to the final disposition without an intermediate `ranked` state.
@@ -237,7 +237,7 @@ The single most important correctness property. Three layers:
 **Layer 3: Cross-day dedup (the one that bites everyone).**
 - The `items` table tracks `status`. Once an item reaches a terminal status (`featured`, `published`, or `dropped`) it will never be re-ranked or re-summarized even if it's still trending. (`ranked` is never written as a status — `rank.py` transitions items directly from `candidate` to `featured`/`appendix`/`dropped`, never via an intermediate `ranked` step.)
 - **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
-- Topic-level dedup (**not yet implemented — see #4**): the design intent is a weekly-rolling "topics covered" list (e.g., "DSPy 2.5 release", "Anthropic's SWE-Bench result") passed into the ranker prompt so it can down-weight items that are just the 4th take on the same news. The `topics_covered` table schema exists in `db.py` as a reserved stub, but no pipeline stage currently writes to or reads from it.
+- Topic-level dedup is **not implemented, by decision** (#619): a study (#599) found about 4 cross-day topic repeats per edition (about 3% of featured slots), too few to justify a ranker `topic` field, a `db.py` helper and a pruning job. The unused `topics_covered` stub table was dropped; `db.py` removes it from existing DBs on `init_db()`.
 
 **Papers multi-day candidate pool (issue #16, score-once semantics).**
 
@@ -297,12 +297,6 @@ CREATE TABLE runs (
   notes TEXT,
   papers_expired_unjudged INTEGER, -- papers this run's age-out moved to expired_unjudged (#297)
   papers_prerank_cut INTEGER       -- unscored papers PAPER_PRERANK_CAP left out of this run's ranker call (#297)
-);
-
-CREATE TABLE topics_covered (  -- reserved stub for future cross-day topic dedup; not yet written to (see #4)
-  topic TEXT NOT NULL,           -- short slug (design intent: emitted by ranker when implemented)
-  date TEXT NOT NULL,
-  item_id TEXT NOT NULL
 );
 ```
 
