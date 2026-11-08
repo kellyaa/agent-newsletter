@@ -164,6 +164,22 @@ class ExitCode(IntEnum):
     EMPTY_ISSUE = 5
 
 
+class AttemptOutcome(StrEnum):
+    """Outcome states for a pipeline run (run_attempts.outcome in state.db).
+
+    Values match those used in db.py, run_attempt.py, run_edition.sh, and run.sh.
+    This is the contract between Python accounting and shell orchestrators.
+    """
+
+    STARTED = "started"
+    OK = "ok"
+    FAILED = "failed"
+
+
+# Sentinel value printed by run_attempt.py when there are no run attempts yet.
+NO_ATTEMPT = "none"
+
+
 # ---------------------------------------------------------------------------
 # TypedDicts
 # ---------------------------------------------------------------------------
