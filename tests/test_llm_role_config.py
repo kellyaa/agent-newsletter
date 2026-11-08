@@ -85,8 +85,11 @@ def test_stages_pass_their_role_config_to_call_llm(monkeypatch):
         seen.append((kw["label"], kw["model"], kw["timeout_s"], kw["max_tokens"]))
         return {"rankings": [], "items": []}
 
-    monkeypatch.setattr(rank, "RANKER", llm.RoleConfig("r-model", 11, 22))
-    monkeypatch.setattr(write, "WRITER", llm.RoleConfig("w-model", 33, 44))
+    for k, v in {
+        "RANKER_MODEL": "r-model", "RANKER_TIMEOUT_S": "11", "RANKER_MAX_TOKENS": "22",
+        "WRITER_MODEL": "w-model", "WRITER_TIMEOUT_S": "33", "WRITER_MAX_TOKENS": "44",
+    }.items():
+        monkeypatch.setenv(k, v)
     monkeypatch.setattr(rank, "call_llm", fake)
     monkeypatch.setattr(write, "call_llm", fake)
     rank.invoke_ranker("p", "news")

@@ -67,6 +67,8 @@ _LAZY_ALIASES = {
     "SECTION_RULES": lambda: edition.current().section_rules(),
     "VALID_TAGS": lambda: edition.current().valid_tags(),
     "KEYWORD_RE": lambda: edition.current().keyword_re(),
+    # Deprecated: invoke_ranker reads llm.ranker_config() per call.
+    "RANKER": lambda: ranker_config(),
 }
 
 
@@ -75,9 +77,6 @@ def __getattr__(name: str):
         return _LAZY_ALIASES[name]()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
-# Model, timeout and token cap: env-driven, single-sourced in llm.ranker_config().
-RANKER = ranker_config()
 
 def effective_cap(section: str, items: list[dict]) -> int:
     """Pick today's cap for a section.
@@ -138,14 +137,17 @@ def build_prompt(section: str, items: list[dict], rubric: str) -> str:
 
 
 def invoke_ranker(prompt: str, label: str) -> list[dict]:
+    # Model, timeout and token cap: env-driven, read per call from
+    # llm.ranker_config() so an env change after import is honoured.
+    cfg = ranker_config()
     out = call_llm(
         prompt,
         RANKER_OUTPUT_SCHEMA,
         schema_name="ranker_output",
-        model=RANKER.model,
-        timeout_s=RANKER.timeout_s,
+        model=cfg.model,
+        timeout_s=cfg.timeout_s,
         label=label,
-        max_tokens=RANKER.max_tokens,
+        max_tokens=cfg.max_tokens,
     )
     rankings = out.get("rankings")
     if not isinstance(rankings, list):
