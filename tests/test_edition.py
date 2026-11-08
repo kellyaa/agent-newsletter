@@ -285,16 +285,9 @@ def test_stage_modules_refuse_to_import_without_edition(monkeypatch):
     """A stage must fail before doing any work when no edition is selected."""
     import subprocess, sys
     env = {k: v for k, v in __import__("os").environ.items() if k != "EDITION"}
-    for mod in ("prefilter",):
-        r = subprocess.run(
-            [sys.executable, "-c", f"import sys; sys.path.insert(0, 'scripts'); import {mod}"],
-            cwd=edition.REPO_ROOT, env=env, capture_output=True, text=True,
-        )
-        assert r.returncode != 0, mod
-        assert "EDITION is not set" in r.stderr, mod
-    # fetch, rank and write resolve their edition at call time (#446): importing them
-    # is fine, but running them fails in init_db() before any work is done.
-    for script in ("fetch.py", "rank.py", "write.py"):
+    # fetch, prefilter, rank and write resolve their edition at call time (#446):
+    # importing them is fine, but running them fails in init_db() before any work is done.
+    for script in ("fetch.py", "prefilter.py", "rank.py", "write.py"):
         r = subprocess.run(
             [sys.executable, f"scripts/{script}"],
             cwd=edition.REPO_ROOT, env=env, capture_output=True, text=True,

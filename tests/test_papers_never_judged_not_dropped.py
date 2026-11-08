@@ -62,7 +62,7 @@ def wired(tmp_path, monkeypatch):
     def connect(*_a, **_kw):
         return db_mod.connect(db_path)
 
-    monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", tmp_path / "candidates.json")
+    monkeypatch.setattr(pf_mod, "candidates_path", lambda: tmp_path / "candidates.json")
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric)
     seed = db_mod.connect(db_path)
     db_mod.set_meta(seed, pf_mod.RUBRIC_HASH_KEY, pf_mod._rubric_hash())
