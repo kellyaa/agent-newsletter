@@ -248,3 +248,141 @@ def test_python_falls_back_to_venv_then_python3(repo):
     p = subprocess.run(["bash", str(repo / "scripts" / "watchdog.sh")], cwd=repo, env=env,
                        capture_output=True, text=True)
     assert p.stdout.strip().splitlines()[-1] == f"STATUS: ALREADY_RAN {d}"
+
+
+# ─── log parsing: which stage died, what counts as DONE, which day's log ────
+
+def test_last_failed_marker_names_the_stage(repo):
+    """A log from a retried run has several FAILED lines; the latest one is the stage."""
+    d = _today()
+    _log(repo, "agents", DONE)
+    _log(repo, "beta",
+         "2026-01-01T00:00:00Z [run] FAILED at stage=fetch rc=1",
+         "2026-01-01T00:05:00Z [run] FAILED at stage=publish rc=3")
+    p, out = _wd(repo, "--check")
+    assert out[-1] == f"STATUS: FAILED {d} beta:publish"
+
+
+def test_stage_names_with_hyphens_are_reported_whole(repo):
+    d = _today()
+    _log(repo, "agents", DONE)
+    _log(repo, "beta", "2026-01-01T00:00:00Z [run] FAILED at stage=run-attempt rc=2")
+    p, out = _wd(repo, "--check")
+    assert f"EDITION: beta FAILED {d} run-attempt" in out
+
+
+def test_log_without_failed_marker_is_unknown_stage_when_only_checking(repo):
+    """A started-but-unfinished log with no FAILED line reports stage 'unknown', not never-started."""
+    d = _today()
+    _log(repo, "agents", DONE)
+    _log(repo, "beta", "2026-01-01T00:00:00Z [run] ── fetch ── start")
+    p, out = _wd(repo, "--check")
+    assert p.returncode == 1
+    assert out[-2:] == [f"EDITION: beta FAILED {d} unknown", f"STATUS: FAILED {d} beta:unknown"]
+
+
+@pytest.mark.parametrize("line", [
+    "2026-01-01T00:00:00Z [run] DONE with warnings",   # trailing text: not the marker
+    "2026-01-01T00:00:00Z [run] NOT DONE",              # DONE is not the whole message
+    "[run] DONE",                                       # no timestamp prefix
+    "2026-01-01T00:00:00Z [fetch] DONE",                # a stage's own DONE, not the run's
+])
+def test_only_the_exact_run_done_line_marks_a_log_complete(repo, line):
+    d = _today()
+    _log(repo, "agents", DONE)
+    _log(repo, "beta", line)
+    p, out = _wd(repo, "--check")
+    assert p.returncode == 1
+    assert out[-1] == f"STATUS: FAILED {d} beta:unknown"
+
+
+def test_done_marker_anywhere_in_the_log_completes_it(repo):
+    """A run that logged DONE and then more lines (e.g. a later push note) is still complete."""
+    d = _today()
+    _log(repo, "agents", DONE)
+    _log(repo, "beta", "2026-01-01T00:00:00Z [run] FAILED at stage=fetch rc=1", DONE,
+         "2026-01-01T00:00:09Z [run] note: pushed")
+    p, out = _wd(repo, "--check")
+    assert p.returncode == 0
+    assert out[-1] == f"STATUS: ALREADY_RAN {d}"
+
+
+def test_yesterdays_completed_log_does_not_count_for_today(repo):
+    d = _today()
+    _log(repo, "agents", DONE)
+    old = repo / "logs" / "beta"
+    old.mkdir(parents=True)
+    (old / "run-2000-01-01.log").write_text(DONE + "\n")
+    p, out = _wd(repo, "--check")
+    assert p.returncode == 1
+    assert out[-1] == f"STATUS: FAILED {d} beta:never-started"
+
+
+# ─── CONTENT_ROOT handed to missed_days.py / dead_sources.py ────────────────
+
+# Stand-ins that report the CONTENT_ROOT the watchdog exported to them.
+ECHO_ROOT = '#!/usr/bin/env python3\nimport os\nprint("ROOT=" + os.environ.get("CONTENT_ROOT", ""))\n'
+
+
+def _with_echo_scripts(repo):
+    for name in ("missed_days.py", "dead_sources.py"):
+        (repo / "scripts" / name).write_text(ECHO_ROOT)
+
+
+def _roots(p):
+    return [l for l in p.stdout.splitlines() if l.startswith("ROOT=")]
+
+
+def _clean_env():
+    e = {k: v for k, v in os.environ.items() if k != "CONTENT_ROOT"}
+    return e
+
+
+def _run_check(repo, **env):
+    e = {**_clean_env(), "NEWSLETTER_PYTHON": sys.executable, **env}
+    return subprocess.run(["bash", str(repo / "scripts" / "watchdog.sh"), "--check"],
+                          cwd=repo, env=e, capture_output=True, text=True, timeout=60)
+
+
+def test_content_worktree_is_used_when_present(repo):
+    _with_echo_scripts(repo)
+    wt = repo / ".worktrees" / "content"
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: elsewhere\n")
+    p = _run_check(repo)
+    assert _roots(p) == [f"ROOT={wt}", f"ROOT={wt}"]
+
+
+def test_content_root_is_empty_without_worktree_or_override(repo):
+    _with_echo_scripts(repo)
+    p = _run_check(repo)
+    assert _roots(p) == ["ROOT=", "ROOT="]
+
+
+def test_directory_without_git_entry_is_not_a_content_worktree(repo):
+    _with_echo_scripts(repo)
+    (repo / ".worktrees" / "content").mkdir(parents=True)
+    p = _run_check(repo)
+    assert _roots(p) == ["ROOT=", "ROOT="]
+
+
+def test_explicit_content_root_wins_over_the_worktree(repo, tmp_path):
+    _with_echo_scripts(repo)
+    wt = repo / ".worktrees" / "content"
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: elsewhere\n")
+    other = tmp_path / "elsewhere"
+    p = _run_check(repo, CONTENT_ROOT=str(other))
+    assert _roots(p) == [f"ROOT={other}", f"ROOT={other}"]
+
+
+def test_crashing_informational_scripts_do_not_change_status(repo):
+    """missed_days / dead_sources are informational: a crash must not alter STATUS or the exit code."""
+    d = _today()
+    for name in ("missed_days.py", "dead_sources.py"):
+        (repo / "scripts" / name).write_text("import sys\nprint('boom')\nsys.exit(9)\n")
+    _log(repo, "agents", DONE)
+    _log(repo, "beta", DONE)
+    p, out = _wd(repo, "--check")
+    assert p.returncode == 0
+    assert out == [f"EDITION: agents ALREADY_RAN {d}", f"EDITION: beta ALREADY_RAN {d}", f"STATUS: ALREADY_RAN {d}"]
