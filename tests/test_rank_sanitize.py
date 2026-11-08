@@ -101,7 +101,7 @@ def test_main_ghost_id_does_not_displace_real_items(tmp_path, monkeypatch):
     prompt = tmp_path / "rank.md"
     prompt.write_text(base_template("rank"))
     monkeypatch.setattr(rank, "PROMPT_PATH", prompt)
-    monkeypatch.setattr(rank, "RANKED_PATH", tmp_path / "ranked.json")
+    monkeypatch.setattr(rank, "ranked_path", lambda: tmp_path / "ranked.json")
     monkeypatch.setattr(rank, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(rank, "init_db", lambda: db_mod.init_db(db_path))
     monkeypatch.setattr(candidates_mod, "connect", lambda: db_mod.connect(db_path))

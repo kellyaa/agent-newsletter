@@ -14,16 +14,17 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
 import prompts
 from db import (
-    CONTENT_ROOT,
     REPO_ROOT,
     apply_rank_decisions,
     bump_times_competed,
     connect,
+    content_root,
     init_db,
     reset_unpublished_featured,
 )
@@ -37,21 +38,46 @@ logging.basicConfig(
 )
 log = logging.getLogger("rank")
 
-EDITION = edition.current()
 # Base template; main() renders it with the edition's fragments.
 PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
-RANKED_PATH = edition.runtime_paths(CONTENT_ROOT).ranked  # debug artifact: raw LLM scores
 
-# Model, timeout and token cap: env-driven, single-sourced in llm.ranker_config().
-RANKER = ranker_config()
+
+def ranked_path() -> Path:
+    """The selected edition's ranked.json debug artifact (raw LLM scores).
+
+    Resolved from ``EDITION`` / ``CONTENT_ROOT`` on every call (like
+    :func:`db.db_path`), so ``import rank`` needs no edition and never pins a
+    stale one (#446).
+    """
+    return edition.runtime_paths(content_root()).ranked
+
 
 # Per-section thresholds and caps come from editions/<slug>/edition.yaml
-# (`sections:`). See SPEC.md "Ranking rubric".
+# (`sections:`), read via edition.current().section_rules() at call time.
+# See SPEC.md "Ranking rubric".
 # Papers also has burst_cap/burst_trigger_score/burst_trigger_count for the
 # adaptive cap policy: when today's count of papers at score >= burst_trigger_score
 # reaches burst_trigger_count, the cap rises from `cap` to `burst_cap`.
-SECTION_RULES = EDITION.section_rules()
 
+# Deprecated module attributes, resolved lazily so importing this module does
+# not require an edition (#446). New code calls edition.current() / ranked_path().
+_LAZY_ALIASES = {
+    "EDITION": lambda: edition.current(),
+    "RANKED_PATH": lambda: ranked_path(),
+    "SECTION_RULES": lambda: edition.current().section_rules(),
+    "VALID_TAGS": lambda: edition.current().valid_tags(),
+    "KEYWORD_RE": lambda: edition.current().keyword_re(),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_ALIASES:
+        return _LAZY_ALIASES[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Model, timeout and token cap: env-driven, single-sourced in llm.ranker_config().
+RANKER = ranker_config()
 
 def effective_cap(section: str, items: list[dict]) -> int:
     """Pick today's cap for a section.
@@ -60,7 +86,7 @@ def effective_cap(section: str, items: list[dict]) -> int:
     if that count reaches burst_trigger_count, return burst_cap, else return cap.
     Sections without burst_* keys always return their static cap.
     """
-    rules = SECTION_RULES[section]
+    rules = edition.current().section_rules()[section]
     burst_score = rules.get("burst_trigger_score")
     if burst_score is None:
         return rules["cap"]
@@ -73,9 +99,6 @@ def effective_cap(section: str, items: list[dict]) -> int:
         )
         return rules["burst_cap"]
     return rules["cap"]
-
-VALID_TAGS = EDITION.valid_tags()
-KEYWORD_RE = EDITION.keyword_re()
 
 RANKER_OUTPUT_SCHEMA = {
     "type": "object",
@@ -126,7 +149,7 @@ def invoke_ranker(prompt: str, label: str) -> list[dict]:
     )
     rankings = out.get("rankings")
     if not isinstance(rankings, list):
-        debug_path = EDITION.paths().logs / f"ranker-output-{label}.json"
+        debug_path = edition.current().paths().logs / f"ranker-output-{label}.json"
         debug_path.parent.mkdir(parents=True, exist_ok=True)
         debug_path.write_text(json.dumps(out, indent=2))
         raise RuntimeError(f"ranker returned no rankings for {label}; output at {debug_path}")
@@ -263,8 +286,9 @@ def assign_statuses(scored_by_section: dict[str, list[ScoredItem]]) -> dict[str,
     News/blogs unchanged.
     """
     final: dict[str, dict] = {}
+    section_rules = edition.current().section_rules()
     for section, items in scored_by_section.items():
-        rules = SECTION_RULES[section]
+        rules = section_rules[section]
         items.sort(key=lambda e: (-e["score"], e["id"]))
         cap = effective_cap(section, items)
         featured_count = 0
@@ -354,9 +378,10 @@ def score_candidates(
     # Build id → section map from input candidates for fallback handling.
     # Papers (both unscored + prescored) all collapse to section='papers'.
     by_id_section: dict[str, str] = {}
+    section_rules = edition.current().section_rules()
     for bucket, items in candidates.items():
         section = Section.PAPERS.value if bucket in (Section.PAPERS, PAPERS_PRESCORED) else bucket
-        if section not in SECTION_RULES:
+        if section not in section_rules:
             continue  # pragma: no cover — load_candidates_from_db only returns valid bucket keys
         for it in items:
             by_id_section[it["id"]] = section
@@ -383,8 +408,9 @@ def score_candidates(
 def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     counts: dict[str, int] = {}
     rows = []
+    valid_tags = edition.current().valid_tags()
     for item_id, d in decisions.items():
-        clean_tags = [t for t in d["tags"] if t in VALID_TAGS]
+        clean_tags = [t for t in d["tags"] if t in valid_tags]
         rows.append((item_id, d["score"], json.dumps(clean_tags), d["why"], d["status"]))
         counts[d["status"]] = counts.get(d["status"], 0) + 1
     apply_rank_decisions(conn, rows)
@@ -393,7 +419,7 @@ def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
 
 def _prerank_scorer(item: dict, now) -> float:
     """candidates.prerank_score bound to this edition's keyword gate."""
-    return prerank_score(item, now, KEYWORD_RE)
+    return prerank_score(item, now, edition.current().keyword_re())
 
 
 def main(now: datetime | None = None) -> int:
@@ -411,7 +437,7 @@ def main(now: datetime | None = None) -> int:
     if now is None:
         now = datetime.now(timezone.utc)
 
-    rubric = prompts.render_and_log("rank", EDITION, template_path=PROMPT_PATH)
+    rubric = prompts.render_and_log("rank", edition.current(), template_path=PROMPT_PATH)
 
     # Start from a clean slate: publish promotes featured items, so any still
     # 'featured' now were picked by an earlier run that failed after rank. Left
@@ -462,7 +488,7 @@ def main(now: datetime | None = None) -> int:
         log.warning("no candidates to rank; exiting cleanly")
         return ExitCode.OK
 
-    decisions = score_candidates(candidates, rubric, ranked_path=RANKED_PATH)
+    decisions = score_candidates(candidates, rubric, ranked_path=ranked_path())
 
     conn = connect()
     counts = persist(conn, decisions)

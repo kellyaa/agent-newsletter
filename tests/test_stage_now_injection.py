@@ -67,7 +67,7 @@ def test_rank_main_passes_injected_now_to_pool_loader(tmp_path, monkeypatch):
     prompt = tmp_path / "rank.md"
     prompt.write_text(base_template("rank"))
     monkeypatch.setattr(rank_mod, "PROMPT_PATH", prompt)
-    monkeypatch.setattr(rank_mod, "RANKED_PATH", tmp_path / "ranked.json")
+    monkeypatch.setattr(rank_mod, "ranked_path", lambda: tmp_path / "ranked.json")
     monkeypatch.setattr(rank_mod, "connect", lambda: db_mod.connect(db_path))
     monkeypatch.setattr(rank_mod, "init_db", lambda: db_mod.init_db(db_path))
 
