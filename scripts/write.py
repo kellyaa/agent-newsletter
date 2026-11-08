@@ -60,6 +60,8 @@ _LAZY_ALIASES = {
     "EDITION": lambda: edition.current(),
     "ISSUES_DIR": lambda: issues_dir(),
     "READER_PROFILE": lambda: edition.current().reader_profile,
+    # Deprecated: invoke_writer reads llm.writer_config() per call.
+    "WRITER": lambda: writer_config(),
 }
 
 
@@ -68,9 +70,6 @@ def __getattr__(name: str):
         return _LAZY_ALIASES[name]()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
-# Model, timeout and token cap: env-driven, single-sourced in llm.writer_config().
-WRITER = writer_config()
 
 RAW_TEXT_MAX = 1500
 PREV_NEWSLETTER_MAX = 4000
@@ -234,14 +233,17 @@ def save_writer_response(out) -> Path:
 
 
 def invoke_writer(prompt: str) -> dict:
+    # Model, timeout and token cap: env-driven, read per call from
+    # llm.writer_config() so an env change after import is honoured.
+    cfg = writer_config()
     out = call_llm(
         prompt,
         WRITER_SCHEMA,
         schema_name="writer_output",
-        model=WRITER.model,
-        timeout_s=WRITER.timeout_s,
+        model=cfg.model,
+        timeout_s=cfg.timeout_s,
         label="writer",
-        max_tokens=WRITER.max_tokens,
+        max_tokens=cfg.max_tokens,
     )
     if not isinstance(out, dict) or "items" not in out:
         debug_path = edition.current().paths().logs / "writer-output.json"
