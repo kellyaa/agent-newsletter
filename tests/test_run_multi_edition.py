@@ -64,9 +64,8 @@ if os.environ.get("FAIL_EDITION") == slug and os.environ.get("FAIL_STAGE") == ST
     print(f"stub {STAGE} failing for {slug}", file=sys.stderr)
     sys.exit(7)
 if STAGE == "write":
-    from db import CONTENT_ROOT
-    import edition
-    d = edition.runtime_paths(CONTENT_ROOT).issues_dir
+    import db, edition
+    d = edition.runtime_paths(db.content_root()).issues_dir
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{os.environ['RUN_DATE']}.md").write_text("issue for " + slug)
 '''

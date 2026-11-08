@@ -410,7 +410,7 @@ def test_meta_roundtrip(tmp_path):
 class TestResetDay:
     def _seed(self, tmp_path, monkeypatch):
         import reset_day
-        monkeypatch.setattr(reset_day, "CONTENT_ROOT", tmp_path)
+        monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
         monkeypatch.setenv("RUN_DATE", "2026-10-22")
         paths = edition.runtime_paths(tmp_path, "agents")
         db_mod.init_db(paths.state_db)
@@ -494,7 +494,7 @@ class TestResetDay:
 
     def test_missing_db_is_a_noop(self, tmp_path, monkeypatch):
         import reset_day
-        monkeypatch.setattr(reset_day, "CONTENT_ROOT", tmp_path)
+        monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
         assert reset_day.main([]) == 0
         assert not (tmp_path / "editions").exists()
 
@@ -505,7 +505,7 @@ class TestResetDay:
 
     def test_defaults_run_date_to_today(self, tmp_path, monkeypatch):
         import reset_day
-        monkeypatch.setattr(reset_day, "CONTENT_ROOT", tmp_path)
+        monkeypatch.setenv("CONTENT_ROOT", str(tmp_path))
         monkeypatch.delenv("RUN_DATE", raising=False)
         assert reset_day.main([]) == 0
 

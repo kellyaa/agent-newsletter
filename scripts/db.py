@@ -39,15 +39,15 @@ def db_path() -> Path:
     return _edition.runtime_paths(content_root()).state_db
 
 
-# Kept for the stage modules that still bind it at import time.
-CONTENT_ROOT = content_root()
-
-
 def __getattr__(name: str):
-    # Deprecated alias for db_path(): resolved lazily so ``import db`` does not
-    # require an edition to be selected.
+    # Deprecated aliases, resolved on every access (#446): ``DB_PATH`` for
+    # db_path(), so ``import db`` does not require an edition to be selected,
+    # and ``CONTENT_ROOT`` for content_root(), so a caller that changes
+    # ``$CONTENT_ROOT`` after import never sees the old worktree.
     if name == "DB_PATH":
         return db_path()
+    if name == "CONTENT_ROOT":
+        return content_root()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
