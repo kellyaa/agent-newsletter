@@ -33,6 +33,7 @@ from db import (
     latest_attempt_outcome, next_attempt_number, run_date,
 )
 from llm import usage_totals
+from models import AttemptOutcome, NO_ATTEMPT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,7 +72,7 @@ def finish(conn, date: str, attempt: int, outcome: str, stage: str | None,
            exit_code: int | None, usage: dict | None) -> None:
     updated = finish_run_attempt(
         conn, date, attempt, finished_at=_now(), outcome=outcome,
-        failed_stage=stage if outcome == "failed" else None,
+        failed_stage=stage if outcome == AttemptOutcome.FAILED else None,
         exit_code=exit_code, usage=usage or {},
     )
     if updated == 0:
@@ -80,7 +81,7 @@ def finish(conn, date: str, attempt: int, outcome: str, stage: str | None,
 
 def latest_outcome(conn, date: str) -> str:
     outcome = latest_attempt_outcome(conn, date)
-    return "none" if outcome is None else outcome
+    return NO_ATTEMPT if outcome is None else outcome
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -90,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("latest")
     f = sub.add_parser("finish")
     f.add_argument("attempt", type=int)
-    f.add_argument("outcome", choices=["ok", "failed"])
+    f.add_argument("outcome", choices=[AttemptOutcome.OK, AttemptOutcome.FAILED])
     f.add_argument("--stage")
     f.add_argument("--exit-code", type=int)
     args = ap.parse_args(argv)
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "latest":
         # Read-only: never create an edition's DB just to ask about it.
         if not db_path().exists():
-            print("none")
+            print(NO_ATTEMPT)
             return 0
         conn = connect()
         try:

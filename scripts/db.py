@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import edition as _edition
-from models import Section, Status
+from models import AttemptOutcome, Section, Status
 # URL policy (scheme allowlist, dedup canonicalization, item ids) lives in
 # urls.py; re-exported because callers and tests import it from db.
 from urls import (  # noqa: F401
@@ -805,8 +805,8 @@ def insert_run_attempt(
     """Record attempt `attempt` of `date` with outcome ``started``. Commits."""
     conn.execute(
         "INSERT INTO run_attempts (date, attempt, started_at, outcome, code_commit, code_dirty, host)"
-        " VALUES (?, ?, ?, 'started', ?, ?, ?)",
-        (date, attempt, started_at, code_commit, code_dirty, host),
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (date, attempt, started_at, AttemptOutcome.STARTED, code_commit, code_dirty, host),
     )
     conn.commit()
 
