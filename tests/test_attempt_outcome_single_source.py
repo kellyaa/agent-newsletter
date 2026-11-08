@@ -1,14 +1,11 @@
-"""The run_attempts.outcome vocabulary lives in models.py with a guard test.
+"""run_attempts outcome vocabulary is defined once, in models.AttemptOutcome.
 
-run_attempt.py, db.py, run.sh, and run_edition.sh all reference the outcome
-vocabulary ('started', 'ok', 'failed') and the sentinel ('none'). The contract
-is written in five places with no guard. If one side renames a value, the
-orchestrator silently skips or re-runs every edition.
-
-These tests:
-- check that db.py and run_attempt.py use only models.AttemptOutcome / NO_ATTEMPT
-- check that run.sh and run_edition.sh use only those values
-- pin the values against future changes
+``run_edition.sh`` writes ``ok`` / ``failed`` through ``run_attempt.py finish``;
+``run.sh`` reads ``run_attempt.py latest`` (``started | ok | failed | none``) to
+skip editions that already shipped and to pick the ones ``--failed`` re-runs.
+A rename on one side alone would make run.sh silently re-run every edition (or
+none), so the Python side takes the words from models and these guards check
+that the shell scripts still use the same ones.
 """
 from __future__ import annotations
 
@@ -18,113 +15,115 @@ from pathlib import Path
 
 import pytest
 
-from models import AttemptOutcome, NO_ATTEMPT
+import db as db_mod
+import run_attempt
+from models import NO_ATTEMPT, AttemptOutcome
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
-
-# The shell scripts that reference outcome
-SHELL_SCRIPTS = {
-    ROOT / "run.sh",
-    SCRIPTS / "run_edition.sh",
-}
+RUN_SH = ROOT / "run.sh"
+RUN_EDITION = SCRIPTS / "run_edition.sh"
+VOCAB = {o.value for o in AttemptOutcome} | {NO_ATTEMPT}
+GUARDED = ("run_attempt.py", "db.py")
 
 
-def _imported_modules_and_names(path: Path) -> tuple[set[str], set[str]]:
-    """Return (module names imported, string constant values)."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    modules: set[str] = set()
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.update(a.name.split(".")[0] for a in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            modules.add(node.module.split(".")[0])
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            names.add(node.value)
-    return modules, names
-
-
-def test_attempt_outcome_values_pinned():
-    """The outcome constants must not change accidentally."""
-    assert set(AttemptOutcome) == {
-        AttemptOutcome.STARTED, AttemptOutcome.OK, AttemptOutcome.FAILED
-    }
-    assert set(str(v) for v in AttemptOutcome) == {"started", "ok", "failed"}
+def test_values_unchanged():
+    # Stored in state.db on the content branch and compared by run.sh.
+    assert [o.value for o in AttemptOutcome] == ["started", "ok", "failed"]
     assert NO_ATTEMPT == "none"
+    assert NO_ATTEMPT not in {o.value for o in AttemptOutcome}
 
 
-def test_db_uses_models_outcome_not_literals():
-    """db.py must import AttemptOutcome and use it, not hard-coded strings."""
-    path = SCRIPTS / "db.py"
-    modules, strings = _imported_modules_and_names(path)
-    assert "models" in modules, "db.py must import models (for AttemptOutcome)"
-    # No bare outcome literals in db.py (only variable/enum names allowed)
-    outcome_literals = {"started", "ok", "failed"} & strings
-    assert not outcome_literals, (
-        f"db.py contains outcome literals: {outcome_literals}; "
-        "use AttemptOutcome.STARTED / .OK / .FAILED instead"
+def _outcome_literals(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text())
+    docstrings = {
+        id(n.body[0].value)
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef))
+        and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)
+    }
+    hits = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Constant) or not isinstance(n.value, str) or id(n) in docstrings:
+            continue
+        # SQL `-- comments` (the schema documents the vocabulary) don't count.
+        code = re.sub(r"--[^\n]*", "", n.value)
+        if n.value in VOCAB or re.search(r"'(started|ok|failed)'", code):
+            hits.append(f"{path.name}:{n.lineno} {n.value!r}")
+    return hits
+
+
+def test_detector_flags_inline_literals(tmp_path):
+    f = tmp_path / "x.py"
+    f.write_text(
+        '"""doc: ok | failed"""\n'
+        'a = "failed"\n'
+        "b = \"INSERT INTO t VALUES (?, 'started')\"\n"
+        'c = "none"\n'
+        'd = "fine"\n'
+        "e = \"x TEXT -- 'started' = died\"\n"
     )
+    assert [h.split()[0] for h in _outcome_literals(f)] == ["x.py:2", "x.py:3", "x.py:4"]
 
 
-def test_run_attempt_uses_models_outcome_not_literals():
-    """run_attempt.py must import AttemptOutcome/NO_ATTEMPT and use them."""
-    path = SCRIPTS / "run_attempt.py"
-    modules, strings = _imported_modules_and_names(path)
-    assert "models" in modules, "run_attempt.py must import models"
-    # Check that it doesn't use bare outcome literals (though argparse choices
-    # will have them as enum values, not string literals in the source)
-    outcome_literals = {"started", "ok", "failed"} & strings
-    assert not outcome_literals, (
-        f"run_attempt.py contains outcome literals: {outcome_literals}; "
-        "use models.AttemptOutcome.* and NO_ATTEMPT instead"
-    )
+def test_no_inline_outcome_literals():
+    hits = [h for name in GUARDED for h in _outcome_literals(SCRIPTS / name)]
+    assert hits == [], f"use models.AttemptOutcome / NO_ATTEMPT instead of literals: {hits}"
 
 
-def _shell_outcome_strings(path: Path) -> set[str]:
-    """Extract all string literals from shell that look like outcome values."""
-    text = path.read_text(encoding="utf-8")
-    # Find strings that match outcome patterns: quoted words or case patterns
-    quoted = set(re.findall(r'"((?:started|ok|failed|none))"', text))
-    quoted |= set(re.findall(r"'((?:started|ok|failed|none))'", text))
-    # case pattern: case "$var" in started|ok|failed|none)
-    case_matches = set(re.findall(r'\b(?:started|ok|failed|none)\b', text))
-    # Filter out comments and context we don't care about
-    return quoted | case_matches
+def test_cli_choices_come_from_models():
+    with pytest.raises(SystemExit):
+        run_attempt.main(["finish", "1", "started"])
+    assert {AttemptOutcome.OK, AttemptOutcome.FAILED} < set(AttemptOutcome)
 
 
-def test_shell_scripts_use_outcome_vocabulary():
-    """run.sh and run_edition.sh use only AttemptOutcome values and NO_ATTEMPT."""
-    valid = {str(v) for v in AttemptOutcome} | {NO_ATTEMPT}
-    for path in SHELL_SCRIPTS:
-        strings = _shell_outcome_strings(path)
-        invalid = strings - valid
-        assert not invalid, (
-            f"{path.name} uses invalid outcome values: {invalid}; "
-            f"must use only {valid}"
-        )
+# ---------------------------------------------------------------------------
+# Shell writers / readers agree with models
+# ---------------------------------------------------------------------------
+
+_FINISH_RE = re.compile(r'run_attempt\.py finish "\$RUN_ATTEMPT" (\w+)')
+_CASE_RE = re.compile(r'case "\$latest" in ([\w|]+)\)')
+_EQ_RE = re.compile(r'"\$latest" = (\w+)')
+_FALLBACK_RE = re.compile(r'run_attempt\.py latest[^\n]*\|\| echo (\w+)')
 
 
-def test_all_outcome_values_are_used():
-    """Every AttemptOutcome value and NO_ATTEMPT must appear somewhere."""
-    all_scripts = {SCRIPTS / "db.py", SCRIPTS / "run_attempt.py"} | SHELL_SCRIPTS
-    all_strings = set()
-    for path in all_scripts:
-        _, strings = _imported_modules_and_names(path)
-        all_strings |= strings
-    all_strings |= set(_shell_outcome_strings(path) for path in SHELL_SCRIPTS)
-    # Flatten the set of sets if needed
-    all_strings_flat = set()
-    for s in all_strings:
-        if isinstance(s, str):
-            all_strings_flat.add(s)
-        else:
-            all_strings_flat |= s
+def test_run_edition_finishes_with_model_outcomes():
+    words = _FINISH_RE.findall(RUN_EDITION.read_text())
+    assert sorted(words) == sorted([AttemptOutcome.OK.value, AttemptOutcome.FAILED.value]), words
 
-    valid = {str(v) for v in AttemptOutcome} | {NO_ATTEMPT}
-    # At minimum, the enum values must be mentioned (via models import or literals)
-    for outcome_val in valid:
-        assert outcome_val in all_strings_flat, (
-            f"outcome value {outcome_val!r} not found in any script; "
-            "check for typos or changes in AttemptOutcome/NO_ATTEMPT"
-        )
+
+def test_run_sh_reads_model_outcomes():
+    text = RUN_SH.read_text()
+    cases = [w for grp in _CASE_RE.findall(text) for w in grp.split("|")]
+    eqs = _EQ_RE.findall(text)
+    fallback = _FALLBACK_RE.findall(text)
+    # --failed re-runs failed and died-mid-run attempts; default skips ok ones.
+    assert sorted(cases) == sorted([AttemptOutcome.FAILED.value, AttemptOutcome.STARTED.value])
+    assert eqs == [AttemptOutcome.OK.value]
+    assert fallback == [NO_ATTEMPT]
+
+
+def test_shell_detectors_find_drift():
+    assert _FINISH_RE.findall('scripts/run_attempt.py finish "$RUN_ATTEMPT" success') == ["success"]
+    assert _CASE_RE.findall('case "$latest" in failed|died) ;;') == ["failed|died"]
+    assert _FALLBACK_RE.findall("run_attempt.py latest 2>/dev/null || echo missing") == ["missing"]
+
+
+def test_roundtrip_matches_what_run_sh_compares(tmp_path, monkeypatch):
+    path = tmp_path / "state.db"
+    db_mod.init_db(path)
+    monkeypatch.setattr(run_attempt, "code_state", lambda: ("abc", 0))
+    conn = db_mod.connect(path)
+    try:
+        day = "2026-11-08"
+        assert run_attempt.latest_outcome(conn, day) == NO_ATTEMPT
+        n = run_attempt.start(conn, day, "t")
+        assert run_attempt.latest_outcome(conn, day) == AttemptOutcome.STARTED
+        run_attempt.finish(conn, day, n, AttemptOutcome.FAILED.value, "rank", 1, None)
+        assert run_attempt.latest_outcome(conn, day) == AttemptOutcome.FAILED
+        n = run_attempt.start(conn, day, "t")
+        run_attempt.finish(conn, day, n, AttemptOutcome.OK.value, None, 0, None)
+        assert run_attempt.latest_outcome(conn, day) == AttemptOutcome.OK
+        assert type(run_attempt.latest_outcome(conn, day)) is str
+    finally:
+        conn.close()
