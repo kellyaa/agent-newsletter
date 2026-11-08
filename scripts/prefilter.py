@@ -24,7 +24,7 @@ from db import (
     count_items_in_status, count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
     promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
-from models import ExitCode, PrefilterItem, Section, Status
+from models import ExitCode, MetaKey, PrefilterItem, Section, Status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,7 +90,7 @@ PAPER_POOL_MAX_AGE_DAYS = 7
 # become stale (they were assigned under a different rubric), so we wipe them
 # and let rank.py re-score from scratch on the next run.
 RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
-RUBRIC_HASH_KEY = "rubric_hash"  # key in the edition's state.db `meta` table
+RUBRIC_HASH_KEY = MetaKey.RUBRIC_HASH  # key in the edition's state.db `meta` table
 
 
 def _passes_keyword_gate(item: PrefilterItem) -> bool:

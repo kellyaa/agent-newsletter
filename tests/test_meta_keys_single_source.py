@@ -12,6 +12,8 @@ import ast
 from pathlib import Path
 
 import fetch
+import migrate_layout
+import prefilter
 import reset_day
 from models import MetaKey
 
@@ -20,6 +22,11 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 def test_fetch_and_reset_day_share_the_key():
     assert fetch.FETCH_DONE_KEY == reset_day.FETCH_DONE_KEY == MetaKey.FETCH_DONE
+
+
+def test_prefilter_and_migrate_layout_share_the_rubric_hash_key():
+    assert prefilter.RUBRIC_HASH_KEY == MetaKey.RUBRIC_HASH == "rubric_hash"
+    assert migrate_layout.MetaKey.RUBRIC_HASH is MetaKey.RUBRIC_HASH
 
 
 def test_key_literal_only_in_models():

@@ -40,7 +40,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from models import EDITIONS_DIRNAME, ISSUES_DIRNAME, LEGACY_EDITION, STATE_DB_NAME
+from models import EDITIONS_DIRNAME, ISSUES_DIRNAME, LEGACY_EDITION, STATE_DB_NAME, MetaKey
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COMMIT_MESSAGE = "content: migrate to multi-edition layout"
@@ -135,8 +135,8 @@ def _seed_meta(db_path: Path, rubric_hash: str) -> None:
             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
         conn.execute(
-            "INSERT OR IGNORE INTO meta (key, value) VALUES ('rubric_hash', ?)",
-            (rubric_hash,),
+            "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+            (MetaKey.RUBRIC_HASH.value, rubric_hash),
         )
         conn.commit()
     finally:
