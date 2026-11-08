@@ -533,3 +533,77 @@ def test_run_edition_stage_failure_stops_later_stages_and_keeps_exit_code(fx, fa
     assert "[run] DONE" not in r.stdout
     assert _attempts(repo, "agents", env)[-1] == (2, "failed", "rank")
     assert "stage=rank rc=7" in fake_notifier.read_text()
+
+
+def test_run_edition_push_failure_keeps_attempt_ok_and_commit_for_next_push(fx, fake_notifier):
+    """A failed push is not a failed run: the attempt stays ok, no alert fires,
+    the issue stays committed locally, and the next run's push carries it."""
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    wt = repo / ".worktrees" / "content"
+    good_url = _git(wt, "remote", "get-url", "origin").stdout.strip()
+    _git(wt, "remote", "set-url", "origin", str(repo.parent / "gone.git"))
+    pushed_before = _remote_log(remote)
+    local_before = _git(wt, "log", "--format=%s").stdout
+
+    r = _direct_run_edition(repo, env)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "git: committed" in r.stdout
+    assert "git: push failed (will retry on next run)" in r.stdout
+    assert "[run] DONE" not in r.stdout
+    # Not treated as a stage failure: no FAILED line, no notification, no failed row.
+    assert "FAILED at stage" not in r.stdout
+    assert not fake_notifier.exists()
+    assert _attempts(repo, "agents", env)[-1] == (2, "ok", None)
+    # Committed locally, absent from the remote.
+    assert _remote_log(remote) == pushed_before
+    assert _git(wt, "log", "--format=%s").stdout != local_before
+    assert "newsletter(agents): " in _git(wt, "log", "-1", "--format=%s").stdout
+
+    # Remote is reachable again: the next run's push carries the stranded commit.
+    _git(wt, "remote", "set-url", "origin", good_url)
+    r2 = _direct_run_edition(repo, env)
+    assert r2.returncode == 0, r2.stdout + r2.stderr
+    assert "git: pushed to content" in r2.stdout
+    assert _remote_log(remote).splitlines() == _git(wt, "log", "--format=%s").stdout.splitlines()
+    assert _attempts(repo, "agents", env)[-1] == (3, "ok", None)
+
+
+@pytest.mark.parametrize("flag, marker", [
+    ("--force", "FORCE: resetting today's post-fetch state"),
+    ("--refetch", "REFETCH: deleting today's fetched items so fetch runs again"),
+])
+def test_run_edition_reset_runs_after_attempt_start_and_before_fetch(fx, flag, marker):
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    r = _direct_run_edition(repo, env, flag)
+    assert r.returncode == 0, r.stdout + r.stderr
+    out = r.stdout
+    assert out.index("── run attempt ──") < out.index(marker) < out.index("── fetch ── start")
+    # Exactly one of the two reset modes is announced.
+    assert out.count("FORCE: resetting") + out.count("REFETCH: deleting") == 1
+    assert _attempts(repo, "agents", env)[-1] == (2, "ok", None)
+
+
+def test_run_edition_without_flags_does_not_reset(fx):
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    r = _direct_run_edition(repo, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "FORCE:" not in r.stdout and "REFETCH:" not in r.stdout
+
+
+def test_run_edition_reset_failure_fails_at_reset_before_any_stage(fx, fake_notifier):
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    for stage in ("fetch", "prefilter", "rank", "write", "publish"):
+        (repo / "scripts" / f"{stage}.py").write_text(RECORDER_STUB)
+    (repo / "scripts" / "reset_day.py").write_text("import sys\nsys.exit(5)\n")
+    rec = repo.parent / "stages.jsonl"
+    r = _direct_run_edition(repo, env, "--force", STAGE_REC=str(rec))
+    assert r.returncode == 5, r.stdout + r.stderr
+    assert not rec.exists()  # no stage ran
+    assert "FAILED at stage=reset rc=5" in r.stdout
+    assert _attempts(repo, "agents", env)[-1] == (2, "failed", "reset")
+    assert "stage=reset rc=5" in fake_notifier.read_text()
+    assert "attempt 2 failed at reset" in _remote_log(remote)
