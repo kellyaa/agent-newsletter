@@ -122,7 +122,7 @@ class TestPublishContentRoot:
 
 class TestIntermediateArtifactsStayInRepoRoot:
     def test_prefilter_candidates_out_not_in_content_root(self, monkeypatch, tmp_path):
-        """prefilter.CANDIDATES_OUT is in REPO_ROOT, not CONTENT_ROOT (intermediate artifact)."""
+        """prefilter.candidates_path() is in REPO_ROOT, not CONTENT_ROOT (intermediate artifact)."""
         content = tmp_path / "content"
         monkeypatch.setenv("CONTENT_ROOT", str(content))
         import db
@@ -130,9 +130,9 @@ class TestIntermediateArtifactsStayInRepoRoot:
         import prefilter
         importlib.reload(prefilter)
         # candidates.json is an intermediate file, in the edition's logs folder
-        assert prefilter.CANDIDATES_OUT == prefilter.EDITION.paths().logs / "candidates.json"
+        assert prefilter.candidates_path() == prefilter.edition.current().paths().logs / "candidates.json"
         # and NOT in CONTENT_ROOT (which is tmp_path here)
-        assert not str(prefilter.CANDIDATES_OUT).startswith(str(content))
+        assert not str(prefilter.candidates_path()).startswith(str(content))
 
     def test_rank_ranked_path_not_in_content_root(self, monkeypatch, tmp_path):
         """rank.ranked_path() (debug artifact) is in REPO_ROOT, not CONTENT_ROOT."""

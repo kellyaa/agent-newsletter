@@ -95,7 +95,7 @@ def _run_main(db_path, candidates_out, rubric_file, monkeypatch):
     # Pre-populate the rubric hash in the DB's meta table to prevent score invalidation during tests.
     # Without this, _maybe_invalidate_papers_scores() sees a "new" hash and wipes
     # any cached scores we set up for the test.
-    monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
+    monkeypatch.setattr(pf_mod, "candidates_path", lambda: candidates_out)
     monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
     db_mod.init_db(db_path)
     seed = db_mod.connect(db_path)
@@ -464,7 +464,7 @@ class TestAgeOutPapersClock:
         import db as db_mod
         import prefilter as pf_mod
 
-        monkeypatch.setattr(pf_mod, "CANDIDATES_OUT", candidates_out)
+        monkeypatch.setattr(pf_mod, "candidates_path", lambda: candidates_out)
         monkeypatch.setattr(pf_mod, "RUBRIC_PATH", rubric_file)
         monkeypatch.setattr(pf_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(pf_mod, "init_db", lambda: db_mod.init_db(db_path))

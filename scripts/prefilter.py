@@ -10,6 +10,7 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
@@ -19,7 +20,7 @@ from gates import (  # noqa: F401 — re-exported for tests and tooling
     collapse_near_dups, keyword_gate, passes_recency as _passes_recency,
 )
 from db import (
-    CONTENT_ROOT, REPO_ROOT, age_out_papers_pool, clear_candidate_scores, connect,
+    REPO_ROOT, age_out_papers_pool, clear_candidate_scores, connect, content_root,
     count_items_in_status, count_never_scored_expired, drop_items, get_meta, init_db, load_prefilter_eligible,
     promote_to_candidates, record_stage_stats, run_date, set_meta,
 )
@@ -31,15 +32,39 @@ logging.basicConfig(
 )
 log = logging.getLogger("prefilter")
 
-_RUNTIME = edition.runtime_paths(CONTENT_ROOT)
-CANDIDATES_OUT = _RUNTIME.candidates
+
+
+def candidates_path() -> Path:
+    """The selected edition's candidates.json debug artifact.
+
+    Resolved from ``EDITION`` / ``CONTENT_ROOT`` on every call (like
+    :func:`db.db_path`), so ``import prefilter`` needs no edition and never
+    pins a stale one (#446).
+    """
+    return edition.runtime_paths(content_root()).candidates
+
 
 # Items must mention at least one keyword in title or raw_text. The list is
-# per-edition (editions/<slug>/edition.yaml); importing this module requires
-# EDITION to be set so a missing selection fails before any work is done.
-EDITION = edition.current()
-KEYWORDS = EDITION.keyword_regexes()
-KEYWORD_RE = EDITION.keyword_re()
+# per-edition (editions/<slug>/edition.yaml), read via
+# edition.current().keyword_re() at call time; running the stage without
+# EDITION set fails in init_db() before any work is done.
+
+# Deprecated module attributes, resolved lazily so importing this module does
+# not require an edition (#446). New code calls edition.current() /
+# candidates_path().
+_LAZY_ALIASES = {
+    "EDITION": lambda: edition.current(),
+    "CANDIDATES_OUT": lambda: candidates_path(),
+    "KEYWORDS": lambda: edition.current().keyword_regexes(),
+    "KEYWORD_RE": lambda: edition.current().keyword_re(),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_ALIASES:
+        return _LAZY_ALIASES[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Recency windows, source priority and section-by-family live in gates.py
 # alongside the pure gate functions; re-exported here for existing callers.
@@ -69,12 +94,12 @@ RUBRIC_HASH_KEY = "rubric_hash"  # key in the edition's state.db `meta` table
 
 
 def _passes_keyword_gate(item: PrefilterItem) -> bool:
-    return keyword_gate(item, KEYWORD_RE)
+    return keyword_gate(item, edition.current().keyword_re())
 
 
 def _prerank_score(item: PrefilterItem, now: datetime) -> float:
     """candidates.prerank_score bound to this edition's keyword gate."""
-    return prerank_score(item, now, KEYWORD_RE)
+    return prerank_score(item, now, edition.current().keyword_re())
 
 
 def _rubric_hash() -> str:
@@ -82,7 +107,7 @@ def _rubric_hash() -> str:
     to any of the edition's fragments invalidates cached paper scores."""
     if not RUBRIC_PATH.exists():
         return ""
-    rendered = prompts.render("rank", EDITION, template_path=RUBRIC_PATH)
+    rendered = prompts.render("rank", edition.current(), template_path=RUBRIC_PATH)
     return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
 
 
@@ -221,11 +246,12 @@ def main(now: datetime | None = None) -> int:
 
     # Write candidates.json as a debug/inspection artifact. rank.py does NOT
     # depend on this file — it queries the DB directly via load_candidates_from_db().
-    CANDIDATES_OUT.parent.mkdir(parents=True, exist_ok=True)
-    CANDIDATES_OUT.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
+    candidates_out = candidates_path()
+    candidates_out.parent.mkdir(parents=True, exist_ok=True)
+    candidates_out.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
     log.info(
         "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
-        CANDIDATES_OUT,
+        candidates_out,
         len(grouped[Section.PAPERS]),
         len(grouped[PAPERS_PRESCORED]),
         len(grouped[Section.NEWS]),
