@@ -465,3 +465,71 @@ def test_unknown_arg_and_help(fx):
     h = _run(repo, env, "--help")
     assert h.returncode == 0 and "Usage:" in h.stdout and "--failed" in h.stdout
     assert not (repo / "logs").exists()
+
+
+RECORDER_STUB = STAGE_STUB + '''
+import json
+with open(os.environ["STAGE_REC"], "a") as fh:
+    fh.write(json.dumps({
+        "stage": STAGE,
+        **{k: os.environ.get(k) for k in (
+            "EDITION", "CONTENT_ROOT", "RUN_DATE", "RUN_ATTEMPT",
+            "RUN_STARTED_AT", "LLM_USAGE_LOG")},
+    }) + "\\n")
+'''
+
+
+def _direct_run_edition(repo: Path, env: dict, *args: str, **extra):
+    wt = repo / ".worktrees" / "content"
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "run_edition.sh"), *args], cwd=repo,
+        env={**env, "EDITION": "agents", "CONTENT_WORKTREE": str(wt),
+             "RUN_DATE": _today(), **extra},
+        capture_output=True, text=True, timeout=120,
+    )
+
+
+def test_run_edition_runs_stages_in_order_with_accounting_env(fx):
+    """Pin the contract between run_edition.sh and the stages it launches:
+    fetch -> prefilter -> rank -> write -> publish, each seeing the edition,
+    the content root, the date, the run-attempt number and the per-edition
+    usage log that llm.py / publish.py account against."""
+    import json
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    for stage in ("fetch", "prefilter", "rank", "write", "publish"):
+        (repo / "scripts" / f"{stage}.py").write_text(RECORDER_STUB)
+    rec = repo.parent / "stages.jsonl"
+    r = _direct_run_edition(repo, env, STAGE_REC=str(rec))
+    assert r.returncode == 0, r.stdout + r.stderr
+    rows = [json.loads(line) for line in rec.read_text().splitlines()]
+    assert [x["stage"] for x in rows] == ["fetch", "prefilter", "rank", "write", "publish"]
+    wt = str(repo / ".worktrees" / "content")
+    for x in rows:
+        assert x["EDITION"] == "agents"
+        assert x["CONTENT_ROOT"] == wt  # defaults to CONTENT_WORKTREE
+        assert x["RUN_DATE"] == _today()
+        assert x["RUN_ATTEMPT"] == "2"  # the first attempt was the run.sh call above
+        assert x["RUN_STARTED_AT"] and x["RUN_STARTED_AT"].endswith("Z")
+        assert x["LLM_USAGE_LOG"] == str(repo / "logs" / "agents" / f"usage-{_today()}.jsonl")
+    assert len({x["RUN_STARTED_AT"] for x in rows}) == 1
+    for stage in ("fetch", "prefilter", "rank", "write", "publish"):
+        assert f"── {stage} ── ok" in r.stdout
+
+
+def test_run_edition_stage_failure_stops_later_stages_and_keeps_exit_code(fx, fake_notifier):
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "agents").returncode == 0
+    for stage in ("fetch", "prefilter", "rank", "write", "publish"):
+        (repo / "scripts" / f"{stage}.py").write_text(RECORDER_STUB)
+    rec = repo.parent / "stages.jsonl"
+    r = _direct_run_edition(repo, env, STAGE_REC=str(rec),
+                            FAIL_EDITION="agents", FAIL_STAGE="rank")
+    assert r.returncode == 7, r.stdout + r.stderr  # the stage's own status, not 1
+    import json
+    ran = [json.loads(line)["stage"] for line in rec.read_text().splitlines()]
+    assert ran == ["fetch", "prefilter"]  # rank failed before recording; write/publish never ran
+    assert "── rank ── FAILED (exit 7)" in r.stdout
+    assert "[run] DONE" not in r.stdout
+    assert _attempts(repo, "agents", env)[-1] == (2, "failed", "rank")
+    assert "stage=rank rc=7" in fake_notifier.read_text()
