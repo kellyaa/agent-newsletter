@@ -307,3 +307,20 @@ class TestRunAttempts:
         names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         conn.close()
         assert "run_attempts" in names
+
+
+def test_init_db_drops_legacy_topics_covered(tmp_path):
+    """#619: the unused topics_covered stub is removed from existing DBs."""
+    import sqlite3
+    import db as db_mod
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE topics_covered (topic TEXT, date TEXT, item_id TEXT)")
+    conn.commit()
+    conn.close()
+    db_mod.init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+    assert "topics_covered" not in names
+    assert "items" in names

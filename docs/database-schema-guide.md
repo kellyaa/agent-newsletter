@@ -127,15 +127,6 @@ sqlite3 editions/<slug>/state.db \
    WHERE run_date = (SELECT MAX(run_date) FROM source_fetch_outcomes) AND items_seen = 0"
 ```
 
-#### `topics_covered` — Reserved for cross-day dedup
-Schema exists but **not currently used** (issue #4). Reserved for future topic-level dedup so "5th take on DSPy 2.5" can be down-weighted if already featured.
-
-| Column | Type |
-|--------|------|
-| `topic_slug` | TEXT PRIMARY KEY |
-| `last_featured_date` | DATE |
-| `edition` | TEXT |
-
 ---
 
 ## Practical Scenarios

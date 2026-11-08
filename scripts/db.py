@@ -152,13 +152,6 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS topics_covered (
-  topic TEXT NOT NULL,
-  date TEXT NOT NULL,
-  item_id TEXT NOT NULL,
-  PRIMARY KEY (topic, date, item_id)
-);
-
 -- One row per source per fetch run, written by fetch.py including the
 -- zero-item case. A feed that returns nothing without raising is otherwise
 -- indistinguishable from a quiet one (#572). `error` is NULL on success.
@@ -267,6 +260,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("papers_expired_unjudged", "papers_prerank_cut"):
         if col not in run_cols:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {col} INTEGER")
+    # topics_covered was a never-read, never-written stub; dropped per #619.
+    conn.execute("DROP TABLE IF EXISTS topics_covered")
 
 
 def record_source_fetch(
