@@ -19,7 +19,7 @@ from pathlib import Path
 
 import db
 import edition
-from db import CONTENT_ROOT, connect, run_date
+from db import connect, run_date
 from models import MetaKey
 
 # Shared with fetch.FETCH_DONE_KEY via models (fetch itself is not imported: it pulls in httpx etc.).
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--refetch", action="store_true")
     args = ap.parse_args(argv)
 
-    paths = edition.runtime_paths(CONTENT_ROOT)
+    paths = edition.runtime_paths(db.content_root())
     today = run_date()
     if not paths.state_db.exists():
         log.info("no state.db at %s; nothing to reset", paths.state_db)
