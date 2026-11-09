@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import edition
+import logsetup
 from db import connect, content_root, init_db, load_stage_stats, run_date
 from db import (
     count_featured_by_section,
@@ -31,12 +32,8 @@ from db import (
     upsert_run,
 )
 from llm import usage_totals
-from models import ExitCode, Section, Status
+from models import ExitCode, Section, Status, issue_filename, parse_instant
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("publish")
 
 def issues_dir() -> Path:
@@ -64,13 +61,10 @@ def run_duration_s(started_at: str | None, now: datetime | None = None) -> int |
     if not started_at:
         return None
     try:
-        start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        # Zone-less => UTC, so subtracting from an aware ``now`` cannot raise.
+        start = parse_instant(started_at)
     except ValueError:
         return None
-    if start.tzinfo is None:
-        # A zone-less timestamp is documented as UTC; subtracting it from an
-        # aware ``now`` would otherwise raise TypeError and abort publish.
-        start = start.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
     return max(0, int((now - start).total_seconds()))
 
@@ -122,7 +116,7 @@ def main(today: str | None = None) -> int:
     init_db()
     if today is None:
         today = run_date()
-    issue_path = issues_dir() / f"{today}.md"
+    issue_path = issues_dir() / issue_filename(today)
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)
         return ExitCode.MISSING_INPUT
@@ -181,4 +175,5 @@ def main(today: str | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

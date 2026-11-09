@@ -26,9 +26,10 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import edition  # noqa: E402
+import logsetup  # noqa: E402
 import prompts  # noqa: E402
 from db import connect, init_db, load_item_by_id  # noqa: E402
-from models import FeaturedItem, Section  # noqa: E402
+from models import FeaturedItem, Section, issue_filename  # noqa: E402
 from write import (  # noqa: E402
     PROMPT_PATH,
     call_writer,
@@ -38,10 +39,6 @@ from write import (  # noqa: E402
     writer_metadata,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("replay_writer")
 
 
@@ -64,7 +61,7 @@ def load_from_issue_file(conn, date: str):
     of what shipped). Full item data (raw_text, score, tags, why) is looked
     up in state.db by id.
     """
-    issue_path = issues_dir() / f"{date}.md"
+    issue_path = issues_dir() / issue_filename(date)
     if not issue_path.exists():
         raise FileNotFoundError(f"no archived issue at {issue_path}")
 
@@ -148,4 +145,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

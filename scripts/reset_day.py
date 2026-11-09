@@ -19,13 +19,13 @@ from pathlib import Path
 
 import db
 import edition
+import logsetup
 from db import connect, run_date
-from models import MetaKey
+from models import MetaKey, issue_filename
 
 # Shared with fetch.FETCH_DONE_KEY via models (fetch itself is not imported: it pulls in httpx etc.).
 FETCH_DONE_KEY = MetaKey.FETCH_DONE
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("reset_day")
 
 
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         force_reset(conn, today)
     finally:
         conn.close()
-    issue: Path = paths.issues_dir / f"{today}.md"
+    issue: Path = paths.issues_dir / issue_filename(today)
     if issue.exists():
         issue.unlink()
         log.info("removed %s", issue)
@@ -69,4 +69,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

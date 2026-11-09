@@ -18,6 +18,7 @@ from pathlib import Path
 
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
+import logsetup
 import prompts
 from db import (
     REPO_ROOT,
@@ -32,10 +33,6 @@ from llm import ContentFilterError, call_llm, ranker_config
 from llm_ids import alias_items, resolve_ids
 from models import ExitCode, RankDecision, ScoredItem, Section, Status
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("rank")
 
 # Base template; main() renders it with the edition's fragments.
@@ -520,4 +517,5 @@ def main(now: datetime | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

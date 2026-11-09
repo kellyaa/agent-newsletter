@@ -52,6 +52,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
+import logsetup  # noqa: E402
 from models import (  # noqa: E402  (needs the sys.path entry above)
     LEGACY_EDITION,
     LEGACY_RUN_COMMIT_PREFIX,
@@ -59,13 +60,10 @@ from models import (  # noqa: E402  (needs the sys.path entry above)
     Section,
     Status,
     edition_state_db_relpath,
+    issue_filename,
     run_commit_prefix,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("backfill")
 
 
@@ -225,7 +223,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     """
     import write as write_mod
 
-    out_path = write_mod.issues_dir() / f"{target_date}.md"
+    out_path = write_mod.issues_dir() / issue_filename(target_date)
     if out_path.exists() and not force:
         log.error(
             "%s already exists (%d bytes); pass --force to overwrite",
@@ -334,4 +332,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())
