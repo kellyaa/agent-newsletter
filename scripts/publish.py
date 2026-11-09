@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import edition
+import logsetup
 from db import connect, content_root, init_db, load_stage_stats, run_date
 from db import (
     count_featured_by_section,
@@ -33,10 +34,6 @@ from db import (
 from llm import usage_totals
 from models import ExitCode, Section, Status, issue_filename, parse_instant
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("publish")
 
 def issues_dir() -> Path:
@@ -178,4 +175,5 @@ def main(today: str | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

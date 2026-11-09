@@ -26,6 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import edition  # noqa: E402
+import logsetup  # noqa: E402
 import prompts  # noqa: E402
 from db import connect, init_db, load_item_by_id  # noqa: E402
 from models import FeaturedItem, Section, issue_filename  # noqa: E402
@@ -38,10 +39,6 @@ from write import (  # noqa: E402
     writer_metadata,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("replay_writer")
 
 
@@ -148,4 +145,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

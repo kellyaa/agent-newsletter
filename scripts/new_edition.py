@@ -41,6 +41,7 @@ import yaml
 import check_edition
 import edition as edition_mod
 import llm
+import logsetup
 import net
 import urls
 from edition import EditionError
@@ -667,4 +668,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

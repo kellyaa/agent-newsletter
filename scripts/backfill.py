@@ -52,6 +52,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
+import logsetup  # noqa: E402
 from models import (  # noqa: E402  (needs the sys.path entry above)
     LEGACY_EDITION,
     LEGACY_RUN_COMMIT_PREFIX,
@@ -63,10 +64,6 @@ from models import (  # noqa: E402  (needs the sys.path entry above)
     run_commit_prefix,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("backfill")
 
 
@@ -335,4 +332,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())
