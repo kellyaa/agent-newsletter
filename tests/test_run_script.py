@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 RUN_SCRIPT = Path(__file__).resolve().parents[1] / "run.sh"
+RUNLOG_LIB = RUN_SCRIPT.parent / "scripts" / "runlog.sh"  # run.sh sources it
 
 
 def _run_script(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -21,6 +22,8 @@ def _run_script(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _copy_run_script(repo: Path) -> None:
     (repo / "run.sh").write_bytes(RUN_SCRIPT.read_bytes())
+    (repo / "scripts").mkdir(exist_ok=True)
+    (repo / "scripts" / "runlog.sh").write_bytes(RUNLOG_LIB.read_bytes())
 
 
 def test_help_prints_usage_and_exits_before_creating_logs(tmp_path):

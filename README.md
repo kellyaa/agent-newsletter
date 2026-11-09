@@ -44,6 +44,7 @@ scripts/
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
+scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`/`notify`); written by run_edition.sh, read by run.sh and scripts/watchdog.sh
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines

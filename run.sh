@@ -67,16 +67,17 @@ if [ "$FAILED_ONLY" = true ] && [ "${#EDITIONS_WANTED[@]}" -gt 0 ]; then
   exit 2
 fi
 
-LOG_DIR="$REPO_ROOT/logs"
+# ts, log, notify and the run-log path/marker helpers (the run-log contract).
+# shellcheck source=scripts/runlog.sh
+. "$REPO_ROOT/scripts/runlog.sh"
+
+LOG_DIR="$(runlog_dir "$REPO_ROOT")"
 mkdir -p "$LOG_DIR"
 DATE_TODAY="$(date +%F)"
-LOG_FILE="$LOG_DIR/run-$DATE_TODAY.log"
+LOG_FILE="$(runlog_summary_path "$REPO_ROOT" "$DATE_TODAY")"
 
 # tee everything through to a per-day log so we can grep failures later.
 exec > >(tee -a "$LOG_FILE") 2>&1
-
-ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
-log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
 export RUN_DATE="$DATE_TODAY"
 
@@ -91,16 +92,6 @@ if ! flock -n 9; then
   log "another run holds $LOCK_FILE; exiting without doing anything"
   exit 0
 fi
-
-# Fire a macOS notification. No-op on non-Darwin or if osascript is missing.
-notify() {
-  local title="$1"; shift
-  local message="$1"; shift
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"${message//\"/\\\"}\" with title \"${title//\"/\\\"}\"" \
-      >/dev/null 2>&1 || true
-  fi
-}
 
 # A failure of the orchestrator itself (before or between editions). Edition
 # failures are handled in run_edition.sh and are never fatal here.
@@ -241,7 +232,7 @@ if [ "${#SELECTED[@]}" -eq 0 ]; then
   else
     log "nothing to run: every edition is already ok today (use --force to re-run)"
   fi
-  log "DONE"
+  runlog_mark_done
   exit 0
 fi
 log "── editions ── ${SELECTED[*]}"
@@ -258,7 +249,8 @@ FAILED_SLUGS=()
 SUMMARY=()
 CURRENT_STAGE="editions"
 for slug in "${SELECTED[@]}"; do
-  log "── $slug ── start (logs/$slug/run-$DATE_TODAY.log)"
+  slug_log="$(runlog_path "$REPO_ROOT" "$slug" "$DATE_TODAY")"
+  log "── $slug ── start (${slug_log#"$REPO_ROOT"/})"
   # `if` (not `set +e`): the ERR trap fires on a failing command even with -e
   # off, but never for a command tested by `if`.
   if EDITION="$slug" bash "$REPO_ROOT/scripts/run_edition.sh" ${child_args[@]+"${child_args[@]}"}; then
@@ -271,8 +263,7 @@ for slug in "${SELECTED[@]}"; do
     SUMMARY+=("$slug: ok")
     log "── $slug ── ok"
   else
-    stage="$(grep -oE 'FAILED at stage=[a-z-]+' "$REPO_ROOT/logs/$slug/run-$DATE_TODAY.log" 2>/dev/null \
-      | tail -1 | cut -d= -f2 || true)"
+    stage="$(runlog_failed_stage "$slug_log" || true)"
     FAILED_SLUGS+=("$slug")
     SUMMARY+=("$slug: FAILED at stage=${stage:-unknown} rc=$rc")
     log "── $slug ── FAILED at stage=${stage:-unknown} rc=$rc — re-run: ./run.sh --edition $slug"
@@ -288,4 +279,4 @@ if [ "${#FAILED_SLUGS[@]}" -gt 0 ]; then
   exit 1
 fi
 
-log "DONE"
+runlog_mark_done
