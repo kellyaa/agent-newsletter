@@ -105,7 +105,14 @@ def _extra_headers() -> dict[str, str]:
 
 def _client() -> OpenAI:
     base_url = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("LLM_API_KEY")
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            log.warning(
+                "LLM_API_KEY is unset; falling back to OPENAI_API_KEY from the "
+                "environment (base URL %s)", base_url,
+            )
     if not api_key:
         raise RuntimeError("LLM_API_KEY (or OPENAI_API_KEY) is not set")
     return OpenAI(base_url=base_url, api_key=api_key)
