@@ -32,7 +32,15 @@ from db import (
 )
 from llm import ContentFilterError, call_llm, writer_config
 from llm_ids import alias_items, resolve_ids
-from models import AppendixItem, ExitCode, FeaturedItem, FrontmatterFeatured, Section
+from models import (
+    ISSUE_GLOB,
+    AppendixItem,
+    ExitCode,
+    FeaturedItem,
+    FrontmatterFeatured,
+    Section,
+    issue_filename,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -185,7 +193,7 @@ def find_previous_newsletter(today: str) -> str | None:
     folder = issues_dir()
     if not folder.exists():
         return None
-    prior = sorted(p for p in folder.glob("*.md") if p.stem < today)
+    prior = sorted(p for p in folder.glob(ISSUE_GLOB) if p.stem < today)
     if not prior:
         return None
     return prior[-1].read_text()
@@ -581,7 +589,7 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
     rendered rubric is also written under ``logs/<slug>/`` (backfills skip it
     so a sandbox run leaves the live logs untouched).
     """
-    out_path = issues_dir() / f"{today}.md"
+    out_path = issues_dir() / issue_filename(today)
     if out_path.exists() and not force:
         log.info(
             "write: skip — %s already exists (%d bytes); delete to rerun",

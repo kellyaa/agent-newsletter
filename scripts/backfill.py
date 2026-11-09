@@ -59,6 +59,7 @@ from models import (  # noqa: E402  (needs the sys.path entry above)
     Section,
     Status,
     edition_state_db_relpath,
+    issue_filename,
     run_commit_prefix,
 )
 
@@ -225,7 +226,7 @@ def run_writer_for_date(conn, target_date: str, force: bool) -> Path | None:
     """
     import write as write_mod
 
-    out_path = write_mod.issues_dir() / f"{target_date}.md"
+    out_path = write_mod.issues_dir() / issue_filename(target_date)
     if out_path.exists() and not force:
         log.error(
             "%s already exists (%d bytes); pass --force to overwrite",
