@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from db import connect, load_candidate_rows
-from models import CandidateItem, Section
+from models import CandidateItem, Section, parse_instant
 
 log = logging.getLogger(__name__)
 
@@ -55,9 +55,7 @@ def prerank_score(item: dict, now: datetime, keyword_re: re.Pattern[str]) -> flo
     """
     pub = item.get("published_at") or item.get("fetched_at")
     try:
-        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+        dt = parse_instant(pub)
         age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
     except (ValueError, AttributeError):
         age_days = 0.0

@@ -32,7 +32,7 @@ from db import (
 from db import count_items_seen_on
 from models import (
     REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int, item_source,
-    source_label,
+    parse_instant, source_label,
 )
 
 logging.basicConfig(
@@ -342,11 +342,7 @@ def _normalize_date(raw: str) -> str | None:
         return None
     # Fast path: already looks like ISO.
     try:
-        # Accept trailing 'Z' by swapping to +00:00 which fromisoformat handles.
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.isoformat()
+        return parse_instant(raw).isoformat()
     except ValueError:
         pass
     try:
