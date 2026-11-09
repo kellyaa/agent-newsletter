@@ -31,7 +31,8 @@ from db import (
 )
 from db import count_items_seen_on
 from models import (
-    REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int, source_label,
+    REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int, item_source,
+    source_label,
 )
 
 logging.basicConfig(
@@ -102,7 +103,7 @@ def fetch_rss(source: dict, *, client: httpx.Client | None = None) -> Iterable[I
         author = entry.get("author")
         published = _to_iso(entry.get("published_parsed") or entry.get("updated_parsed"))
         yield Item(
-            source=f"rss:{source['id']}",
+            source=item_source(SourceFamily.RSS, source),
             url=link,
             title=title.strip(),
             author=author,
@@ -141,7 +142,7 @@ def fetch_arxiv(source: dict, *, client: httpx.Client | None = None) -> Iterable
         authors = ", ".join(a.name for a in entry.get("authors", []) if hasattr(a, "name"))
         published = _to_iso(entry.get("published_parsed") or entry.get("updated_parsed"))
         yield Item(
-            source=f"arxiv:{source['id']}",
+            source=item_source(SourceFamily.ARXIV, source),
             url=link,
             title=title.strip().replace("\n", " "),
             author=authors or None,
@@ -190,7 +191,7 @@ def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[It
             f"{hit.get('story_text') or ''}"
         )
         yield Item(
-            source=f"hn:{source['id']}",
+            source=item_source(SourceFamily.HN, source),
             url=link,
             title=title.strip(),
             author=hit.get("author"),
@@ -315,7 +316,7 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
                 excerpt = e_node.text(strip=True) or None
 
         yield Item(
-            source=f"html:{sid}",
+            source=item_source(SourceFamily.HTML, source),
             url=abs_url,
             title=title,
             author=None,
@@ -419,7 +420,7 @@ def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterabl
             author = author.removeprefix("/u/")
         published = _to_iso(entry.get("published_parsed") or entry.get("updated_parsed"))
         yield Item(
-            source=f"reddit:{source['id']}",
+            source=item_source(SourceFamily.REDDIT, source),
             url=link,
             title=title.strip(),
             author=author or None,
@@ -458,7 +459,7 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
             if not url:
                 continue
             yield Item(
-                source=f"gh:{owner}/{repo}",
+                source=item_source(SourceFamily.GITHUB_RELEASES, entry),
                 url=url,
                 title=f"{owner}/{repo} {tag}".strip(),
                 author=owner,
