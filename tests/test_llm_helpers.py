@@ -465,3 +465,27 @@ class TestOneShotSalvageWarningLogged:
             "salvage-test" in r.message and "not a single JSON object" in r.message
             for r in caplog.records
         )
+
+
+class TestClientKeyFallback:
+    def test_openai_key_fallback_logs_warning(self, monkeypatch, caplog):
+        import llm
+
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fallback")
+        monkeypatch.setenv("LLM_BASE_URL", "http://example.invalid/v1")
+        with caplog.at_level("WARNING", logger="llm"):
+            client = llm._client()
+        assert client.api_key == "sk-fallback"
+        assert "falling back to OPENAI_API_KEY" in caplog.text
+        assert "sk-fallback" not in caplog.text
+
+    def test_llm_key_preferred_without_warning(self, monkeypatch, caplog):
+        import llm
+
+        monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fallback")
+        with caplog.at_level("WARNING", logger="llm"):
+            client = llm._client()
+        assert client.api_key == "sk-primary"
+        assert "falling back" not in caplog.text
