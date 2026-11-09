@@ -22,20 +22,23 @@ EDITION_YAML = (
 
 # Stand-in for run.sh: for each --edition X, write that edition's log according to
 # $RUN_BEHAVIOUR ("X=ok", "X=fail:rank", "X=silent"), and count invocations.
+# The markers go through the real writer helpers in scripts/runlog.sh, so these
+# tests follow whatever run_edition.sh actually emits.
 FAKE_RUN = r'''#!/usr/bin/env bash
 echo "$@" >> "$(dirname "$0")/run-calls.txt"
+. "$(dirname "$0")/scripts/runlog.sh"
 slugs=()
 while [ "$#" -gt 0 ]; do
   [ "$1" = "--edition" ] && { slugs+=("$2"); shift; }
   shift
 done
 for s in "${slugs[@]}"; do
-  d="logs/$s"; mkdir -p "$d"; f="$d/run-$(date +%F).log"
+  f="$(runlog_path "$PWD" "$s" "$(date +%F)")"; mkdir -p "$(dirname "$f")"
   b=""
   for pair in $RUN_BEHAVIOUR; do [ "${pair%%=*}" = "$s" ] && b="${pair#*=}"; done
   case "$b" in
-    ok) echo "2026-01-01T00:00:00Z [run] DONE" >> "$f" ;;
-    fail:*) echo "2026-01-01T00:00:00Z [run] FAILED at stage=${b#fail:} rc=7" >> "$f" ;;
+    ok) runlog_mark_done >> "$f" ;;
+    fail:*) runlog_mark_failed "${b#fail:}" 7 >> "$f" ;;
     silent) : ;;
   esac
 done
@@ -48,6 +51,7 @@ def repo(tmp_path):
     r = tmp_path / "repo"
     (r / "scripts").mkdir(parents=True)
     shutil.copy2(REAL / "scripts" / "watchdog.sh", r / "scripts" / "watchdog.sh")
+    shutil.copy2(REAL / "scripts" / "runlog.sh", r / "scripts" / "runlog.sh")  # watchdog sources it
     shutil.copy2(REAL / "scripts" / "edition.py", r / "scripts" / "edition.py")
     shutil.copy2(REAL / "scripts" / "models.py", r / "scripts" / "models.py")  # edition.py imports it
     (r / "run.sh").write_text(FAKE_RUN)

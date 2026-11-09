@@ -60,7 +60,10 @@ done
 
 DATE_TODAY="$(date +%F)"
 
-ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
+# ts and the run-log path/marker readers (the run-log contract).
+# shellcheck source=scripts/runlog.sh
+. "$REPO_ROOT/scripts/runlog.sh"
+
 say() { printf '%s [watchdog] %s\n' "$(ts)" "$*"; }
 
 # Python for reading the edition list. Same preference as run.sh, minus the long
@@ -109,19 +112,7 @@ if [ -n "$DEAD_OUT" ]; then
   printf '%s\n' "$DEAD_OUT"
 fi
 
-log_file() { echo "$REPO_ROOT/logs/$1/run-$DATE_TODAY.log"; }
-
-# Which stage did a log die at? Echoes a stage name, or "unknown".
-failed_stage() {
-  local f="$1"
-  grep -oE 'FAILED at stage=[a-z-]+' "$f" 2>/dev/null | tail -1 | cut -d= -f2 \
-    || echo unknown
-}
-
-# A run is complete iff its log's last DONE marker is present.
-log_is_complete() {
-  [ -f "$1" ] && grep -q '^\S* \[run\] DONE$' "$1"
-}
+log_file() { runlog_path "$REPO_ROOT" "$1" "$DATE_TODAY"; }
 
 # Two DIFFERENT locks, deliberately. RUN_LOCK belongs to run.sh; we only ever
 # *probe* it, never hold it — holding it would lock out the very run we're
@@ -141,13 +132,13 @@ declare -A STAGE_OF=()
 DONE_SLUGS=()
 for slug in "${SLUGS[@]}"; do
   lf="$(log_file "$slug")"
-  if log_is_complete "$lf"; then
+  if runlog_is_complete "$lf"; then
     say "$slug: today's run already completed ($lf)"
     DONE_SLUGS+=("$slug")
   else
     NEED+=("$slug")
     if [ -f "$lf" ]; then
-      STAGE_OF["$slug"]="$(failed_stage "$lf")"
+      STAGE_OF["$slug"]="$(runlog_failed_stage "$lf" || echo unknown)"
       say "$slug: log exists but has no DONE marker; last failure stage=${STAGE_OF[$slug]:-unknown}"
     else
       STAGE_OF["$slug"]=""
@@ -213,13 +204,12 @@ FAILED=()
 HEALED=()
 for s in "${NEED[@]}"; do
   lf="$(log_file "$s")"
-  if log_is_complete "$lf"; then
+  if runlog_is_complete "$lf"; then
     HEALED+=("$s")
   else
     if [ -f "$lf" ]; then
-      STAGE_OF["$s"]="$(failed_stage "$lf")"
       # A log with no FAILED marker and no DONE did not fail in a stage.
-      grep -q 'FAILED at stage=' "$lf" || STAGE_OF["$s"]="no-done-marker"
+      STAGE_OF["$s"]="$(runlog_failed_stage "$lf" || echo no-done-marker)"
     else
       STAGE_OF["$s"]="no-done-marker"
     fi
