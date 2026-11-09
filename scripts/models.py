@@ -94,6 +94,39 @@ def source_label(family: SourceFamily, entry: dict) -> str:
     return f"{family.value}/{entry.get('id')}"
 
 
+# Prefix of the ``items.source`` value each family's fetch adapter writes
+# (``rss:<id>``, ``gh:<owner>/<repo>`` ...). gates.py reads it back to pick the
+# recency window, near-dup priority and default section, so fetch builds it
+# only via item_source() and gates parses it only via item_source_prefix().
+# GitHub releases predate the family name and keep ``gh``: existing state.db
+# rows carry it. tests/test_item_source_single_source.py enforces this.
+ITEM_SOURCE_PREFIX: dict[SourceFamily, str] = {
+    SourceFamily.RSS: "rss",
+    SourceFamily.ARXIV: "arxiv",
+    SourceFamily.HN: "hn",
+    SourceFamily.REDDIT: "reddit",
+    SourceFamily.HTML: "html",
+    SourceFamily.GITHUB_RELEASES: "gh",
+}
+
+
+def item_source(family: SourceFamily, entry: dict) -> str:
+    """The ``items.source`` value for an item fetched from *entry*.
+
+    ``<prefix>:<id>``, except GitHub releases: ``gh:<owner>/<repo>``. Keys are
+    indexed, as the adapters always did: a missing one raises, not ``rss:None``.
+    """
+    prefix = ITEM_SOURCE_PREFIX[family]
+    if family is SourceFamily.GITHUB_RELEASES:
+        return f"{prefix}:{entry['owner']}/{entry['repo']}"
+    return f"{prefix}:{entry['id']}"
+
+
+def item_source_prefix(source: str) -> str:
+    """``"rss:simonwillison"`` -> ``"rss"`` (the inverse of item_source's prefix)."""
+    return source.split(":", 1)[0]
+
+
 # Optional per-entry sources.yaml overrides. fetch applies them (falling back
 # with a warning on a bad value), check_edition rejects bad values, and
 # new_edition only emits valid ones; all three read the rules from here so

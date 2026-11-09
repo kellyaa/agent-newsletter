@@ -12,10 +12,14 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from models import PrefilterItem, Section
+from models import PrefilterItem, Section, item_source_prefix
 
 log = logging.getLogger("gates")
 
+# The per-family tables below are keyed by models.ITEM_SOURCE_PREFIX values
+# (the prefix fetch writes into items.source); every prefix must appear in
+# each table (tests/test_item_source_single_source.py).
+#
 # Recency windows by source family. RSS is wide because practitioner blogs
 # publish weekly-or-monthly; the cross-day dedup layer (status >= 'ranked' is
 # sealed) prevents stale republishing once an item has been seen.
@@ -53,8 +57,8 @@ NEAR_DUP_THRESHOLD = 0.85
 
 
 def source_family(source: str) -> str:
-    """``"rss:simonwillison"`` → ``"rss"``."""
-    return source.split(":", 1)[0]
+    """``"rss:simonwillison"`` → ``"rss"`` (see models.item_source_prefix)."""
+    return item_source_prefix(source)
 
 
 def assign_section(source: str, override: str | None = None) -> str:
