@@ -95,6 +95,46 @@ class TestMigrate:
         conn.close()
         assert rows == 0
 
+    def test_wal_contents_are_folded_in_and_sidecars_removed(self, tmp_path):
+        root, hash_file = _legacy_content(tmp_path)
+        # A live writer leaves committed rows only in the -wal file; the sidecars
+        # do not follow `git mv`, so migrate must checkpoint first or lose them.
+        writer = sqlite3.connect(root / "state.db")
+        try:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("INSERT INTO meta (key, value) VALUES ('wal_probe', 'kept')")
+            writer.commit()
+            assert (root / "state.db-wal").stat().st_size > 0
+            assert ml.migrate(root, hash_file) is True
+        finally:
+            writer.close()
+        assert not (root / "state.db-wal").exists()
+        assert not (root / "state.db-shm").exists()
+        moved = sqlite3.connect(root / "editions" / "agents" / "state.db")
+        try:
+            assert moved.execute(
+                "SELECT value FROM meta WHERE key='wal_probe'"
+            ).fetchone() == ("kept",)
+        finally:
+            moved.close()
+
+    def test_existing_rubric_hash_in_db_is_not_overwritten(self, tmp_path):
+        root, hash_file = _legacy_content(tmp_path)
+        conn = sqlite3.connect(root / "state.db")
+        conn.execute("INSERT INTO meta (key, value) VALUES ('rubric_hash', 'current')")
+        conn.commit()
+        conn.close()
+        _git(root, "add", "-A")
+        _git(root, "commit", "-qm", "db already has a hash")
+        assert ml.migrate(root, hash_file) is True  # hash_file says abc123
+        moved = sqlite3.connect(root / "editions" / "agents" / "state.db")
+        try:
+            assert moved.execute(
+                "SELECT value FROM meta WHERE key='rubric_hash'"
+            ).fetchall() == [("current",)]
+        finally:
+            moved.close()
+
     def test_fresh_content_branch_has_nothing_to_migrate(self, tmp_path):
         root = tmp_path / "content"
         root.mkdir()
