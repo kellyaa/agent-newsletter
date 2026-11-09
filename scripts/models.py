@@ -149,6 +149,11 @@ def is_positive_int(value: object) -> bool:
 EDITIONS_DIRNAME = "editions"
 STATE_DB_NAME = "state.db"
 ISSUES_DIRNAME = "issues"
+# One issue file per edition per day: editions/<slug>/issues/<YYYY-MM-DD>.md.
+# write/backfill create it, publish/replay_writer read it, reset_day deletes it,
+# and site/src/content.config.ts globs it (tests/test_issue_filename_single_source.py).
+ISSUE_SUFFIX = ".md"
+ISSUE_GLOB = f"*{ISSUE_SUFFIX}"
 # The one edition that predates the layout: its state.db sat at the content
 # root and its run commits read "newsletter: <date> ...".
 LEGACY_EDITION = "agents"
@@ -158,6 +163,15 @@ LEGACY_RUN_COMMIT_PREFIX = "newsletter: "
 def edition_state_db_relpath(slug: str) -> str:
     """``editions/<slug>/state.db``, relative to the content root (a git path)."""
     return f"{EDITIONS_DIRNAME}/{slug}/{STATE_DB_NAME}"
+
+
+def issue_filename(date: str) -> str:
+    """``<YYYY-MM-DD>.md``: the issue file for *date* inside an edition's issues dir.
+
+    The stem is the ISO date, so sorting the stems sorts issues by day
+    (``write.find_previous_newsletter`` relies on that).
+    """
+    return f"{date}{ISSUE_SUFFIX}"
 
 
 def run_commit_prefix(slug: str) -> str:

@@ -31,7 +31,7 @@ from db import (
     upsert_run,
 )
 from llm import usage_totals
-from models import ExitCode, Section, Status
+from models import ExitCode, Section, Status, issue_filename
 
 logging.basicConfig(
     level=logging.INFO,
@@ -122,7 +122,7 @@ def main(today: str | None = None) -> int:
     init_db()
     if today is None:
         today = run_date()
-    issue_path = issues_dir() / f"{today}.md"
+    issue_path = issues_dir() / issue_filename(today)
     if not issue_path.exists():
         log.error("missing %s — run write.py first", issue_path)
         return ExitCode.MISSING_INPUT

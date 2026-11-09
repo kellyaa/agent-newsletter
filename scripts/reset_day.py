@@ -20,7 +20,7 @@ from pathlib import Path
 import db
 import edition
 from db import connect, run_date
-from models import MetaKey
+from models import MetaKey, issue_filename
 
 # Shared with fetch.FETCH_DONE_KEY via models (fetch itself is not imported: it pulls in httpx etc.).
 FETCH_DONE_KEY = MetaKey.FETCH_DONE
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         force_reset(conn, today)
     finally:
         conn.close()
-    issue: Path = paths.issues_dir / f"{today}.md"
+    issue: Path = paths.issues_dir / issue_filename(today)
     if issue.exists():
         issue.unlink()
         log.info("removed %s", issue)
