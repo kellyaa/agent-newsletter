@@ -22,6 +22,7 @@ import httpx
 import yaml
 
 import edition
+import logsetup
 import net
 import urls
 from models import MetaKey
@@ -35,10 +36,6 @@ from models import (
     parse_instant, source_label,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("fetch")
 
 
@@ -712,4 +709,5 @@ def main(now: datetime | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

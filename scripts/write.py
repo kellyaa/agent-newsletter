@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import edition
+import logsetup
 import prompts
 from db import (
     REPO_ROOT,
@@ -42,10 +43,6 @@ from models import (
     issue_filename,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("write")
 
 # Base template; main() renders it with the edition's fragments.
@@ -660,4 +657,5 @@ def main(today: str | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

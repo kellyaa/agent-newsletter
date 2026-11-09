@@ -28,6 +28,7 @@ scripts/
   write.py              — one LLM call (OpenAI-compatible); emits editions/<slug>/issues/YYYY-MM-DD.md (on the content branch)
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   llm_ids.py            — short per-call item aliases (`i1…iN`) for LLM prompts and the map back to real ids (pure); used by rank.py and write.py
+  logsetup.py           — shared log line format; `configure()` sets up the root logger, called only under each entry script's `__main__`
   publish.py            — promotes items to 'published'; records runs row
   run_attempt.py        — records each edition run in run_attempts; `latest` reports today's outcome (called by run_edition.sh and run.sh)
   reset_day.py          — resets one edition's state for `--force` / `--refetch` (called by run_edition.sh)

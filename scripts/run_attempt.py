@@ -28,6 +28,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import logsetup
 from db import (
     REPO_ROOT, connect, db_path, finish_run_attempt, init_db, insert_run_attempt,
     latest_attempt_outcome, next_attempt_number, run_date,
@@ -35,10 +36,6 @@ from db import (
 from llm import usage_totals
 from models import AttemptOutcome, NO_ATTEMPT
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("run_attempt")
 
 
@@ -122,4 +119,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())
