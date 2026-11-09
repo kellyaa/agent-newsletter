@@ -13,6 +13,7 @@ Import from here in prefilter, rank, write, backfill, replay_writer.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import IntEnum, StrEnum
 from typing import TypedDict
 
@@ -158,6 +159,23 @@ ISSUE_GLOB = f"*{ISSUE_SUFFIX}"
 # root and its run commits read "newsletter: <date> ...".
 LEGACY_EDITION = "agents"
 LEGACY_RUN_COMMIT_PREFIX = "newsletter: "
+
+
+def parse_instant(raw: str) -> datetime:
+    """Parse a stored ISO-8601 instant into an aware datetime (zone-less => UTC).
+
+    The one reading rule for ``items.published_at`` / ``fetched_at`` and
+    ``$RUN_STARTED_AT``: a trailing ``Z`` is accepted (older Pythons' and
+    feeds' spelling of UTC) and a naive value is taken as UTC, so callers can
+    subtract it from an aware ``now`` without a TypeError. Raises
+    ``ValueError`` for an unparseable string and ``AttributeError`` for a
+    non-string; callers keep their own fallback
+    (``tests/test_instant_parse_single_source.py``).
+    """
+    dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def edition_state_db_relpath(slug: str) -> str:

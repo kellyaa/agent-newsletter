@@ -31,7 +31,7 @@ from db import (
     upsert_run,
 )
 from llm import usage_totals
-from models import ExitCode, Section, Status, issue_filename
+from models import ExitCode, Section, Status, issue_filename, parse_instant
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,13 +64,10 @@ def run_duration_s(started_at: str | None, now: datetime | None = None) -> int |
     if not started_at:
         return None
     try:
-        start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        # Zone-less => UTC, so subtracting from an aware ``now`` cannot raise.
+        start = parse_instant(started_at)
     except ValueError:
         return None
-    if start.tzinfo is None:
-        # A zone-less timestamp is documented as UTC; subtracting it from an
-        # aware ``now`` would otherwise raise TypeError and abort publish.
-        start = start.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
     return max(0, int((now - start).total_seconds()))
 
