@@ -293,7 +293,7 @@ CREATE TABLE runs (
   duration_seconds INTEGER,
   tokens_in INTEGER,              -- scaffold for cost tracking
   tokens_out INTEGER,
-  cost_usd REAL,
+  cost_usd REAL,                  -- never populated; no cost cap planned (#438, see Cost Budget)
   notes TEXT,
   papers_expired_unjudged INTEGER, -- papers this run's age-out moved to expired_unjudged (#297)
   papers_prerank_cut INTEGER       -- unscored papers PAPER_PRERANK_CAP left out of this run's ranker call (#297)
