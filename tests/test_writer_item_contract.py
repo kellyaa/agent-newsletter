@@ -16,7 +16,7 @@ import pytest
 
 import db as db_mod
 import write
-from models import AppendixItem, FeaturedItem, Section, Status
+from models import AppendixItem, FeaturedItem, IssueMetadata, Section, Status
 
 
 @pytest.fixture()
@@ -50,7 +50,7 @@ def test_producer_is_annotated_with_writer_item_types():
     featured, appendix, metadata = typing.get_args(ret)
     assert featured == list[FeaturedItem]
     assert appendix == dict[str, list[AppendixItem]]
-    assert metadata == dict[str, int]
+    assert metadata is IssueMetadata
 
 
 def test_emitted_keys_match_declared_types(conn):
