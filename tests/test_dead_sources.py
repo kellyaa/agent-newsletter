@@ -238,7 +238,7 @@ def test_watchdog_check_prints_dead_lines_before_status(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     for name in ("watchdog.sh", "edition.py", "models.py", "db.py", "urls.py",
-                 "missed_days.py", "dead_sources.py"):
+                 "missed_days.py", "dead_sources.py", "logsetup.py"):
         shutil.copy2(REAL / "scripts" / name, repo / "scripts" / name)
     (repo / "run.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     ed = repo / "editions" / "agents"

@@ -28,6 +28,7 @@ scripts/
   write.py              — one LLM call (OpenAI-compatible); emits editions/<slug>/issues/YYYY-MM-DD.md (on the content branch)
   llm.py                — thin wrapper around OpenAI-compatible chat-completions
   llm_ids.py            — short per-call item aliases (`i1…iN`) for LLM prompts and the map back to real ids (pure); used by rank.py and write.py
+  logsetup.py           — shared log line format; `configure()` sets up the root logger, called only under each entry script's `__main__`
   publish.py            — promotes items to 'published'; records runs row
   run_attempt.py        — records each edition run in run_attempts; `latest` reports today's outcome (called by run_edition.sh and run.sh)
   reset_day.py          — resets one edition's state for `--force` / `--refetch` (called by run_edition.sh)
@@ -43,6 +44,7 @@ scripts/
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
+scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`/`notify`); written by run_edition.sh, read by run.sh and scripts/watchdog.sh
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines

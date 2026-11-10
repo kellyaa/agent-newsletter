@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from models import PrefilterItem, Section, item_source_prefix
+from models import PrefilterItem, Section, item_source_prefix, parse_instant
 
 log = logging.getLogger("gates")
 
@@ -80,11 +80,9 @@ def passes_recency(item: PrefilterItem, now: datetime) -> bool:
         # No publication timestamp — fall back to fetched_at (always present).
         pub = item["fetched_at"]
     try:
-        dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+        dt = parse_instant(pub)
     except (ValueError, AttributeError):
         return True  # don't drop things we can't parse; let the LLM judge
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
     return (now - dt) <= timedelta(days=window)
 
 

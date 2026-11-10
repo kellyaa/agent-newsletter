@@ -40,6 +40,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import logsetup
 from models import EDITIONS_DIRNAME, ISSUES_DIRNAME, LEGACY_EDITION, STATE_DB_NAME, MetaKey
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -182,7 +183,6 @@ def migrate(content_root: Path, rubric_hash_file: Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--content-root", default=os.environ.get("CONTENT_ROOT"),
                     help="content worktree (default: $CONTENT_ROOT)")
@@ -232,4 +232,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

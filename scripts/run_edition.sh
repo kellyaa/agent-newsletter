@@ -56,18 +56,19 @@ done
 export CONTENT_ROOT="${CONTENT_ROOT:-$CONTENT_WORKTREE}"
 export EDITION
 
+# ts, log, notify and the run-log path/marker helpers (the run-log contract).
+# shellcheck source=scripts/runlog.sh
+. "$REPO_ROOT/scripts/runlog.sh"
+
 read -r -a PY_RUN <<< "${NEWSLETTER_PYTHON:-python3}"
 
 DATE_TODAY="${RUN_DATE:-$(date +%F)}"
-LOG_DIR="$REPO_ROOT/logs/$EDITION"
+LOG_DIR="$(runlog_dir "$REPO_ROOT" "$EDITION")"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/run-$DATE_TODAY.log"
+LOG_FILE="$(runlog_path "$REPO_ROOT" "$EDITION" "$DATE_TODAY")"
 
 # tee everything through to a per-edition, per-day log so we can grep failures later.
 exec > >(tee -a "$LOG_FILE") 2>&1
-
-ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
-log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
 # Run accounting (#13). llm.py appends one line per LLM call, tagged with
 # RUN_ATTEMPT; the file is per edition and day and never truncated, so
@@ -80,23 +81,13 @@ RUN_ATTEMPT=""
 CURRENT_STAGE="config"
 EDITION_NAME="$EDITION"
 
-# Fire a macOS notification. No-op on non-Darwin or if osascript is missing.
-notify() {
-  local title="$1"; shift
-  local message="$1"; shift
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"${message//\"/\\\"}\" with title \"${title//\"/\\\"}\"" \
-      >/dev/null 2>&1 || true
-  fi
-}
-
 # On any error before DONE, fire a notification and exit nonzero.
 fail_handler() {
   local rc=$?
   local stage="${CURRENT_STAGE:-unknown}"
-  log "FAILED at stage=$stage rc=$rc — see $LOG_FILE"
+  runlog_mark_failed "$stage" "$rc" "— see $LOG_FILE"
   notify "$EDITION_NAME failed" \
-    "stage=$stage rc=$rc — re-run: ./run.sh --failed (log: logs/$EDITION/$(basename "$LOG_FILE"))"
+    "stage=$stage rc=$rc — re-run: ./run.sh --failed (log: ${LOG_FILE#"$REPO_ROOT"/})"
   record_failed_attempt "$stage" "$rc"
   exit "$rc"
 }
@@ -187,7 +178,7 @@ fi
 git -C "$CONTENT_WORKTREE" add "editions/$EDITION"
 if git -C "$CONTENT_WORKTREE" diff --cached --quiet; then
   log "git: nothing to commit"
-  log "DONE"
+  runlog_mark_done
   exit 0
 fi
 
@@ -205,4 +196,4 @@ else
   log "git: no remote configured; skipping push"
 fi
 
-log "DONE"
+runlog_mark_done

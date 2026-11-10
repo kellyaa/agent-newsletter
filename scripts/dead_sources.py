@@ -39,6 +39,7 @@ from pathlib import Path
 import yaml
 
 import edition
+import logsetup
 from db import content_root, load_source_fetch_outcomes
 from models import EditionStatus, SourceFamily, is_positive_int, source_label
 
@@ -126,4 +127,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

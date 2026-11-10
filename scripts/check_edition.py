@@ -31,6 +31,7 @@ import yaml
 
 import edition as edition_mod
 import gates
+import logsetup
 import prompts as prompts_mod
 from edition import Edition, EditionError
 from models import (
@@ -298,4 +299,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())

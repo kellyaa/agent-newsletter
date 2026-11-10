@@ -14,6 +14,7 @@ from pathlib import Path
 
 from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
 import edition
+import logsetup
 import prompts
 from gates import (  # noqa: F401 — re-exported for tests and tooling
     RECENCY_DAYS, SECTION_BY_FAMILY, SOURCE_PRIORITY, assign_section,
@@ -26,10 +27,6 @@ from db import (
 )
 from models import ExitCode, MetaKey, PrefilterItem, Section, Status
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 log = logging.getLogger("prefilter")
 
 
@@ -263,4 +260,5 @@ def main(now: datetime | None = None) -> int:
 
 
 if __name__ == "__main__":
+    logsetup.configure()
     sys.exit(main())
