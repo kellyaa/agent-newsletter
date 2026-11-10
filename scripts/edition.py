@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -46,8 +47,39 @@ STATUSES = tuple(s.value for s in EditionStatus)
 # Plain strings (not Section members) so error messages print "papers", not "<Section.PAPERS ...>".
 SECTION_NAMES = tuple(s.value for s in Section)
 
-_SLUG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-_TAG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+# edition.yaml value rules. Public because new_edition.py drafts edition.yaml
+# and must keep only what load() accepts (one home; see AGENTS.md).
+SLUG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+TAG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+
+
+def keyword_problem(kw: str) -> str | None:
+    """Why ``load`` would reject keyword *kw* on its own, or None if it is fine.
+
+    A keyword must compile, and must not match the empty string (it would
+    let every item through the keyword gate).
+    """
+    try:
+        re.compile(kw)
+    except re.error as e:
+        return f"does not compile: {e}"
+    if re.search(kw, "", re.IGNORECASE):
+        return "matches the empty string, so the keyword gate would pass every item"
+    return None
+
+
+def combined_keywords_problem(keywords: Sequence[str]) -> str | None:
+    """Why the keywords fail when OR-ed together as prefilter does, or None.
+
+    A keyword can compile alone yet break the combination (inline global
+    flags such as ``(?i)``, or a named group reused across keywords).
+    """
+    try:
+        re.compile("|".join(keywords), re.IGNORECASE)
+    except re.error as e:
+        return f"do not compile when combined with '|': {e}"
+    return None
+
 
 _TOP_REQUIRED = (
     "slug", "name", "tagline", "status", "order",
@@ -150,7 +182,7 @@ def runtime_paths(content_root: Path, slug: str | None = None) -> RuntimePaths:
     The cached rubric hash lives in the edition's ``meta`` table, not in a file.
     """
     slug = slug or selected_slug()
-    if not _SLUG_RE.fullmatch(slug):
+    if not SLUG_RE.fullmatch(slug):
         raise EditionError(f"invalid edition slug {slug!r}")
     root = content_root / EDITIONS_DIRNAME / slug
     logs = LOGS_ROOT / slug
@@ -238,7 +270,7 @@ def load(slug: str, editions_dir: Path | None = None) -> Edition:
         if not isinstance(raw[key], str) or not raw[key].strip():
             raise _fail(path, f"{key!r} must be a non-empty string")
 
-    if not _SLUG_RE.fullmatch(raw["slug"]):
+    if not SLUG_RE.fullmatch(raw["slug"]):
         raise _fail(path, f"slug {raw['slug']!r} must match [a-z0-9-]+ (lowercase, hyphen-separated)")
     if raw["slug"] != slug:
         raise _fail(path, f"slug {raw['slug']!r} does not match folder name {slug!r}")
@@ -252,29 +284,19 @@ def load(slug: str, editions_dir: Path | None = None) -> Edition:
     if not keywords:
         raise _fail(path, "'keywords' must not be empty")
     for kw in keywords:
-        try:
-            re.compile(kw)
-        except re.error as e:
-            raise _fail(path, f"keyword {kw!r} does not compile: {e}") from e
-        if re.search(kw, "", re.IGNORECASE):
-            raise _fail(
-                path,
-                f"keyword {kw!r} matches the empty string, so the keyword gate "
-                "would pass every item",
-            )
-    # prefilter ORs the keywords into one pattern; a keyword can compile alone
-    # yet break the combination (inline global flags such as (?i), or a named
-    # group reused across keywords). Fail here, not at prefilter import time.
-    try:
-        re.compile("|".join(keywords), re.IGNORECASE)
-    except re.error as e:
-        raise _fail(path, f"keywords do not compile when combined with '|': {e}") from e
+        problem = keyword_problem(kw)
+        if problem:
+            raise _fail(path, f"keyword {kw!r} {problem}")
+    # prefilter ORs the keywords into one pattern; fail here, not at prefilter time.
+    problem = combined_keywords_problem(keywords)
+    if problem:
+        raise _fail(path, f"keywords {problem}")
 
     tags = _str_list(path, "tags", raw["tags"])
     if not tags:
         raise _fail(path, "'tags' must not be empty")
     for t in tags:
-        if not _TAG_RE.fullmatch(t):
+        if not TAG_RE.fullmatch(t):
             raise _fail(path, f"tag {t!r} must be kebab-case")
     if len(set(tags)) != len(tags):
         raise _fail(path, "'tags' contains duplicates")
