@@ -358,6 +358,22 @@ class AppendixItem(TypedDict):
     title: str
 
 
+class IssueMetadata(TypedDict):
+    """The ``metadata`` block of an issue file's frontmatter (and writer input).
+
+    Built only by ``write.writer_metadata``. Its keys are the producer half of
+    the site's ``metadata: z.object`` in ``site/src/content.config.ts``
+    (``tests/test_issue_frontmatter_single_source.py``). ``items_considered``
+    is None when a replay cannot reconstruct it.
+    """
+    items_considered: int | None
+    items_featured_total: int
+    items_featured_papers: int
+    items_featured_news: int
+    items_featured_blogs: int
+    items_appendix: int
+
+
 class FrontmatterFeatured(TypedDict, total=False):
     """Featured item as written into issue file YAML frontmatter."""
     id: str
