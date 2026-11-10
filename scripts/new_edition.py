@@ -57,7 +57,6 @@ TEMPLATE_SLUG = "_template"
 ARXIV_API = "https://export.arxiv.org/api/query"
 ARXIV_DELAY_S = 3.0  # arXiv asks for >= 3 s between requests
 
-_SLUG_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 _PLACEHOLDER = re.compile(r"\{\{([a-z_]+)\}\}")
 
 # LLM fragment key -> file under editions/<slug>/prompts/
@@ -186,7 +185,11 @@ def clean_tags(raw: list[str]) -> tuple[list[str], list[Dropped]]:
 
 
 def clean_keywords(raw: list[str]) -> tuple[list[str], list[Dropped]]:
-    """Keep regexes that compile; drop (and record) the rest, plus exact duplicates."""
+    """Keep only keywords ``edition.load`` accepts; drop (and record) the rest.
+
+    The rules live in ``edition.keyword_problem`` / ``combined_keywords_problem``
+    so a scaffolded edition.yaml always loads. Exact duplicates are dropped too.
+    """
     out: list[str] = []
     dropped: list[Dropped] = []
     for kw in raw:
@@ -194,13 +197,16 @@ def clean_keywords(raw: list[str]) -> tuple[list[str], list[Dropped]]:
             # An empty pattern compiles, and matches every item.
             dropped.append(Dropped("keyword", kw, "empty pattern"))
             continue
-        try:
-            re.compile(kw)
-        except re.error as e:
-            dropped.append(Dropped("keyword", kw, f"does not compile: {e}"))
+        problem = edition_mod.keyword_problem(kw)
+        if problem:
+            dropped.append(Dropped("keyword", kw, problem))
             continue
         if kw in out:
             dropped.append(Dropped("keyword", kw, "duplicate"))
+            continue
+        if edition_mod.combined_keywords_problem([*out, kw]):
+            # e.g. a second (?P<x>...) group, or a mid-pattern (?i) flag.
+            dropped.append(Dropped("keyword", kw, "breaks the combined keyword pattern"))
             continue
         out.append(kw)
     return out, dropped
@@ -568,7 +574,7 @@ def scaffold(
     sleep: Callable[[float], None] = time.sleep,
 ) -> Path:
     """Create ``editions/<slug>/``. Returns its path. Raises :class:`NewEditionError`."""
-    if not _SLUG_RE.fullmatch(slug) or slug.startswith("_"):
+    if not edition_mod.SLUG_RE.fullmatch(slug) or slug.startswith("_"):
         raise NewEditionError(f"invalid slug {slug!r}: use lowercase letters, digits and hyphens")
     if not name.strip():
         raise NewEditionError("--name must not be empty")
