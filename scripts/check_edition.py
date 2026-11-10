@@ -48,7 +48,6 @@ FAMILIES = tuple(f.value for f in SourceFamily)
 REQUIRED_KEYS = {f.value: set(keys) for f, keys in SOURCE_REQUIRED_KEYS.items()}
 SECTIONS = edition_mod.SECTION_NAMES
 _TODO = re.compile(r"\bTODO\b")
-_UNFILLED_SLOT = re.compile(r"\{\{[a-z][a-z0-9_-]*\}\}")
 
 
 @dataclass
@@ -172,7 +171,7 @@ def lint(slug: str) -> LintResult:
         except EditionError as e:
             result.errors.append(str(e))
             continue
-        left = _UNFILLED_SLOT.findall(text)
+        left = [m.group(0) for m in prompts_mod.PLACEHOLDER_RE.finditer(text)]
         if left:
             result.errors.append(f"{stage} prompt still contains unfilled placeholders {sorted(set(left))}")
 

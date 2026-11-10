@@ -43,6 +43,7 @@ import edition as edition_mod
 import llm
 import logsetup
 import net
+import prompts
 import urls
 from edition import EditionError
 from models import REDDIT_DEFAULT_LIMIT, EditionStatus, SourceFamily, is_positive_int
@@ -57,7 +58,6 @@ TEMPLATE_SLUG = "_template"
 ARXIV_API = "https://export.arxiv.org/api/query"
 ARXIV_DELAY_S = 3.0  # arXiv asks for >= 3 s between requests
 
-_PLACEHOLDER = re.compile(r"\{\{([a-z_]+)\}\}")
 
 # LLM fragment key -> file under editions/<slug>/prompts/
 FRAGMENTS = {
@@ -557,8 +557,10 @@ def build_prompt(slug: str, name: str, describe: str, seed_urls: list[str], repo
         "example_fragments": "\n\n".join(frags),
     }
     template = (repo_root / "prompts" / "draft_edition.md").read_text()
-    # Single pass so a value that happens to contain "{{x}}" is not expanded again.
-    return _PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
+    try:
+        return prompts.fill_slots(template, values)
+    except EditionError as e:
+        raise NewEditionError(f"prompts/draft_edition.md: {e}") from e
 
 
 # ------------------------------------------------------------------ main
