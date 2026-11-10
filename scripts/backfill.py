@@ -13,7 +13,8 @@ What it does, end-to-end:
   3. Re-applies prefilter's age-out rule using --date as the synthetic 'now'
      (julianday('now') would otherwise overshoot by however many days are
      between the snapshot and --date).
-  4. Builds the candidates.json snapshot from the surviving candidate rows.
+  4. Loads the candidate pool from the surviving candidate rows, with the
+     daily run's papers pre-rank cap (candidates.load_ranking_pool).
   5. Runs the ranker — usually with no LLM call, since on a missed-day
      backfill all candidates are typically prescored from prior runs.
   6. Calls the writer pinned to --date and writes
@@ -261,13 +262,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        synthetic_now = datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
         log.error("--date must be YYYY-MM-DD, got %r", args.date)
         return 2
 
     import db as db_mod
-    from candidates import PAPERS_PRESCORED, load_candidates_from_db
+    import edition
+    from candidates import PAPERS_PRESCORED, load_ranking_pool
 
     sandbox = setup_sandbox(args.date)
     sandbox_db = sandbox / STATE_DB_NAME
@@ -282,10 +284,15 @@ def main() -> int:
     if aged:
         log.info("aged out %d papers candidates for synthetic %s", aged, args.date)
 
-    # Use the shared candidates module instead of reimplementing the grouping.
-    # This ensures field selection, section logic, and prescored detection
-    # stay in sync with the normal pipeline path.
-    candidates = load_candidates_from_db(conn)
+    # Load through the same pool loader as rank.main, so field selection,
+    # section logic, prescored detection and the papers pre-rank cap match the
+    # daily run. The cap bounds the papers prompt: uncapped, a missed-day
+    # backlog goes to the ranker in one call and can run past the endpoint's
+    # timeout. The synthetic date (UTC midnight) is "now" for the cap's
+    # recency score, as it is for the age-out above.
+    candidates = load_ranking_pool(
+        conn, now=synthetic_now, keyword_re=edition.current().keyword_re(),
+    )
     log.info(
         "candidates: papers=%d prescored=%d news=%d blogs=%d",
         len(candidates.get(Section.PAPERS, [])),
