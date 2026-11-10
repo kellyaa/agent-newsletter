@@ -397,7 +397,7 @@ Per-edition content layout (`CONTENT_ROOT/editions/<slug>/`), the orchestrator t
 | LLM hallucinates a URL            | Writer LLM produces prose only — URLs are spliced from the DB by `write.py`. URL hallucination is mechanically impossible at the writer step; Astro content-schema validates frontmatter at build time as a second gate |
 | SQLite merge conflict (unlikely)  | Single writer (your Mac); but add `busy_timeout` anyway      |
 | Newsletter is empty / too short   | Gate in publish.py: if file is below MIN_FILE_SIZE_BYTES or 0 featured + 0 appendix, refuse to publish (nonzero exit) |
-| Cost runaway                      | Per-run token usage recorded in `runs.tokens_in` / `tokens_out` (`runs.cost_usd` exists but is not populated); `BUDGET_USD` env var scaffolded but not enforced in v1 (see Cost Budget) |
+| Cost runaway                      | Per-run token usage recorded in `runs.tokens_in` / `tokens_out` (`runs.cost_usd` exists but is not populated); `BUDGET_USD` env var defined but unenforced, and no cap is planned for now (maintainer decision #438 — see Cost Budget) |
 | No newsletter commit in >36h      | Separate "watchdog" launchd job runs hourly; checks the newest successful daily-run commit (`newsletter: <date> daily run`) on the `content` branch. Failure-recovery commits do not reset the clock. |
 
 ## Failure Notifications
@@ -411,12 +411,11 @@ macOS notifications via `osascript`. No email, no SMTP, no third-party service:
 
 ## Cost Budget
 
-v1 records token usage (not priced cost); v2 enforces a budget. Scaffolding now so we don't have to retrofit:
+The project records token usage but does **not** price it or enforce a budget. The maintainer decided on issue #438 not to cap costs for now, so `BUDGET_USD` stays unenforced and `runs.cost_usd` stays NULL; dollar cost is derived downstream from the recorded token counts. This section describes what is recorded and what the (intentionally unused) scaffolding is:
 
 - `runs` table includes `cost_usd REAL` and `tokens_in`, `tokens_out` columns. `tokens_in` / `tokens_out` are populated (see below); `cost_usd` is **not** written by any code path and stays NULL — cost is priced downstream from the per-model tokens in `notes`.
 - `llm.py` appends each response's token usage (`usage.prompt_tokens`, `usage.completion_tokens`), model and run attempt to `logs/usage-<date>.jsonl` (`$LLM_USAGE_LOG`, set by `run.sh`). `publish.py` sums the day's into the `runs` row; `run_attempt.py` sums each attempt's into `run_attempts` (#13).
-- `BUDGET_USD` env var is defined as a future budget cap. **Not yet implemented in `run.sh` or enforced** in v1 — the column scaffolding is in place for when enforcement is added.
-- A weekly summary line in the log: "last 7 days: $X.YY". Once we have ~30 days of data we'll set a real cap.
+- `BUDGET_USD` env var is defined but **not implemented or enforced** anywhere in `run.sh` or the pipeline, and **no cap is planned for now** (maintainer decision on #438). Setting it has no effect; the column scaffolding stays in place should enforcement ever be revisited. Reviving the write path for `runs.cost_usd` (the closed PR #441) would need a new issue.
 
 ## Iteration Plan
 
@@ -440,7 +439,7 @@ Tracked as GitHub issues at https://github.com/kellyaa/agent-newsletter/issues. 
 - **Run time:** 07:00 local, daily.
 - **Voice:** opinionated and willing to be skeptical, but only on the basis of the actual content. No contrarianism for its own sake; if a piece is solid, say so plainly. Skepticism must cite specifics (sample size, missing ablation, cherry-picked benchmark).
 - **Failure notifications:** macOS notifications via `osascript` from `run.sh` and `watchdog.sh`. No email, no third-party service. Run logs in `logs/`.
-- **Cost cap:** not enforced in v1, but scaffolded — per-run token usage recorded in `runs` (`cost_usd` itself is not populated), `BUDGET_USD` env var defined for future enforcement.
+- **Cost cap:** no cap is planned for now (maintainer decision on #438). Per-run token usage is recorded in `runs` (`cost_usd` itself is not populated); the `BUDGET_USD` env var is defined but unenforced and setting it has no effect.
 - **Repo:** public on GitHub. Enables free GitHub Pages hosting for the published newsletter.
 
 ## Initial Source List (`editions/agents/sources.yaml` seed)
