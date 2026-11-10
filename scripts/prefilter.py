@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, load_candidates_from_db, prerank_score
+from candidates import PAPER_PRERANK_CAP, PAPERS_PRESCORED, bound_prerank_scorer, load_ranking_pool
 import edition
 import logsetup
 import prompts
@@ -96,7 +96,7 @@ def _passes_keyword_gate(item: PrefilterItem) -> bool:
 
 def _prerank_score(item: PrefilterItem, now: datetime) -> float:
     """candidates.prerank_score bound to this edition's keyword gate."""
-    return prerank_score(item, now, edition.current().keyword_re())
+    return bound_prerank_scorer(edition.current().keyword_re())(item, now)
 
 
 def _rubric_hash() -> str:
@@ -225,11 +225,10 @@ def main(now: datetime | None = None) -> int:
     # This is the canonical way to get grouped candidates — rank.py uses
     # the same function, eliminating the file-based coupling.
     cap_stats: dict[str, int] = {}
-    grouped = load_candidates_from_db(
+    grouped = load_ranking_pool(
         conn,
-        prerank_cap=PAPER_PRERANK_CAP,
-        prerank_scorer=_prerank_score,
         now=now,
+        keyword_re=edition.current().keyword_re(),
         stats=cap_stats,
     )
     prerank_cut = cap_stats.get("prerank_cut", 0)
@@ -242,7 +241,7 @@ def main(now: datetime | None = None) -> int:
     )
 
     # Write candidates.json as a debug/inspection artifact. rank.py does NOT
-    # depend on this file — it queries the DB directly via load_candidates_from_db().
+    # depend on this file — it queries the DB directly via load_ranking_pool().
     candidates_out = candidates_path()
     candidates_out.parent.mkdir(parents=True, exist_ok=True)
     candidates_out.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))

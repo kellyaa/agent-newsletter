@@ -77,7 +77,7 @@ def test_rank_main_passes_injected_now_to_pool_loader(tmp_path, monkeypatch):
         seen.update(kwargs)
         return {}
 
-    monkeypatch.setattr(rank_mod, "load_candidates_from_db", fake_load)
+    monkeypatch.setattr(rank_mod, "load_ranking_pool", fake_load)
 
     assert rank_mod.main(now=FROZEN_NOW) == 0
     assert seen["now"] is FROZEN_NOW

@@ -24,7 +24,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from db import connect, load_candidate_rows
 from models import CandidateItem, Section, parse_instant
@@ -159,3 +159,36 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[Candi
                 stats["prerank_cut"] = before - len(papers)
 
     return grouped
+
+
+def bound_prerank_scorer(keyword_re: re.Pattern[str]) -> Callable[[dict, datetime], float]:
+    """:func:`prerank_score` bound to *keyword_re* (the edition's keyword gate)."""
+    def scorer(item: dict, now: datetime) -> float:
+        return prerank_score(item, now, keyword_re)
+    return scorer
+
+
+def load_ranking_pool(
+    conn=None,
+    *,
+    now: datetime,
+    keyword_re: re.Pattern[str],
+    stats: dict[str, int] | None = None,
+) -> dict[str, list[CandidateItem]]:
+    """The candidate pool exactly as the ranker should see it.
+
+    :func:`load_candidates_from_db` with the papers pre-rank cap applied:
+    unscored papers past :data:`PAPER_PRERANK_CAP`, ordered by
+    :func:`prerank_score` against *keyword_re* at *now*, are left out (they
+    stay ``candidate`` and compete again next run). prefilter (debug artifact
+    and cut count), rank (the real LLM call) and backfill (sandbox ranking)
+    all load through here, so none of them can drop or re-tune the cap on its
+    own (tests/test_prerank_pool_single_source.py).
+    """
+    return load_candidates_from_db(
+        conn,
+        prerank_cap=PAPER_PRERANK_CAP,
+        prerank_scorer=bound_prerank_scorer(keyword_re),
+        now=now,
+        stats=stats,
+    )
