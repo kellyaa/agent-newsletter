@@ -324,11 +324,11 @@ def test_meta_prompt_placeholders_are_all_supplied():
     import prompts as prompts_mod
 
     text = (prompts_mod.PROMPTS_DIR / "draft_edition.md").read_text()
-    used = set(new_edition._PLACEHOLDER.findall(text))
+    used = set(prompts_mod.PLACEHOLDER_RE.findall(text))
     out = new_edition.build_prompt("s", "N", "D", [], edition.REPO_ROOT)
     assert used == {"slug", "name", "describe", "seed_sources", "example_edition",
                     "example_sources", "example_fragments"}
-    assert not new_edition._PLACEHOLDER.search(out.replace("{{" "slot" "}}", ""))
+    assert not prompts_mod.PLACEHOLDER_RE.search(out.replace("{{" "slot" "}}", ""))
     assert "(none)" in out
 
 
