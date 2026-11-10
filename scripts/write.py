@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 import edition
 import logsetup
 import prompts
@@ -39,6 +41,7 @@ from models import (
     ExitCode,
     FeaturedItem,
     FrontmatterFeatured,
+    IssueMetadata,
     Section,
     issue_filename,
 )
@@ -138,27 +141,30 @@ def writer_metadata(
     featured: list[FeaturedItem],
     appendix_by_section: dict[str, list[AppendixItem]],
     items_considered: int | None,
-) -> dict:
+) -> IssueMetadata:
     """Run metadata block for the writer input / issue frontmatter.
 
-    ``items_considered`` is None when it cannot be reconstructed (replay).
+    The only builder of :class:`models.IssueMetadata`; the site's zod
+    ``metadata`` schema must accept exactly these keys
+    (tests/test_issue_frontmatter_single_source.py). ``items_considered`` is
+    None when it cannot be reconstructed (replay).
     """
     counts = {s.value: 0 for s in Section}
     for it in featured:
         counts[it["section"]] = counts.get(it["section"], 0) + 1
-    return {
-        "items_considered": items_considered,
-        "items_featured_total": len(featured),
-        "items_featured_papers": counts[Section.PAPERS],
-        "items_featured_news": counts[Section.NEWS],
-        "items_featured_blogs": counts[Section.BLOGS],
-        "items_appendix": sum(len(v) for v in appendix_by_section.values()),
-    }
+    return IssueMetadata(
+        items_considered=items_considered,
+        items_featured_total=len(featured),
+        items_featured_papers=counts[Section.PAPERS],
+        items_featured_news=counts[Section.NEWS],
+        items_featured_blogs=counts[Section.BLOGS],
+        items_appendix=sum(len(v) for v in appendix_by_section.values()),
+    )
 
 
 def load_today_items(
     conn, today: str
-) -> tuple[list[FeaturedItem], dict[str, list[AppendixItem]], dict[str, int]]:
+) -> tuple[list[FeaturedItem], dict[str, list[AppendixItem]], IssueMetadata]:
     """Featured items, appendix items grouped by section, and run metadata.
 
     Item shapes are bound to models.FeaturedItem / models.AppendixItem
@@ -321,11 +327,36 @@ def _emit_dict(d: dict, indent: int) -> list[str]:
     return lines
 
 
+# The issue file's frontmatter framing. emit_yaml_frontmatter writes it and
+# parse_frontmatter reads it back (replay_writer goes through the latter), so
+# the two directions cannot drift (tests/test_issue_frontmatter_single_source.py).
+FRONTMATTER_FENCE = "---"
+
+# Top-level frontmatter keys assemble_issue writes, in order; the site's zod
+# ``schema: z.object`` must declare exactly these.
+FRONTMATTER_KEYS = ("date", "theme", "featured", "appendix", "metadata")
+
+
 def emit_yaml_frontmatter(data: dict) -> str:
-    lines = ["---"]
+    lines = [FRONTMATTER_FENCE]
     lines.extend(_emit_dict(data, 0))
-    lines.append("---")
+    lines.append(FRONTMATTER_FENCE)
     return "\n".join(lines) + "\n"
+
+
+def parse_frontmatter(text: str) -> dict | None:
+    """The YAML frontmatter block of an issue file's *text*, parsed.
+
+    Inverse of :func:`emit_yaml_frontmatter`. Raises ``ValueError`` when the
+    opening or closing fence is missing; returns None for an empty block.
+    """
+    opening = FRONTMATTER_FENCE + "\n"
+    if not text.startswith(opening):
+        raise ValueError("missing opening frontmatter fence")
+    end = text.find("\n" + opening, len(opening))
+    if end == -1:
+        raise ValueError("missing closing frontmatter fence")
+    return yaml.safe_load(text[len(opening):end])
 
 
 # ---------- Issue assembly ----------
@@ -556,13 +587,11 @@ def assemble_issue(
 
     theme = (writer_output.get("theme") or "").strip() or None
 
-    frontmatter_data = {
-        "date": today,
-        "theme": theme,
-        "featured": featured_for_fm,
-        "appendix": appendix_for_fm,
-        "metadata": metadata,
-    }
+    frontmatter_data = dict(zip(
+        FRONTMATTER_KEYS,
+        (today, theme, featured_for_fm, appendix_for_fm, metadata),
+        strict=True,
+    ))
     fm = emit_yaml_frontmatter(frontmatter_data)
 
     # Body is intentionally minimal — Astro ingests the structured frontmatter

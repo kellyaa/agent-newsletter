@@ -22,7 +22,6 @@ import logging
 import sys
 from pathlib import Path
 
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import edition  # noqa: E402
@@ -36,6 +35,7 @@ from write import (  # noqa: E402
     featured_item_from_row,
     find_previous_newsletter,
     issues_dir,
+    parse_frontmatter,
     writer_metadata,
 )
 
@@ -43,15 +43,15 @@ log = logging.getLogger("replay_writer")
 
 
 def parse_issue_frontmatter(issue_path: Path) -> dict:
-    """Extract the YAML frontmatter block from an Astro issue file."""
-    text = issue_path.read_text()
-    if not text.startswith("---\n"):
-        raise ValueError(f"{issue_path}: missing opening frontmatter fence")
-    end = text.find("\n---\n", 4)
-    if end == -1:
-        raise ValueError(f"{issue_path}: missing closing frontmatter fence")
-    block = text[4:end]
-    return yaml.safe_load(block)
+    """Extract the YAML frontmatter block from an Astro issue file.
+
+    The framing is write's (:func:`write.parse_frontmatter`, the inverse of
+    the emitter), so a replay reads exactly what the writer wrote.
+    """
+    try:
+        return parse_frontmatter(issue_path.read_text())
+    except ValueError as e:
+        raise ValueError(f"{issue_path}: {e}") from None
 
 
 def load_from_issue_file(conn, date: str):
