@@ -90,7 +90,7 @@ The launchd plists are macOS-only. On Linux, use a cron job or systemd user serv
 0 * * * *  /path/to/agent-newsletter/watchdog.sh >> /path/to/agent-newsletter/logs/watchdog.out 2>&1
 ```
 
-Replace `/path/to/agent-newsletter` with your actual repo root. The `watchdog.sh` notification step uses `osascript` (macOS-only) — on Linux it will no-op silently; add a custom notification command (e.g., `notify-send`) by editing `watchdog.sh` if desired.
+Replace `/path/to/agent-newsletter` with your actual repo root. Alerts go through `notify` in `scripts/runlog.sh`: `osascript` on macOS, else `notify-send` on Linux desktops; set `WATCHDOG_WEBHOOK_URL` to also POST every alert (pipeline failures and the stale-pipeline alarm) on a headless host. With none available it no-ops.
 
 **Running the Astro dev server:**
 
@@ -223,7 +223,7 @@ How much review a change needs depends on what it touches: see [`docs/risk-tiers
 - Python 3.11+; no type annotations required but they are welcome.
 - No external formatter enforced (no black/ruff CI gate), but keep code readable.
 - Keep scripts self-contained — pipeline stage scripts (`fetch.py`, `prefilter.py`, `rank.py`, `write.py`, `publish.py`, `run_attempt.py`) must not import from each other; they share state only through `state.db` and use the shared modules `db.py`, `edition.py`, `llm.py`, `llm_ids.py`, `models.py`, `candidates.py`, `gates.py`, `logsetup.py`, `net.py`, and `urls.py` (enforced by `tests/test_stage_import_boundary.py`). Code two stages both need goes in a shared module, e.g. the papers prerank cap lives in `candidates.py` and the usage-log reader in `llm.py`. **Orchestration scripts** (`backfill.py`, `replay_writer.py`) are intentionally exempt: they invoke pipeline-stage functions directly (e.g., `backfill.py` imports `rank.py` and `write.py`) to reuse threshold/cap logic without duplicating it.
-- Shell orchestration (`run.sh`, `scripts/run_edition.sh`, `scripts/watchdog.sh`) sources `scripts/runlog.sh` for the run-log path, the `DONE` / `FAILED at stage=` markers and `ts`/`log`/`notify`; do not spell them inline (enforced by `tests/test_run_log_single_source.py`).
+- Shell orchestration (`run.sh`, `scripts/run_edition.sh`, `scripts/watchdog.sh`) sources `scripts/runlog.sh` for the run-log path, the `DONE` / `FAILED at stage=` markers and `ts`/`log`/`notify`; do not spell them inline. The root `watchdog.sh` sources it too: no shell script but `runlog.sh` may define `notify` or call `osascript` / `notify-send` / the webhook (enforced by `tests/test_run_log_single_source.py`).
 - New scripts that call the LLM should use `scripts/llm.py` — do not add new `openai` direct calls outside `llm.py`.
 - Tests live in `tests/`; use `pytest` fixtures via `tests/conftest.py` (see existing tests for patterns).
 

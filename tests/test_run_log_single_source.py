@@ -12,6 +12,7 @@ the reader's character class) made the watchdog re-run good editions or report
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -97,12 +98,22 @@ def test_users_source_the_library(path):
 
 
 # Helpers the three run-log scripts must take from scripts/runlog.sh. (The root
-# watchdog.sh is a separate stale-commit alarm with its own multi-channel
-# notify; it never reads or writes a run log, so only MARKERS apply to it.)
+# watchdog.sh is a separate stale-commit alarm that never reads or writes a run
+# log, so only MARKERS and NOTIFIER apply to it.)
 HELPERS = {
     "ts format": re.compile(r"date -u \+"),
     "ts()/log()/notify() definition": re.compile(r"^\s*(ts|log|notify)\(\)\s*\{", re.M),
     "osascript": re.compile(r"osascript"),
+}
+# The alert channels: every shell script, the root watchdog.sh included, alerts
+# only through runlog.sh's notify, so the pipeline-failure alerts and the
+# stale-commit alarm reach the same channels (#615 once added notify-send and
+# the webhook to the root copy only).
+NOTIFIER = {
+    "notify() definition": re.compile(r"^\s*notify\(\)\s*\{", re.M),
+    "osascript": re.compile(r"osascript"),
+    "notify-send": re.compile(r"notify-send"),
+    "webhook POST": re.compile(r"curl[^\n]*WATCHDOG_WEBHOOK_URL"),
 }
 # Marker and path spellings no shell script but scripts/runlog.sh may contain.
 MARKERS = {
@@ -129,9 +140,23 @@ def test_no_inline_helpers(path):
     assert not hits, f"{path.name} redefines run-log helpers: {hits}; use scripts/runlog.sh"
 
 
+@pytest.mark.parametrize("path", SHELL, ids=lambda p: str(p.relative_to(REPO)))
+def test_no_inline_notifier(path):
+    # Code only: the scripts' comments may name the channels they alert on.
+    code = "\n".join(ln for ln in path.read_text().splitlines() if not ln.lstrip().startswith("#"))
+    hits = [name for name, rx in NOTIFIER.items() if rx.search(code)]
+    assert not hits, f"{path.name} alerts outside scripts/runlog.sh: {hits}; source it and call notify"
+
+
+def test_root_watchdog_sources_the_library_for_notify():
+    text = (REPO / "watchdog.sh").read_text()
+    assert re.search(r'^\. "\$REPO_ROOT/scripts/runlog\.sh"$', text, re.M)
+    assert re.search(r"^notify ", text, re.M)
+
+
 def test_library_holds_every_forbidden_spelling():
     # Keeps the rules honest: each pattern must match the one real home.
-    rules = {**HELPERS, **MARKERS}
+    rules = {**HELPERS, **MARKERS, **NOTIFIER}
     text = LIB.read_text()
     missing = [n for n, rx in rules.items() if n != "log path" and not rx.search(text)]
     assert not missing
@@ -146,3 +171,53 @@ def test_library_holds_every_forbidden_spelling():
 ])
 def test_marker_rules_catch_the_old_inline_spellings(name, text):
     assert MARKERS[name].search(text)
+
+
+def _notify_with(tmp_path, tools: tuple[str, ...], env: dict[str, str] | None = None) -> str:
+    """Call the library's notify with only the named channel tools on PATH (each a stub)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls.txt"
+    for tool in tools:
+        stub = bin_dir / tool
+        stub.write_text(f'#!/bin/sh\nfor a in "$@"; do printf "%s|" "$a"; done >> "{calls}"\n'
+                        f'echo " <{tool}>" >> "{calls}"\n')
+        stub.chmod(0o755)
+    r = subprocess.run(
+        [shutil.which("bash"), "-c", f'. "{LIB}"; notify \'T "q"\' "m"'],
+        env={"PATH": str(bin_dir), **(env or {})}, capture_output=True, text=True, timeout=10,
+    )
+    assert r.returncode == 0, r.stderr
+    return calls.read_text() if calls.exists() else ""
+
+
+def test_notify_prefers_osascript_and_escapes_quotes(tmp_path):
+    sent = _notify_with(tmp_path, ("osascript", "notify-send"))
+    assert '-e|display notification "m" with title "T \\"q\\""| <osascript>' in sent
+    assert "<notify-send>" not in sent
+
+
+def test_notify_falls_back_to_notify_send(tmp_path):
+    assert _notify_with(tmp_path, ("notify-send",)) == 'T "q"|m| <notify-send>\n'
+
+
+def test_notify_posts_to_webhook_in_addition(tmp_path):
+    sent = _notify_with(tmp_path, ("notify-send", "curl"),
+                        {"WATCHDOG_WEBHOOK_URL": "https://ntfy.example/t"})
+    assert "<notify-send>" in sent
+    assert '-H|Title: T "q"|-d|m|https://ntfy.example/t| <curl>' in sent
+
+
+@pytest.mark.parametrize("tools", [(), ("curl",)], ids=["nothing", "curl-without-webhook"])
+def test_notify_is_a_no_op_without_channels(tmp_path, tools):
+    assert _notify_with(tmp_path, tools) == ""
+
+
+@pytest.mark.parametrize("name,text", [
+    ("notify() definition", "notify() {"),
+    ("osascript", 'osascript -e "display notification"'),
+    ("notify-send", 'notify-send "$title" "$message"'),
+    ("webhook POST", 'curl -fsS -d "$message" "$WATCHDOG_WEBHOOK_URL"'),
+])
+def test_notifier_rules_catch_the_old_root_watchdog_copy(name, text):
+    assert NOTIFIER[name].search(text)

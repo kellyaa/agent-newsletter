@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 #
 # The run-log contract, sourced by run.sh, scripts/run_edition.sh and
-# scripts/watchdog.sh. This is its only home (tests/test_run_log_single_source.py
-# enforces that).
+# scripts/watchdog.sh (the root watchdog.sh sources it for notify only). This
+# is its only home (tests/test_run_log_single_source.py enforces that).
 #
 # run_edition.sh writes one log per edition and day, logs/<slug>/run-<date>.log.
 # A run is complete iff that log has a `<ts> [run] DONE` line. A failed run
@@ -21,12 +21,22 @@ ts() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 # One run-log line: `<ts> [run] <message>`.
 log() { printf '%s [run] %s\n' "$(ts)" "$*"; }
 
-# Fire a macOS notification. No-op on non-Darwin or if osascript is missing.
+# The one alert helper (also used by the root watchdog.sh). Desktop channel:
+# macOS osascript, else Linux notify-send. WATCHDOG_WEBHOOK_URL (e.g. an ntfy
+# topic URL) is additive: when set, the alert is also POSTed there (title
+# header, message body), which works on a headless host with no desktop
+# session. Never fails; a no-op when no channel is available.
 notify() {
   local title="$1"; shift
   local message="$1"; shift
   if command -v osascript >/dev/null 2>&1; then
     osascript -e "display notification \"${message//\"/\\\"}\" with title \"${title//\"/\\\"}\"" \
+      >/dev/null 2>&1 || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "$title" "$message" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${WATCHDOG_WEBHOOK_URL:-}" ] && command -v curl >/dev/null 2>&1; then
+    curl -fsS -m 10 -H "Title: $title" -d "$message" "$WATCHDOG_WEBHOOK_URL" \
       >/dev/null 2>&1 || true
   fi
 }
