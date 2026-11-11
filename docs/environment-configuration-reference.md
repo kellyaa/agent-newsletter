@@ -217,6 +217,7 @@ export LLM_API_KEY LLM_BASE_URL
 | `model not found: gpt-4o-mini` | `RANKER_MODEL` / `WRITER_MODEL` don't match provider's available models. |
 | `unsupported response format: json_schema` | Some providers don't support structured output. Try `LLM_RESPONSE_FORMAT=json_object`. |
 | `another run holds .watchdog.lock` | Pipeline is already running. Wait or check `ps aux \| grep run.sh`. |
+| `FAILED: flock not found` | `flock` is not installed, so `run.sh` cannot take its lock. Install it (README, Prerequisites). |
 | `EDITION not set` | Set `export EDITION=agents` or add to `.env`. |
 
 ---

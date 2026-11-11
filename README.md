@@ -45,6 +45,7 @@ scripts/
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
 scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`, and the one `notify` alert helper); written by run_edition.sh, read by run.sh and scripts/watchdog.sh; the root watchdog.sh sources it for `notify`
+scripts/runlock.sh      — sourced shell library: the single-run lock contract (`.watchdog.lock` / `.watchdog-self.lock` paths, `runlock_acquire` / `runlock_held`, and the distinct "flock not found" result); sourced by run.sh and scripts/watchdog.sh
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines
@@ -105,7 +106,7 @@ Logs: `logs/run-DATE.log` is the orchestrator summary (one line per edition); `l
 - [**uv**](https://docs.astral.sh/uv/) — Python package manager
 - [**Node.js ≥ 18.17.1**](https://nodejs.org/) + [**pnpm**](https://pnpm.io/) — for the Astro site build
 - An **OpenAI-compatible chat-completions endpoint** (OpenAI, vLLM, llama.cpp, Together, Groq, etc.)
-- **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `another run holds .watchdog.lock; exiting without doing anything` and **exits 0**, so a scheduled job looks healthy while never running the pipeline (see Troubleshooting §3)
+- **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `FAILED: flock not found …`, sends a failure alert and **exits 1**, and `scripts/watchdog.sh` reports `STATUS: FAILED <date> no-flock` (see Troubleshooting §3)
 - The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `editions/agents/sources.yaml` (disabled by default since 2026-05-14)
 
 The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. Alerts (the pipeline-failure alerts from `run.sh` / `scripts/run_edition.sh` and the root `watchdog.sh` stale-pipeline alarm) all go through `notify` in `scripts/runlog.sh`: `osascript` on macOS, `notify-send` on Linux desktops, and on a headless host set `WATCHDOG_WEBHOOK_URL` to POST every alert (e.g. to an ntfy topic). With none of these available it no-ops.
@@ -300,7 +301,8 @@ A live `run.sh` plus a `rank.py` or `write.py` process means a ranker or writer 
 - **arxiv 429s in fetch.** Look for `arxiv/<name>: collector failed: ... 429`. The collector retries with ~17 min backoff, which can stretch fetch from seconds to ~30+ min. The other collectors continue; fetch exits ok with `errors=N` in the DONE line.
 - **LLM call fails with HTTP 400 on structured output** (typical on LiteLLM/Bedrock-style proxies). Try `LLM_RESPONSE_FORMAT=json_object` in `.env`. If the 400 appears only on a retry, try `LLM_RETRY_NO_CACHE=0`.
 - **rank stuck on a section.** `rank.py` makes one OpenAI-compatible chat-completions call per section (papers / news / blogs) via `scripts/llm.py`. If a section's "ranker returned N entries" log line never appears, the HTTP call hasn't returned. Check the PID's start time against now and the `RANKER_TIMEOUT_S` setting.
-- **`run.sh` exits instantly with "another run holds .watchdog.lock" but nothing is running.** Either a run really is in flight (`ps aux | grep run.sh`) or `flock` is not installed (`command -v flock`); in the latter case the lock guard fires on the missing command and `run.sh` exits 0 without doing any work. Install `flock` (see Prerequisites).
+- **`run.sh` exits instantly with "another run holds .watchdog.lock".** A run is in flight (`ps aux | grep run.sh`); the lock is released when it exits.
+- **`run.sh` fails with "flock not found" / watchdog says `STATUS: FAILED <date> no-flock`.** `flock` is not installed (`command -v flock`), so no run can take the single-run lock. Install `flock` (see Prerequisites).
 - **watchdog says `HEAD is not a newsletter commit … skipping check`.** `watchdog.sh` measures staleness from the newest `newsletter: <date> daily run` commit on the `content` branch (the `.worktrees/content` worktree, or the local/`origin/content` ref if there is no worktree). Failure-recovery commits (`… attempt N failed at <stage>`, `persist state.db from interrupted …`) do not count. It only falls back to main's HEAD, and prints this message when HEAD is not a `newsletter:` commit, if there is no content-branch history at all (e.g. a checkout that has never run the pipeline). To double-check the pipeline independently, query the `runs` table:
   ```bash
   sqlite3 .worktrees/content/state.db "SELECT date, items_featured, tokens_in, tokens_out FROM runs ORDER BY date DESC LIMIT 1;"
@@ -318,6 +320,7 @@ Not to be confused with the root `watchdog.sh` (the macOS stale-commit notifier)
 | `STATUS: IN_PROGRESS <date>` | a run is mid-flight; left alone | 0 |
 | `STATUS: HEALED <date>` | an edition's log was missing/incomplete; it re-ran it successfully | 0 |
 | `STATUS: FAILED <date> <slug>:<stage> …` | worst-of: names each edition that failed and its stage | 1 |
+| `STATUS: FAILED <date> no-flock` | `flock` is not installed, so no run can take the lock (never reported as `IN_PROGRESS`) | 1 |
 
 Before the `EDITION:` lines it also prints `MISSED: <slug> <date>` for each of the last 7 days (excluding today) on which a draft/live edition has **no `run_attempts` row**, i.e. `run.sh` never started, so there is no log to heal and `run.sh --failed` has nothing to re-run. These lines are informational (they do not change `STATUS:` or the exit code), need no `osascript`, and are read-only. Days before the edition's first recorded attempt are not reported. Run it alone with `uv run scripts/missed_days.py [--days N]` (exit 1 if any gap). A missed day cannot be regenerated faithfully, since a re-run only covers the current fetch window.
 
