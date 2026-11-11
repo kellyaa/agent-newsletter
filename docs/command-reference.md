@@ -108,7 +108,7 @@ Set in `.env` or export before running:
 | `WRITER_TIMEOUT_S` | Writer timeout (default 1200) | `WRITER_TIMEOUT_S=1800` |
 | `SHOW_DRAFTS=1` | Include draft editions in site build | `SHOW_DRAFTS=1 pnpm --prefix site dev` |
 | `FETCH_ALLOW_PRIVATE_HOSTS` | Allow fetching from RFC-1918 addresses (SSRF guard) | `FETCH_ALLOW_PRIVATE_HOSTS=1` |
-| `WATCHDOG_WEBHOOK_URL` | Optional URL the root `watchdog.sh` POSTs the stale-pipeline alert to (ntfy-style: title header, message body); additive to desktop notifiers | `WATCHDOG_WEBHOOK_URL=https://ntfy.sh/my-topic` |
+| `WATCHDOG_WEBHOOK_URL` | Optional URL every alert is POSTed to (ntfy-style: title header, message body): the per-edition and orchestrator failure alerts from `run.sh` and the root `watchdog.sh` stale-pipeline alert; additive to desktop notifiers | `WATCHDOG_WEBHOOK_URL=https://ntfy.sh/my-topic` |
 | `STALE_HOURS` | Hours without successful run before watchdog alerts (default 36) | `STALE_HOURS=48` |
 
 See [docs/environment-configuration-reference.md](environment-configuration-reference.md) for complete reference.

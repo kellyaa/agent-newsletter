@@ -20,23 +20,10 @@ STALE_HOURS="${STALE_HOURS:-36}"
 STATE_FILE="$REPO_ROOT/logs/watchdog-last-fire"
 mkdir -p "$REPO_ROOT/logs"
 
-# Alert channels: macOS osascript, else Linux notify-send. WATCHDOG_WEBHOOK_URL
-# (e.g. an ntfy topic URL) is additive: when set, the message is also POSTed
-# there, which works on a headless host with no desktop session.
-notify() {
-  local title="$1"; shift
-  local message="$1"; shift
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"${message//\"/\\\"}\" with title \"${title//\"/\\\"}\"" \
-      >/dev/null 2>&1 || true
-  elif command -v notify-send >/dev/null 2>&1; then
-    notify-send "$title" "$message" >/dev/null 2>&1 || true
-  fi
-  if [ -n "${WATCHDOG_WEBHOOK_URL:-}" ] && command -v curl >/dev/null 2>&1; then
-    curl -fsS -m 10 -H "Title: $title" -d "$message" "$WATCHDOG_WEBHOOK_URL" \
-      >/dev/null 2>&1 || true
-  fi
-}
+# notify (macOS osascript, else Linux notify-send, plus the optional
+# WATCHDOG_WEBHOOK_URL POST) is shared with the pipeline's failure alerts.
+# shellcheck source=scripts/runlog.sh
+. "$REPO_ROOT/scripts/runlog.sh"
 
 # Where the pipeline's commits live. run.sh commits every daily run to the
 # `content` branch through this worktree, so they never appear in main's
