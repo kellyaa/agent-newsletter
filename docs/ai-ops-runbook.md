@@ -11,7 +11,7 @@ Authoritative sources: [`AGENTS.md`](../AGENTS.md), [`policies/agent-policy.yaml
 | `run.sh` | Runs every non-paused edition: fetch, prefilter, rank, write, publish | `logs/run-YYYY-MM-DD.log` (summary), `logs/<slug>/run-YYYY-MM-DD.log` (full; ends in `[run] DONE` on success) |
 | `scripts/llm.py` | The only place LLM calls are made | `logs/<slug>/usage-YYYY-MM-DD.jsonl`, `runs` and `run_attempts` token columns |
 | `scripts/watchdog.sh` | Per-edition self-heal: re-runs editions whose log lacks `DONE` | `EDITION:` lines and a final `STATUS:` line on stdout |
-| `watchdog.sh` (repo root) | Alerts if no daily-run commit has landed on `content` for `STALE_HOURS` (default 36) | macOS `osascript` notification, else Linux `notify-send`; set `WATCHDOG_WEBHOOK_URL` to also POST the alert (e.g. an ntfy topic) on headless hosts. A no-op where none is available |
+| `watchdog.sh` (repo root) | Alerts if no daily-run commit has landed on `content` for `STALE_HOURS` (default 36) | `notify` from `scripts/runlog.sh` (shared with the pipeline-failure alerts): macOS `osascript` notification, else Linux `notify-send`; set `WATCHDOG_WEBHOOK_URL` to also POST the alert (e.g. an ntfy topic) on headless hosts. A no-op where none is available |
 | AI agents (issues, PRs) | Propose changes on branches; PRs carry the `hold` label | GitHub issues and PRs; commits signed off (`git commit -s`) |
 
 ## 2. Is the pipeline healthy?
