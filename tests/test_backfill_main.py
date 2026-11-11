@@ -802,6 +802,41 @@ class TestBackfillMainEdgeCases:
         assert any("NOT in live" in r.message or "skipped" in r.message.lower()
                    for r in caplog.records)
 
+    def test_apply_published_full_promotion_logs_no_warning(self, tmp_path, monkeypatch, caplog):
+        """main() stays quiet when every featured id was promoted (promoted == len)."""
+        import backfill as bf
+        import db as db_real
+        import sqlite3
+        import logging
+
+        sandbox_db = tmp_path / "state.db"
+        db_real.init_db(sandbox_db)
+
+        monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
+        monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
+        monkeypatch.setattr(db_real, "connect", lambda *a, **kw: sqlite3.connect(sandbox_db))
+        monkeypatch.setattr("backfill.age_out_for_synthetic_date", lambda conn, date: 0)
+        monkeypatch.setattr("candidates.load_candidates_from_db", lambda *a, **kw: {
+            "papers": [], "papers_prescored": [], "news": [], "blogs": []
+        })
+        decisions = {
+            "feat1": {"status": "featured", "score": 9, "tags": [], "why": "great", "section": "papers"},
+            "feat2": {"status": "featured", "score": 8, "tags": [], "why": "good", "section": "papers"},
+        }
+        monkeypatch.setattr("backfill.rank_with_optional_llm", lambda conn, candidates: decisions)
+        out_path = tmp_path / "2026-07-15.md"
+        out_path.write_text("# Issue")
+        monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
+        monkeypatch.setattr("backfill.apply_published_to_live", lambda ids: len(ids))
+
+        monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15", "--apply-published"])
+        with caplog.at_level(logging.INFO, logger="backfill"):
+            result = bf.main()
+
+        assert result == 0
+        assert any("promoted 2/2 featured ids" in r.message for r in caplog.records)
+        assert not any("were NOT in live" in r.message for r in caplog.records)
+
     def test_run_writer_appendix_only_skips_llm(self, tmp_path, monkeypatch):
         """run_writer_for_date() with no featured items but appendix skips invoke_writer (line 332)."""
         import backfill as bf
