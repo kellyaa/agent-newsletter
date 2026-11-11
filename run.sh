@@ -86,12 +86,25 @@ export RUN_DATE="$DATE_TODAY"
 # another under it; children inherit the descriptor). scripts/watchdog.sh probes
 # this same lock to tell "died mid-run" apart from "still running", so it never
 # starts a second pipeline on top of a live one. Released when the shell exits.
-LOCK_FILE="$REPO_ROOT/.watchdog.lock"
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  log "another run holds $LOCK_FILE; exiting without doing anything"
-  exit 0
-fi
+# The lock contract (path, helpers, the no-flock case) lives in runlock.sh.
+# shellcheck source=scripts/runlock.sh
+. "$REPO_ROOT/scripts/runlock.sh"
+LOCK_FILE="$(runlock_run_path "$REPO_ROOT")"
+lock_rc=0
+runlock_acquire 9 "$LOCK_FILE" || lock_rc=$?
+case "$lock_rc" in
+  0) ;;
+  1)
+    log "another run holds $LOCK_FILE; exiting without doing anything"
+    exit 0 ;;
+  *)
+    # Not a held lock: without flock no run can ever start, so fail loudly
+    # instead of exiting 0 like a lockout (README, Prerequisites).
+    log "FAILED: flock not found; cannot take the single-run lock — install flock (util-linux)"
+    notify "Newsletter pipeline failed" \
+      "flock not found; run.sh cannot take its lock — see logs/$(basename "$LOG_FILE")"
+    exit 1 ;;
+esac
 
 # A failure of the orchestrator itself (before or between editions). Edition
 # failures are handled in run_edition.sh and are never fatal here.

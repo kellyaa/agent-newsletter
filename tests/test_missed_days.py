@@ -158,7 +158,8 @@ FAKE_RUN = "#!/usr/bin/env bash\nexit 0\n"
 def test_watchdog_check_prints_missed_lines_before_status(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for name in ("watchdog.sh", "edition.py", "models.py", "db.py", "urls.py", "missed_days.py"):
+    for name in ("watchdog.sh", "edition.py", "models.py", "db.py", "urls.py", "missed_days.py",
+                 "runlog.sh", "runlock.sh"):
         shutil.copy2(REAL / "scripts" / name, repo / "scripts" / name)
     (repo / "run.sh").write_text(FAKE_RUN)
     (repo / "editions" / "agents").mkdir(parents=True)

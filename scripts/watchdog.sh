@@ -26,6 +26,8 @@
 #   STATUS: HEALED <date>        — at least one edition was missing/incomplete; we ran it
 #   STATUS: FAILED <date> <slug>:<stage>[ <slug>:<stage>...]
 #                                — names each failed edition and its stage
+#   STATUS: FAILED <date> no-flock — flock(1) is missing, so no run can take
+#                                the lock (scripts/runlock.sh, #662)
 #
 # Before those lines it also prints one `MISSED: <slug> <date>` line per recent
 # day on which a draft/live edition has no run_attempts row at all (run.sh never
@@ -63,6 +65,9 @@ DATE_TODAY="$(date +%F)"
 # ts and the run-log path/marker readers (the run-log contract).
 # shellcheck source=scripts/runlog.sh
 . "$REPO_ROOT/scripts/runlog.sh"
+# The run/self lock paths and the flock helpers (the single-run lock contract).
+# shellcheck source=scripts/runlock.sh
+. "$REPO_ROOT/scripts/runlock.sh"
 
 say() { printf '%s [watchdog] %s\n' "$(ts)" "$*"; }
 
@@ -117,13 +122,15 @@ log_file() { runlog_path "$REPO_ROOT" "$1" "$DATE_TODAY"; }
 # Two DIFFERENT locks, deliberately. RUN_LOCK belongs to run.sh; we only ever
 # *probe* it, never hold it — holding it would lock out the very run we're
 # trying to start. WD_LOCK is ours, for watchdog-vs-watchdog exclusion.
-RUN_LOCK="$REPO_ROOT/.watchdog.lock"
-WD_LOCK="$REPO_ROOT/.watchdog-self.lock"
+RUN_LOCK="$(runlock_run_path "$REPO_ROOT")"
+WD_LOCK="$(runlock_self_path "$REPO_ROOT")"
 
-run_in_flight() {
-  # Returns 0 if some other process holds the run lock (i.e. a run is live).
-  # The subshell's fd is closed on return, so this never retains the lock.
-  ( exec 9>"$RUN_LOCK"; flock -n 9 ) && return 1 || return 0
+# Without flock neither lock can be probed or taken, and no run.sh can start
+# either. Say so instead of guessing "in flight" (IN_PROGRESS forever, exit 0).
+no_flock() {
+  say "flock not found; cannot probe or take the run lock, and run.sh cannot run — install flock (util-linux)"
+  echo "STATUS: FAILED $DATE_TODAY no-flock"
+  exit 1
 }
 
 # Which editions still need a run, and (if their log exists) where they died.
@@ -158,7 +165,10 @@ if [ "${#NEED[@]}" -eq 0 ]; then
   exit 0
 fi
 
-if run_in_flight; then
+lock_rc=0
+runlock_held "$RUN_LOCK" || lock_rc=$?
+[ "$lock_rc" -eq "$RUNLOCK_NO_FLOCK" ] && no_flock
+if [ "$lock_rc" -eq 0 ]; then
   say "a run is currently in flight (lock held); leaving it alone"
   emit_done
   for s in "${NEED[@]}"; do echo "EDITION: $s IN_PROGRESS $DATE_TODAY"; done
@@ -183,8 +193,10 @@ fi
 
 # Guard against two watchdogs racing (e.g. the poster and the late watchdog
 # firing close together). This is our OWN lock, not run.sh's — see above.
-exec 8>"$WD_LOCK"
-if ! flock -n 8; then
+lock_rc=0
+runlock_acquire 8 "$WD_LOCK" || lock_rc=$?
+[ "$lock_rc" -eq "$RUNLOCK_NO_FLOCK" ] && no_flock
+if [ "$lock_rc" -ne 0 ]; then
   say "another watchdog/run holds the lock; standing down"
   echo "STATUS: FAILED $DATE_TODAY concurrent-run"
   exit 1

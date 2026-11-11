@@ -110,7 +110,7 @@ If nothing ran at all, check whether a run is in progress or the lock is held:
 pgrep -af 'run.sh|run_edition.sh|rank.py|write.py'
 ```
 
-`run.sh` exits 0 with "another run holds .watchdog.lock; exiting without doing anything" when it cannot take the lock, so a scheduled job can look healthy while doing nothing. If no process is running, the lock is free, because it is released when the owning process exits. A leftover `.watchdog.lock` file is harmless; do not delete it while a run may be live. On a host without `flock` (stock macOS) the same message appears every time. See the README, "Troubleshooting".
+`run.sh` exits 0 with "another run holds .watchdog.lock; exiting without doing anything" when it cannot take the lock, so a scheduled job can look healthy while doing nothing. If no process is running, the lock is free, because it is released when the owning process exits. A leftover `.watchdog.lock` file is harmless; do not delete it while a run may be live. On a host without `flock` (stock macOS), `run.sh` instead logs `FAILED: flock not found …`, alerts and exits 1, and `scripts/watchdog.sh` reports `STATUS: FAILED <date> no-flock`. See the README, "Troubleshooting".
 
 | Symptom in the log | Likely cause | Action |
 |---|---|---|
