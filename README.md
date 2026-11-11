@@ -44,7 +44,7 @@ scripts/
   replay_writer.py      — replay writer against a past date's published items (prompt verification)
 run.sh                  — daily orchestrator: runs every edition in turn, one child process each; idempotent
 scripts/run_edition.sh  — one edition's pipeline (fetch → … → publish → commit + push `editions/<slug>/`); started by `run.sh`
-scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`/`notify`); written by run_edition.sh, read by run.sh and scripts/watchdog.sh
+scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`, and the one `notify` alert helper); written by run_edition.sh, read by run.sh and scripts/watchdog.sh; the root watchdog.sh sources it for `notify`
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
 scripts/missed_days.py  — lists days with no `run_attempts` row per edition (run never started); printed by `scripts/watchdog.sh` as `MISSED:` lines
@@ -108,7 +108,7 @@ Logs: `logs/run-DATE.log` is the orchestrator summary (one line per edition); `l
 - **`flock`** (util-linux) — `run.sh` takes a single-run lock with it. Present on Linux; **not part of stock macOS** (install one, e.g. via Homebrew — verify the formula for your setup). If `flock` is missing, `run.sh` logs `another run holds .watchdog.lock; exiting without doing anything` and **exits 0**, so a scheduled job looks healthy while never running the pipeline (see Troubleshooting §3)
 - The [**gh**](https://cli.github.com/) CLI is only needed if you re-enable the `github_releases:` source in `editions/agents/sources.yaml` (disabled by default since 2026-05-14)
 
-The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. `watchdog.sh` notifies via `osascript` on macOS and `notify-send` on Linux desktops; on a headless host set `WATCHDOG_WEBHOOK_URL` to POST the alert (e.g. to an ntfy topic). With none of these available it no-ops.
+The pipeline scripts (`run.sh`, `scripts/`) are POSIX-compatible and run on Linux without modification. Alerts (the pipeline-failure alerts from `run.sh` / `scripts/run_edition.sh` and the root `watchdog.sh` stale-pipeline alarm) all go through `notify` in `scripts/runlog.sh`: `osascript` on macOS, `notify-send` on Linux desktops, and on a headless host set `WATCHDOG_WEBHOOK_URL` to POST every alert (e.g. to an ntfy topic). With none of these available it no-ops.
 
 ```bash
 # Python deps

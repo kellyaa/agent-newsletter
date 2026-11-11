@@ -10,13 +10,20 @@ from pathlib import Path
 
 
 WATCHDOG = Path(__file__).resolve().parents[1] / "watchdog.sh"
+RUNLOG_LIB = WATCHDOG.parent / "scripts" / "runlog.sh"  # watchdog.sh sources it for notify
+
+
+def _install_watchdog(repo: Path) -> None:
+    shutil.copy2(WATCHDOG, repo / "watchdog.sh")
+    (repo / "scripts").mkdir()
+    shutil.copy2(RUNLOG_LIB, repo / "scripts" / "runlog.sh")
 
 
 def _watchdog_repo(tmp_path: Path, *, subject: str | None = None,
                    commit_date: str | None = None) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
-    shutil.copy2(WATCHDOG, repo / "watchdog.sh")
+    _install_watchdog(repo)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     if subject is not None:
         subprocess.run(
@@ -67,7 +74,7 @@ def _old_commit_date() -> str:
 def test_no_git_history_exits_without_creating_state(tmp_path):
     repo = tmp_path / "not-a-repository"
     repo.mkdir()
-    shutil.copy2(WATCHDOG, repo / "watchdog.sh")
+    _install_watchdog(repo)
 
     result = _run_watchdog(repo)
 
