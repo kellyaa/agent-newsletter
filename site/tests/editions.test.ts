@@ -40,7 +40,7 @@ test("parseEdition rejects bad config loudly", () => {
   assert.throws(() => parseEdition("slug: agents\nname: x\nstatus: live\norder: 1\n", "agents"), /"tagline"/);
   assert.throws(
     () => parseEdition(editionYaml(ok).replace("order: 10", "order: soon"), "agents"),
-    /"order" must be a number/,
+    /"order" must be an integer/,
   );
 });
 
@@ -103,8 +103,17 @@ test("parseEdition names the offending file when the YAML does not parse", () =>
 
 test("parseEdition rejects a non-finite order and blank strings", () => {
   const base = editionYaml({ slug: "agents" });
-  assert.throws(() => parseEdition(base.replace("order: 10", "order: .inf"), "agents"), /"order" must be a number/);
+  assert.throws(() => parseEdition(base.replace("order: 10", "order: .inf"), "agents"), /"order" must be an integer/);
   assert.throws(() => parseEdition(base.replace(/^name: .*$/m, 'name: "   "'), "agents"), /"name" must be a non-empty string/);
+});
+
+test("parseEdition matches edition.load: hyphen-only slug edges and fractional order are rejected", () => {
+  for (const slug of ["news-", "-news", "news--daily"]) {
+    assert.throws(() => parseEdition(editionYaml({ slug }), slug), /must match/);
+  }
+  assert.equal(parseEdition(editionYaml({ slug: "ai-2" }), "ai-2").slug, "ai-2");
+  const base = editionYaml({ slug: "agents" });
+  assert.throws(() => parseEdition(base.replace("order: 10", "order: 1.5"), "agents"), /"order" must be an integer/);
 });
 
 test("editionPath builds site-relative paths inside an edition", () => {
