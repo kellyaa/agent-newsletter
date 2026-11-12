@@ -138,7 +138,7 @@ def _watchdog_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy2(REPO / "watchdog.sh", repo / "watchdog.sh")
-    for lib in ("runlog.sh", "contentbranch.sh"):
+    for lib in ("runlog.sh", "contentbranch.sh", "envfiles.sh"):
         shutil.copy2(REPO / "scripts" / lib, repo / "scripts" / lib)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.name", "T")
@@ -191,7 +191,7 @@ def test_scripts_watchdog_reads_the_worktree_run_sh_creates(tmp_path):
     """scripts/watchdog.sh exports CONTENT_ROOT=<the run.sh worktree> to its readers."""
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "editionlist.sh", "pyrunner.sh", "edition.py", "models.py"):
+    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "editionlist.sh", "pyrunner.sh", "envfiles.sh", "edition.py", "models.py"):
         shutil.copy2(REPO / "scripts" / f, repo / "scripts" / f)
     (repo / "editions" / "agents").mkdir(parents=True)
     shutil.copy2(REPO / "editions" / "agents" / "edition.yaml",

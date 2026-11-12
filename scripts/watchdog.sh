@@ -81,6 +81,12 @@ DATE_TODAY="$(date +%F)"
 
 say() { printf '%s [watchdog] %s\n' "$(ts)" "$*"; }
 
+# The operator's env files (scripts/envfiles.sh), as run.sh loads them, so a
+# NEWSLETTER_PYTHON set there picks the same runner here as in run.sh.
+# shellcheck source=scripts/envfiles.sh
+. "$REPO_ROOT/scripts/envfiles.sh"
+envfiles_load "$REPO_ROOT"
+
 # Python for the edition list and the readers: NEWSLETTER_PYTHON, else the
 # committed venv, else python3 (the "check" mode of scripts/pyrunner.sh: no uv
 # probe, so the hourly check never waits on a hung uv).
