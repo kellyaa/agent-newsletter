@@ -24,7 +24,7 @@ These are meant to be set in `.env` or `~/.config/agent-newsletter/env` before r
 | `EDITION` | **yes** (for pipeline runs) | (none) | Slug of the edition to run (e.g., `agents`). No default; must be set explicitly. |
 | `MODEL_PRICES_USD` | no | (none) | **Not yet implemented.** No code reads this variable, so setting it has no effect and `runs.cost_usd` is always NULL. Planned format: JSON map of model IDs to `[usd_per_1M_in, usd_per_1M_out]`. Price from `runs.tokens_in/out` downstream until this is built. |
 | `BUDGET_USD` | no | (none) | **Not enforced, and no cap is planned for now** (maintainer decision on #438). Setting it has no effect. Tokens are recorded in `runs.tokens_in/out`; `runs.cost_usd` is not populated. |
-| `STALE_HOURS` | no | `36` | Hours without a successful daily run before `watchdog.sh` fires a notification. Set in `watchdog.sh`, can be overridden in `.env`. |
+| `STALE_HOURS` | no | `36` | Hours without a successful daily run before `watchdog.sh` fires a notification. Set in `watchdog.sh`, can be overridden in `.env` (the root `watchdog.sh` loads it via `scripts/envfiles.sh`). |
 | `CONTENT_ROOT` | no (usually) | `cwd` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. |
 
 ### Configuration Examples
@@ -153,12 +153,12 @@ set +a
 
 ## Priority and Override Order
 
-Environment variables are resolved in this order (first match wins):
+`run.sh`, the root `watchdog.sh` and `scripts/watchdog.sh` load the env files first, before reading any setting, via `envfiles_load` in `scripts/envfiles.sh`. Values are resolved in this order (first match wins):
 
 1. **Command-line flags** — `./run.sh --edition agents` overrides `EDITION` env var
-2. **`.env` in repo root** — user-created, gitignored
+2. **`.env` in repo root** — user-created, gitignored (sourced last, so it overrides the next two)
 3. **`~/.config/agent-newsletter/env`** — machine-wide defaults
-4. **System environment** — what's already exported
+4. **System environment** — what's already exported (a value set in either file replaces it)
 5. **Code defaults** — hardcoded in scripts (e.g., `RANKER_TIMEOUT_S` defaults to `1800`)
 
 ### Example: Multiple Editions

@@ -11,6 +11,7 @@ RUNLOG_LIB = RUN_SCRIPT.parent / "scripts" / "runlog.sh"  # run.sh sources it
 RUNLOCK_LIB = RUN_SCRIPT.parent / "scripts" / "runlock.sh"  # and this
 CONTENT_LIB = RUN_SCRIPT.parent / "scripts" / "contentbranch.sh"  # and this
 PYRUNNER_LIB = RUN_SCRIPT.parent / "scripts" / "pyrunner.sh"  # and this
+ENVFILES_LIB = RUN_SCRIPT.parent / "scripts" / "envfiles.sh"  # and this
 
 
 def _run_script(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -30,6 +31,7 @@ def _copy_run_script(repo: Path) -> None:
     (repo / "scripts" / "runlock.sh").write_bytes(RUNLOCK_LIB.read_bytes())
     (repo / "scripts" / "contentbranch.sh").write_bytes(CONTENT_LIB.read_bytes())
     (repo / "scripts" / "pyrunner.sh").write_bytes(PYRUNNER_LIB.read_bytes())
+    (repo / "scripts" / "envfiles.sh").write_bytes(ENVFILES_LIB.read_bytes())
 
 
 def test_help_prints_usage_and_exits_before_creating_logs(tmp_path):

@@ -123,7 +123,7 @@ def test_run_sh_without_flock_fails_instead_of_exiting_0(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy2(REPO / "run.sh", repo / "run.sh")
-    for lib in ("runlog.sh", "runlock.sh", "contentbranch.sh", "pyrunner.sh"):
+    for lib in ("runlog.sh", "runlock.sh", "contentbranch.sh", "pyrunner.sh", "envfiles.sh"):
         shutil.copy2(REPO / "scripts" / lib, repo / "scripts" / lib)
     p = subprocess.run(["bash", str(repo / "run.sh")], cwd=repo, capture_output=True, text=True,
                        timeout=30, env={**os.environ, "PATH": _no_flock_path(tmp_path)})
@@ -136,7 +136,7 @@ def test_run_sh_without_flock_fails_instead_of_exiting_0(tmp_path):
 def test_watchdog_without_flock_is_failed_not_in_progress(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "editionlist.sh", "pyrunner.sh", "edition.py", "models.py"):
+    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "editionlist.sh", "pyrunner.sh", "envfiles.sh", "edition.py", "models.py"):
         shutil.copy2(REPO / "scripts" / f, repo / "scripts" / f)
     (repo / "run.sh").write_text("#!/usr/bin/env bash\necho called >> run-calls.txt\n")
     (repo / "editions" / "agents").mkdir(parents=True)

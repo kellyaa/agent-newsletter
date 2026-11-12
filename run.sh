@@ -84,6 +84,15 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 export RUN_DATE="$DATE_TODAY"
 
+# ─── Environment loading ───────────────────────────────────────────────────
+# LLM credentials and operator settings: ~/.config/agent-newsletter/env, then
+# .env (the last file wins). Loaded before the lock, the runner choice and any
+# notify, so WATCHDOG_WEBHOOK_URL and NEWSLETTER_PYTHON set there apply to them.
+# The file list and order live in scripts/envfiles.sh.
+# shellcheck source=scripts/envfiles.sh
+. "$REPO_ROOT/scripts/envfiles.sh"
+envfiles_load "$REPO_ROOT"
+
 # ─── Single-run lock ───────────────────────────────────────────────────────
 # Hold an advisory lock for the life of this run (editions run one after
 # another under it; children inherit the descriptor). scripts/watchdog.sh probes
@@ -132,18 +141,6 @@ if ! pyrunner_select "$REPO_ROOT" run; then
 fi
 log "── python runner ── $PY_RUN_SOURCE"
 export NEWSLETTER_PYTHON="${PY_RUN[*]}"
-
-# ─── Environment loading ───────────────────────────────────────────────────
-# Load LLM credentials and other config. Sourced in order, so the *last* file
-# wins for any given key:
-#   1. ~/.config/agent-newsletter/env  — machine-wide defaults (optional)
-#   2. .env                            — repo-local, gitignored (overrides)
-for ENV_FILE in "$HOME/.config/agent-newsletter/env" "$REPO_ROOT/.env"; do
-  if [ -f "$ENV_FILE" ]; then
-    # shellcheck disable=SC1090
-    set -a; . "$ENV_FILE"; set +a
-  fi
-done
 
 # ─── Self-update ───────────────────────────────────────────────────────────
 # Pull the current branch so pipeline code, prompts, and site scaffold are
