@@ -11,12 +11,14 @@ from pathlib import Path
 
 WATCHDOG = Path(__file__).resolve().parents[1] / "watchdog.sh"
 RUNLOG_LIB = WATCHDOG.parent / "scripts" / "runlog.sh"  # watchdog.sh sources it for notify
+CONTENT_LIB = WATCHDOG.parent / "scripts" / "contentbranch.sh"  # and this
 
 
 def _install_watchdog(repo: Path) -> None:
     shutil.copy2(WATCHDOG, repo / "watchdog.sh")
     (repo / "scripts").mkdir()
     shutil.copy2(RUNLOG_LIB, repo / "scripts" / "runlog.sh")
+    shutil.copy2(CONTENT_LIB, repo / "scripts" / "contentbranch.sh")
 
 
 def _watchdog_repo(tmp_path: Path, *, subject: str | None = None,

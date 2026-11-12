@@ -59,6 +59,9 @@ export EDITION
 # ts, log, notify and the run-log path/marker helpers (the run-log contract).
 # shellcheck source=scripts/runlog.sh
 . "$REPO_ROOT/scripts/runlog.sh"
+# The run-commit subjects (the content-branch contract).
+# shellcheck source=scripts/contentbranch.sh
+. "$REPO_ROOT/scripts/contentbranch.sh"
 
 read -r -a PY_RUN <<< "${NEWSLETTER_PYTHON:-python3}"
 
@@ -106,7 +109,7 @@ record_failed_attempt() {
   # already staged by the commit step below.
   git -C "$CONTENT_WORKTREE" add "editions/$EDITION/state.db" \
     && git -C "$CONTENT_WORKTREE" commit -qm \
-      "newsletter($EDITION): $DATE_TODAY attempt $RUN_ATTEMPT failed at $1" \
+      "$(content_failed_subject "$EDITION" "$DATE_TODAY" "$RUN_ATTEMPT" "$1")" \
       -- "editions/$EDITION/state.db" \
     && git -C "$CONTENT_WORKTREE" push --quiet \
     && log "git: pushed failed attempt $RUN_ATTEMPT to content"
@@ -182,7 +185,7 @@ if git -C "$CONTENT_WORKTREE" diff --cached --quiet; then
   exit 0
 fi
 
-git -C "$CONTENT_WORKTREE" commit -m "newsletter($EDITION): $DATE_TODAY daily run" >/dev/null
+git -C "$CONTENT_WORKTREE" commit -m "$(content_run_subject "$EDITION" "$DATE_TODAY")" >/dev/null
 log "git: committed $DATE_TODAY daily run (content, $EDITION)"
 
 if git -C "$CONTENT_WORKTREE" remote get-url origin >/dev/null 2>&1; then

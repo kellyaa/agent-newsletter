@@ -1,7 +1,8 @@
 """The content-branch layout and run-commit subjects live in models.py.
 
 scripts/run_edition.sh writes ``editions/<slug>/state.db`` and commits it as
-``newsletter(<slug>): <date> daily run``. backfill.py reads both back (it finds
+``newsletter(<slug>): <date> daily run`` (the subject is built by
+scripts/contentbranch.sh, #665). backfill.py reads both back (it finds
 the last run commit before a date and extracts that commit's state.db), and
 edition.py and migrate_layout.py build the same paths. Each used to keep its own
 copy, and no test tied the shell writer to the Python reader. Backfill's tests
@@ -9,8 +10,8 @@ fed it hand-written ``git log`` lines, so a change to the shell subject would
 pass CI and break the next real backfill (#576).
 
 These tests:
-- check the shell's subjects and paths against models
-- run a real git round trip from the shell's subject template through backfill
+- check the shell's subjects (from scripts/contentbranch.sh) and paths against models
+- run a real git round trip from the shell's subject through backfill
 - fail if a module rebuilds the layout from literals instead of using models
 """
 from __future__ import annotations
@@ -36,13 +37,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 RUN_EDITION = SCRIPTS / "run_edition.sh"
 
-# `git commit ... -m "<subject>"` / `-qm \<newline> "<subject>"` in run_edition.sh.
-_COMMIT_SUBJECT_RE = re.compile(r'\bcommit\b[^"\n]*?-q?m\s*(?:\\\s*)?"([^"]+)"', re.DOTALL)
+CONTENT_LIB = SCRIPTS / "contentbranch.sh"
 _EDITION_PATH_RE = re.compile(r'"(editions/\$EDITION[^"]*)"')
-
-
-def _shell_subjects(text: str) -> list[str]:
-    return _COMMIT_SUBJECT_RE.findall(text)
 
 
 def _expand(template: str, slug: str, date: str, **extra: str) -> str:
@@ -50,6 +46,14 @@ def _expand(template: str, slug: str, date: str, **extra: str) -> str:
     for k, v in extra.items():
         out = out.replace(f"${k}", v)
     return out
+
+
+def _lib(fn: str, *args: str) -> str:
+    """Call a scripts/contentbranch.sh helper, the one place run subjects are built."""
+    return subprocess.run(
+        ["bash", "-c", f'. "{CONTENT_LIB}"; {fn} "$@"', "_", *args],
+        capture_output=True, text=True, check=True,
+    ).stdout.rstrip("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -84,26 +88,21 @@ def test_migrate_layout_uses_the_same_legacy_edition():
 # run_edition.sh (writer) agrees with models (reader)
 # ---------------------------------------------------------------------------
 
-def test_detector_finds_both_commit_forms():
-    text = (
-        'git -C x commit -m "newsletter($EDITION): $DATE_TODAY daily run" >/dev/null\n'
-        'git -C x commit -qm \\\n      "newsletter($EDITION): $DATE_TODAY attempt 1" \\\n'
-    )
-    assert _shell_subjects(text) == [
-        "newsletter($EDITION): $DATE_TODAY daily run",
-        "newsletter($EDITION): $DATE_TODAY attempt 1",
-    ]
+def test_run_edition_builds_subjects_with_the_library():
+    text = RUN_EDITION.read_text()
+    assert '"$(content_run_subject "$EDITION" "$DATE_TODAY")"' in text
+    assert '"$(content_failed_subject "$EDITION" "$DATE_TODAY" "$RUN_ATTEMPT" "$1")"' in text
 
 
-def test_shell_commit_subjects_match_models():
-    subjects = _shell_subjects(RUN_EDITION.read_text())
+@pytest.mark.parametrize("slug", [LEGACY_EDITION, "beta"])
+def test_shell_commit_subjects_match_models(slug):
     # the daily run commit and the failed-attempt commit
-    assert len(subjects) == 2, subjects
-    assert any(s.endswith("daily run") for s in subjects), subjects
+    subjects = [_lib("content_run_subject", slug, "2026-07-09"),
+                _lib("content_failed_subject", slug, "2026-07-09", "3", "rank")]
+    assert subjects[0].endswith("daily run"), subjects
     for s in subjects:
-        expanded = _expand(s, "beta", "2026-07-09", RUN_ATTEMPT="3", **{"1": "rank"})
-        assert expanded.startswith(run_commit_prefix("beta") + "2026-07-09 "), (
-            f"run_edition.sh commit subject {s!r} no longer starts with "
+        assert s.startswith(run_commit_prefix(slug) + "2026-07-09 "), (
+            f"scripts/contentbranch.sh subject {s!r} no longer starts with "
             "models.run_commit_prefix(<slug>) + '<date> '; backfill.find_pre_run_commit "
             "would not find it. Change both together."
         )
@@ -133,7 +132,6 @@ def test_backfill_reads_what_run_edition_writes(tmp_path, monkeypatch, slug):
     snapshot backfill picks, with no hand-written log lines in between."""
     import backfill as bf
 
-    daily = next(s for s in _shell_subjects(RUN_EDITION.read_text()) if s.endswith("daily run"))
     db_rel = next(p for p in _EDITION_PATH_RE.findall(RUN_EDITION.read_text())
                   if p.endswith(STATE_DB_NAME))
 
@@ -147,7 +145,7 @@ def test_backfill_reads_what_run_edition_writes(tmp_path, monkeypatch, slug):
         db.parent.mkdir(parents=True, exist_ok=True)
         db.write_bytes(payload)
         _git(repo, "add", "--", _expand(db_rel, slug, date))
-        _git(repo, "commit", "-q", "-m", _expand(daily, slug, date))
+        _git(repo, "commit", "-q", "-m", _lib("content_run_subject", slug, date))
 
     sandbox = tmp_path / "sb"
     real_path = bf.Path

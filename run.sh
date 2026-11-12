@@ -70,6 +70,9 @@ fi
 # ts, log, notify and the run-log path/marker helpers (the run-log contract).
 # shellcheck source=scripts/runlog.sh
 . "$REPO_ROOT/scripts/runlog.sh"
+# The content worktree path (the content-branch contract).
+# shellcheck source=scripts/contentbranch.sh
+. "$REPO_ROOT/scripts/contentbranch.sh"
 
 LOG_DIR="$(runlog_dir "$REPO_ROOT")"
 mkdir -p "$LOG_DIR"
@@ -174,10 +177,10 @@ git pull --ff-only
 # created on first run and reused thereafter; the pull catches up any commits
 # pushed from another machine or a manual edit.
 CURRENT_STAGE="content-worktree"
-CONTENT_WORKTREE="$REPO_ROOT/.worktrees/content"
+CONTENT_WORKTREE="$(content_worktree_path "$REPO_ROOT")"
 
 if ! git worktree list --porcelain | grep -q "$CONTENT_WORKTREE\$"; then
-  log "── content worktree ── creating at .worktrees/content"
+  log "── content worktree ── creating at ${CONTENT_WORKTREE#"$REPO_ROOT"/}"
   git worktree add "$CONTENT_WORKTREE" content
 fi
 log "── content worktree ── pulling"
