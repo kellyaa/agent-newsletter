@@ -54,6 +54,7 @@ def repo(tmp_path):
     shutil.copy2(REAL / "scripts" / "runlog.sh", r / "scripts" / "runlog.sh")  # watchdog sources it
     shutil.copy2(REAL / "scripts" / "runlock.sh", r / "scripts" / "runlock.sh")  # and this
     shutil.copy2(REAL / "scripts" / "contentbranch.sh", r / "scripts" / "contentbranch.sh")
+    shutil.copy2(REAL / "scripts" / "editionlist.sh", r / "scripts" / "editionlist.sh")
     shutil.copy2(REAL / "scripts" / "edition.py", r / "scripts" / "edition.py")
     shutil.copy2(REAL / "scripts" / "models.py", r / "scripts" / "models.py")  # edition.py imports it
     (r / "run.sh").write_text(FAKE_RUN)
