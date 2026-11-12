@@ -11,6 +11,7 @@ This directory contains comprehensive guides for operating, extending, and under
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
+- **Understand LLM errors & content filtering** → [llm-error-handling-guide.md](llm-error-handling-guide.md)
 - **Add a feed source** → [adding-feed-sources-guide.md](adding-feed-sources-guide.md)
 - **Create a new newsletter edition** → [CONTRIBUTING.md § Adding an edition](../CONTRIBUTING.md#adding-an-edition), then [edition-yaml-reference.md](edition-yaml-reference.md)
 - **Tune an edition's keyword gate or sources** → [edition-tuning-guide.md](edition-tuning-guide.md)
@@ -44,6 +45,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [operations-runbook.md](operations-runbook.md) | Fast lookup for common operational tasks; quick-reference companion to operations-and-maintenance |
 | [ai-ops-runbook.md](ai-ops-runbook.md) | Index for incidents: pipeline health, recovery, cost, and handling agent-authored changes |
 | [debugging-guide.md](debugging-guide.md) | Stage-by-stage failure diagnosis, common errors, recovery steps |
+| [llm-error-handling-guide.md](llm-error-handling-guide.md) | LLM failures, content filtering, retries, timeouts; what happens when ranking or writing fails |
 | [database-recovery-guide.md](database-recovery-guide.md) | Recover a corrupted or inconsistent `state.db`; advanced troubleshooting beyond the debugging guide |
 | [monitoring-and-alerting-integration.md](monitoring-and-alerting-integration.md) | Integrate pipeline health with external monitoring and alerting systems |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
