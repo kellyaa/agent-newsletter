@@ -328,6 +328,8 @@ Before the `EDITION:` lines it also prints `MISSED: <slug> <date>` for each of t
 
 It also prints `DEAD: <slug>/<source> no items for N days` for each source whose recorded fetches (`source_fetch_outcomes`) were all empty or failed for the last N days: 7 by default, or the source's `dead_after_days` in `sources.yaml` (slow publishers need it). A source with no recorded fetches is not reported, and a new source gets a grace period of N days. Same contract as `MISSED:` (informational, read-only, no `osascript`); run it alone with `uv run scripts/dead_sources.py [--days N]` (exit 1 if any).
 
+If either reader itself fails (it crashes, or prints something other than its own `MISSED:` / `DEAD:` lines), the watchdog prints one `CHECK-FAILED: <reader> rc=<n>: <last stderr line>` line instead, so a broken check never reads as "nothing missed" or "nothing dead". This is informational too: `STATUS:` and the exit code are unchanged.
+
 ```bash
 ./scripts/watchdog.sh          # check, and run the pipeline if needed
 ./scripts/watchdog.sh --check  # check only, never run the pipeline

@@ -40,6 +40,10 @@
 # recorded fetches all came back empty or failed for N days (default 7, or the
 # source's `dead_after_days` in sources.yaml; scripts/dead_sources.py, #572).
 #
+# If either reader itself fails (crash, unexpected output), one
+# `CHECK-FAILED: <reader> rc=<n>: <last stderr line>` line says so instead of
+# the check reading as "nothing found" (#673); also informational.
+#
 # Paused editions are not checked. Per-edition logs are logs/<slug>/run-DATE.log
 # (written by scripts/run_edition.sh); a run is complete iff its log has DONE.
 #
@@ -118,7 +122,36 @@ if [ -z "$CONTENT_ROOT" ] && [ -e "$CONTENT_WT/.git" ]; then
   CONTENT_ROOT="$CONTENT_WT"
 fi
 export CONTENT_ROOT
-MISSED_OUT="$("${PY_RUN[@]}" scripts/missed_days.py 2>/dev/null || true)"
+# run_reader <script> <prefix>: print the reader's stdout into READER_OUT. Each
+# reader exits 0 with no lines, or 1 with only <prefix> lines. Anything else
+# (a crash: rc 1 and no lines, or any other rc) is a failed check, reported
+# as one CHECK-FAILED: line so it cannot read as "nothing found" (#673).
+# Still informational: STATUS and the exit code are unaffected.
+run_reader() {
+  local script="$1" prefix="$2" err rc=0 line
+  err="$(mktemp)"
+  READER_OUT="$("${PY_RUN[@]}" "scripts/$script" 2>"$err")" || rc=$?
+  local ok=true
+  case "$rc" in
+    0) [ -z "$READER_OUT" ] || ok=false ;;
+    1)
+      [ -n "$READER_OUT" ] || ok=false
+      while IFS= read -r line; do
+        [[ "$line" == "$prefix "* ]] || ok=false
+      done <<< "$READER_OUT"
+      ;;
+    *) ok=false ;;
+  esac
+  if [ "$ok" != true ]; then
+    line="$(grep -v '^[[:space:]]*$' "$err" | tail -1)"
+    echo "CHECK-FAILED: $script rc=$rc: ${line:-no error output}"
+    READER_OUT=""
+  fi
+  rm -f "$err"
+}
+
+run_reader missed_days.py MISSED:
+MISSED_OUT="$READER_OUT"
 if [ -n "$MISSED_OUT" ]; then
   say "days with no run_attempts row (the scheduled run never started):"
   printf '%s\n' "$MISSED_OUT"
@@ -126,7 +159,8 @@ fi
 
 # Sources whose fetches have come back empty for days. Same read-only,
 # informational contract as the MISSED: lines above.
-DEAD_OUT="$("${PY_RUN[@]}" scripts/dead_sources.py 2>/dev/null || true)"
+run_reader dead_sources.py DEAD:
+DEAD_OUT="$READER_OUT"
 if [ -n "$DEAD_OUT" ]; then
   say "sources with no items for days (silently dead feeds):"
   printf '%s\n' "$DEAD_OUT"
