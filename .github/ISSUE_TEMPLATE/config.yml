@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Code of Conduct
+    url: https://github.com/kellyaa/agent-newsletter/blob/main/CODE_OF_CONDUCT.md
+    about: This project is governed by a Code of Conduct. Please review it before participating.
