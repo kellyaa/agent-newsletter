@@ -28,6 +28,9 @@
 #                                — names each failed edition and its stage
 #   STATUS: FAILED <date> no-flock — flock(1) is missing, so no run can take
 #                                the lock (scripts/runlock.sh, #662)
+#   STATUS: FAILED <date> edition-list — scripts/edition.py list itself failed
+#                                (scripts/editionlist.sh, #670)
+#   STATUS: FAILED <date> no-editions  — the list worked but had no draft/live edition
 #
 # Before those lines it also prints one `MISSED: <slug> <date>` line per recent
 # day on which a draft/live edition has no run_attempts row at all (run.sh never
@@ -85,16 +88,24 @@ else
 fi
 
 # Editions to check: every draft/live one (paused ones are skipped). An edition
-# whose config is invalid counts as one to check, so it surfaces as FAILED.
+# whose config is invalid counts as one to check, so it surfaces as FAILED. The
+# list contract lives in scripts/editionlist.sh; a failing `edition.py list` is
+# its own FAILED reason, not "no editions" (#670).
+# shellcheck source=scripts/editionlist.sh
+. "$REPO_ROOT/scripts/editionlist.sh"
+if ! editionlist_load "${PY_RUN[@]}"; then
+  say "scripts/edition.py list failed; cannot tell which editions to check"
+  echo "STATUS: FAILED $DATE_TODAY edition-list"
+  exit 1
+fi
 SLUGS=()
-while IFS=$'\t' read -r slug status _name; do
-  [ -n "$slug" ] || continue
-  [ "$status" = paused ] && continue
+for slug in ${EDITION_SLUGS[@]+"${EDITION_SLUGS[@]}"}; do
+  editionlist_is_paused "${EDITION_STATUS_OF[$slug]}" && continue
   SLUGS+=("$slug")
-done < <("${PY_RUN[@]}" scripts/edition.py list 2>/dev/null)
+done
 
 if [ "${#SLUGS[@]}" -eq 0 ]; then
-  say "no draft/live editions found (is scripts/edition.py list working?)"
+  say "no draft/live editions found"
   echo "STATUS: FAILED $DATE_TODAY no-editions"
   exit 1
 fi

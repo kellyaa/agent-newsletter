@@ -331,6 +331,11 @@ def current() -> Edition:
     return _load_cached(selected_slug())
 
 
+# `edition.py list` status for a folder whose config does not load. Not an
+# edition.yaml status; scripts/editionlist.sh spells the same value.
+LIST_INVALID_STATUS = "invalid"
+
+
 def discover(editions_dir: Path | None = None) -> list[tuple[str, Edition | None, str | None]]:
     """Every edition folder as ``(slug, edition, error)``, in run order.
 
@@ -380,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args == ["list"]:
         for slug, ed, _err in discover():
-            print(f"{slug}\t{ed.status if ed else 'invalid'}\t{ed.name if ed else slug}")
+            print(f"{slug}\t{ed.status if ed else LIST_INVALID_STATUS}\t{ed.name if ed else slug}")
         return 0
     print("usage: edition.py name|list", file=sys.stderr)
     return 2
