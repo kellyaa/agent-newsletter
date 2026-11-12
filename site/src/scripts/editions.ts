@@ -16,6 +16,11 @@ export const UMBRELLA_NAME = "The Daily Inference";
 export const UMBRELLA_DESCRIPTION =
   "Daily, opinionated digests for engineers building with AI.";
 
+// The edition.yaml rules below mirror scripts/edition.py (edition.load) and
+// scripts/models.py; tests/test_site_edition_contract_single_source.py pins
+// them, so a folder the pipeline lists as invalid cannot build on the site.
+
+/** Values of models.EditionStatus, in the same order. */
 export const EDITION_STATUSES = ["draft", "live", "paused"] as const;
 export type EditionStatus = (typeof EDITION_STATUSES)[number];
 
@@ -34,7 +39,11 @@ export interface Registry {
   listed: EditionInfo[];
 }
 
-const SLUG_RE = /^[a-z0-9-]+$/;
+/** edition.SLUG_RE: lowercase, hyphen-separated (no leading, trailing or doubled hyphen). */
+export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** models.LEGACY_EDITION: the edition that /rss.xml keeps serving. */
+export const LEGACY_EDITION = "agents";
 
 /** Parse one edition.yaml. `folder` is the directory name the file came from. */
 export function parseEdition(text: string, folder: string): EditionInfo {
@@ -60,7 +69,7 @@ export function parseEdition(text: string, folder: string): EditionInfo {
 
   const slug = str("slug");
   if (!SLUG_RE.test(slug)) {
-    throw new Error(`${where}: slug "${slug}" must match [a-z0-9-]+`);
+    throw new Error(`${where}: slug "${slug}" must match [a-z0-9-]+ (lowercase, hyphen-separated)`);
   }
   if (slug !== folder) {
     throw new Error(`${where}: slug "${slug}" does not match its folder name "${folder}"`);
@@ -70,8 +79,8 @@ export function parseEdition(text: string, folder: string): EditionInfo {
     throw new Error(`${where}: status must be one of ${EDITION_STATUSES.join(", ")}`);
   }
   const order = d.order;
-  if (typeof order !== "number" || !Number.isFinite(order)) {
-    throw new Error(`${where}: "order" must be a number`);
+  if (typeof order !== "number" || !Number.isInteger(order)) {
+    throw new Error(`${where}: "order" must be an integer`);
   }
   return {
     slug,
