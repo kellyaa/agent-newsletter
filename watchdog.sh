@@ -24,19 +24,22 @@ mkdir -p "$REPO_ROOT/logs"
 # WATCHDOG_WEBHOOK_URL POST) is shared with the pipeline's failure alerts.
 # shellcheck source=scripts/runlog.sh
 . "$REPO_ROOT/scripts/runlog.sh"
+# The content worktree path and the daily-run subject regex are shared with
+# run.sh / run_edition.sh, which create the worktree and write the commits.
+# shellcheck source=scripts/contentbranch.sh
+. "$REPO_ROOT/scripts/contentbranch.sh"
 
 # Where the pipeline's commits live. run.sh commits every daily run to the
 # `content` branch through this worktree, so they never appear in main's
 # `git log` -- checking only main's HEAD (as this script once did) always hit
 # the "not a newsletter commit" skip and could never fire.
-CONTENT_WORKTREE="${CONTENT_WORKTREE:-$REPO_ROOT/.worktrees/content}"
+CONTENT_WORKTREE="${CONTENT_WORKTREE:-$(content_worktree_path "$REPO_ROOT")}"
 
 # A successful daily run is committed as "newsletter(<slug>): <date> daily run"
-# (before the multi-edition layout: "newsletter: <date> daily run"). Other
-# `newsletter` subjects (e.g. "... attempt N failed at <stage>", "persist
-# state.db from interrupted ... run") are written when a run FAILS, so they must
-# not reset the staleness clock.
-DAILY_RUN_PATTERN='^newsletter(\([a-z0-9-]+\))?:.* daily run$'
+# (before the multi-edition layout: "newsletter: <date> daily run"); only those
+# match CONTENT_DAILY_RUN_RE. Other `newsletter` subjects (e.g. "... attempt N
+# failed at <stage>", "persist state.db from interrupted ... run") are written
+# when a run FAILS, so they must not reset the staleness clock.
 
 # Newest daily-run commit on the content branch (epoch seconds, 0 if none).
 # Prefer the live worktree; otherwise look at the local and remote-tracking
@@ -44,7 +47,7 @@ DAILY_RUN_PATTERN='^newsletter(\([a-z0-9-]+\))?:.* daily run$'
 content_epoch=0
 if [ -e "$CONTENT_WORKTREE/.git" ]; then
   content_epoch="$(git -C "$CONTENT_WORKTREE" log -1 --format=%ct -E \
-    --grep="$DAILY_RUN_PATTERN" 2>/dev/null || true)"
+    --grep="$CONTENT_DAILY_RUN_RE" 2>/dev/null || true)"
 else
   refs=()
   for r in refs/heads/content refs/remotes/origin/content; do
@@ -52,7 +55,7 @@ else
   done
   if [ "${#refs[@]}" -gt 0 ]; then
     content_epoch="$(git log "${refs[@]}" --format=%ct -E \
-      --grep="$DAILY_RUN_PATTERN" 2>/dev/null | sort -rn | head -1 || true)"
+      --grep="$CONTENT_DAILY_RUN_RE" 2>/dev/null | sort -rn | head -1 || true)"
   fi
 fi
 content_epoch="${content_epoch:-0}"
