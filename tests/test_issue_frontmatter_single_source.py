@@ -109,8 +109,12 @@ def test_frontmatter_keys_match_site_schema():
 
 def test_site_appendix_sections_are_models_sections():
     assert _zod_keys("appendix: z.object(", 4) == {s.value for s in Section}
-    m = re.search(r"const SECTIONS = \[(.*?)\]", CONTENT_CONFIG.read_text())
-    assert m and re.findall(r'"(\w+)"', m.group(1)) == [s.value for s in Section]
+    # content.config.ts takes SECTIONS from sections.ts, which
+    # tests/test_site_sections_single_source.py pins to models.Section.
+    assert re.search(
+        r"""import \{[^}]*\bSECTIONS\b[^}]*\} from ["']\./scripts/sections["']""",
+        CONTENT_CONFIG.read_text(),
+    )
 
 
 # --- framing -------------------------------------------------------------------

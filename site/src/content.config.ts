@@ -4,8 +4,7 @@ import { glob } from "astro/loaders";
 import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadRegistry, unknownContentEntries } from "./scripts/editions";
-
-const SECTIONS = ["papers", "news", "blogs"] as const;
+import { SECTIONS } from "./scripts/sections";
 
 // Item URLs come from scraped/fed content (RSS, arXiv, HN, scraped HTML)
 // and flow straight into rendered <a href> on the public site and in the

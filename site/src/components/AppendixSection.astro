@@ -1,27 +1,20 @@
 ---
 import { safeHref } from "../scripts/safe-href";
+import { SECTIONS, SECTION_DISPLAY, type Section } from "../scripts/sections";
 
 interface AppendixItem {
   id: string;
-  section: "papers" | "news" | "blogs";
+  section: Section;
   source: string;
   url: string;
   title: string;
 }
 interface Props {
-  appendix: {
-    papers: AppendixItem[];
-    news: AppendixItem[];
-    blogs: AppendixItem[];
-  };
+  appendix: Record<Section, AppendixItem[]>;
 }
 const { appendix } = Astro.props;
-const total = appendix.papers.length + appendix.news.length + appendix.blogs.length;
-const groups: { key: keyof typeof appendix; label: string }[] = [
-  { key: "papers", label: "Papers" },
-  { key: "news", label: "News" },
-  { key: "blogs", label: "Blogs" },
-];
+const total = SECTIONS.reduce((n, key) => n + appendix[key].length, 0);
+const groups = SECTIONS.map((key) => ({ key, label: SECTION_DISPLAY[key].label }));
 ---
 {total > 0 && (
   <details class="appendix">

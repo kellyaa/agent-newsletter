@@ -6,6 +6,7 @@ import AppendixSection from "../../../components/AppendixSection.astro";
 import ArchiveSidebar from "../../../components/ArchiveSidebar.astro";
 import { loadRegistry, editionOf, issuesFor } from "../../../scripts/editions";
 import { groupByMonth, buildArchive } from "../../../scripts/months";
+import { SECTIONS, SECTION_DISPLAY, featuredCountKey } from "../../../scripts/sections";
 
 export async function getStaticPaths() {
   const issues = await getCollection("issues");
@@ -27,21 +28,12 @@ const archive = buildArchive(
   date,
 );
 
-const sectionGroups: {
-  key: "papers" | "news" | "blogs";
-  label: string;
-  count: number;
-}[] = [
-  { key: "papers", label: "Papers", count: metadata.items_featured_papers },
-  { key: "news",   label: "News",   count: metadata.items_featured_news },
-  { key: "blogs",  label: "Blogs",  count: metadata.items_featured_blogs },
-];
-
-const itemsBySection = {
-  papers: featured.filter((i) => i.section === "papers"),
-  news:   featured.filter((i) => i.section === "news"),
-  blogs:  featured.filter((i) => i.section === "blogs"),
-};
+const sectionGroups = SECTIONS.map((key) => ({
+  key,
+  label: SECTION_DISPLAY[key].label,
+  count: metadata[featuredCountKey(key)],
+  items: featured.filter((i) => i.section === key),
+}));
 ---
 <BaseLayout title={`${date} — ${edition.name}`} description={theme || `${edition.name} issue for ${date}`} edition={edition}>
   <div class="month-view">
@@ -53,9 +45,9 @@ const itemsBySection = {
     <h1 class="issue-header__title">{edition.name}</h1>
     {theme && <p class="issue-header__theme">{theme}</p>}
     <div class="statbar" role="group" aria-label="Run statistics">
-      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_papers}</span> papers</span>
-      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_news}</span> news</span>
-      <span class="statbar__item"><span class="statbar__num">{metadata.items_featured_blogs}</span> blogs</span>
+      {sectionGroups.map((g) => (
+        <span class="statbar__item"><span class="statbar__num">{g.count}</span> {SECTION_DISPLAY[g.key].many}</span>
+      ))}
       <span class="statbar__item"><span class="statbar__num">{metadata.items_appendix}</span> appendix</span>
       <span class="statbar__item"><span class="statbar__num">{metadata.items_considered}</span> considered</span>
     </div>
@@ -68,7 +60,7 @@ const itemsBySection = {
           <h2 class="section__title">{g.label}</h2>
           <span class="section__count">{g.count}</span>
         </header>
-        {itemsBySection[g.key].map((item) => <FeaturedItem item={item} edition={edition.slug} />)}
+        {g.items.map((item) => <FeaturedItem item={item} edition={edition.slug} />)}
       </section>
     )
   ))}

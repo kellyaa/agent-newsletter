@@ -1,6 +1,7 @@
 ---
 import TagChip from "./TagChip.astro";
 import { safeHref } from "../scripts/safe-href";
+import { SECTIONS, featuredCountKey, sectionCount, type FeaturedCountKey } from "../scripts/sections";
 
 interface MonthEntry {
   key: string;
@@ -29,16 +30,12 @@ function parseISODate(s: string) {
   return { dow: DOW[dt.getUTCDay()], mon: MON[dt.getUTCMonth()], day: String(d) };
 }
 
-function countsString(m: {
-  items_featured_papers: number;
-  items_featured_news: number;
-  items_featured_blogs: number;
-  items_appendix: number;
-}) {
+function countsString(m: Record<FeaturedCountKey, number> & { items_appendix: number }) {
   const parts: string[] = [];
-  if (m.items_featured_papers > 0) parts.push(`${m.items_featured_papers} ${m.items_featured_papers === 1 ? "paper" : "papers"}`);
-  if (m.items_featured_news > 0) parts.push(`${m.items_featured_news} news`);
-  if (m.items_featured_blogs > 0) parts.push(`${m.items_featured_blogs} ${m.items_featured_blogs === 1 ? "blog" : "blogs"}`);
+  for (const key of SECTIONS) {
+    const n = m[featuredCountKey(key)];
+    if (n > 0) parts.push(sectionCount(key, n));
+  }
   if (m.items_appendix > 0) parts.push(`${m.items_appendix} appendix`);
   return parts.join(" · ");
 }

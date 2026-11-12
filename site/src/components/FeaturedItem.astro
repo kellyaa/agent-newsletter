@@ -3,10 +3,11 @@ import ScoreBar from "./ScoreBar.astro";
 import TagChip from "./TagChip.astro";
 import Callout from "./Callout.astro";
 import { safeHref } from "../scripts/safe-href";
+import type { Section } from "../scripts/sections";
 
 interface Item {
   id: string;
-  section: "papers" | "news" | "blogs";
+  section: Section;
   source: string;
   url: string;
   title: string;
