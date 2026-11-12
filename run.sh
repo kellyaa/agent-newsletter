@@ -122,30 +122,15 @@ CURRENT_STAGE="startup"
 trap fail_handler ERR
 
 # ─── Python runner ─────────────────────────────────────────────────────────
-# Normally `uv run python`. But on this pod `uv` is a lazy shim that installs
-# uv through mise on first use, and that install lands outside $HOME — so a pod
-# restart wipes it and the reinstall has to succeed again. On 2026-09-22 it
-# stopped succeeding: mise's GitHub-attestation check can't reach
-# tuf-repo-cdn.sigstore.dev, so `uv --version` hangs in a retry loop forever and
-# every stage dies before it starts. The committed .venv and the interpreter it
-# points at are both under $HOME and survive restarts, so fall back to calling
-# that python directly rather than letting a broken tool installer sink the run.
-# The probe is cheap and self-correcting: once uv works again, uv is used again.
-# NEWSLETTER_PYTHON overrides the probe (tests, unusual setups).
-PY_RUN=()
-if [ -n "${NEWSLETTER_PYTHON:-}" ]; then
-  read -r -a PY_RUN <<< "$NEWSLETTER_PYTHON"
-  log "── python runner ── $NEWSLETTER_PYTHON (NEWSLETTER_PYTHON)"
-elif timeout 45 uv --version >/dev/null 2>&1; then
-  PY_RUN=(uv run python)
-  log "── python runner ── uv run python"
-elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-  PY_RUN=("$REPO_ROOT/.venv/bin/python")
-  log "── python runner ── .venv/bin/python (uv unavailable — see comment in run.sh)"
-else
-  log "── python runner ── none usable: uv is broken and .venv/bin/python is missing"
+# uv when it answers, else the committed .venv; NEWSLETTER_PYTHON overrides.
+# The selection (and why uv may be skipped) lives in scripts/pyrunner.sh.
+# shellcheck source=scripts/pyrunner.sh
+. "$REPO_ROOT/scripts/pyrunner.sh"
+if ! pyrunner_select "$REPO_ROOT" run; then
+  log "── python runner ── $PY_RUN_SOURCE"
   exit 1
 fi
+log "── python runner ── $PY_RUN_SOURCE"
 export NEWSLETTER_PYTHON="${PY_RUN[*]}"
 
 # ─── Environment loading ───────────────────────────────────────────────────

@@ -81,15 +81,12 @@ DATE_TODAY="$(date +%F)"
 
 say() { printf '%s [watchdog] %s\n' "$(ts)" "$*"; }
 
-# Python for reading the edition list. Same preference as run.sh, minus the long
-# uv probe: NEWSLETTER_PYTHON, else the committed venv, else python3.
-if [ -n "${NEWSLETTER_PYTHON:-}" ]; then
-  read -r -a PY_RUN <<< "$NEWSLETTER_PYTHON"
-elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-  PY_RUN=("$REPO_ROOT/.venv/bin/python")
-else
-  PY_RUN=(python3)
-fi
+# Python for the edition list and the readers: NEWSLETTER_PYTHON, else the
+# committed venv, else python3 (the "check" mode of scripts/pyrunner.sh: no uv
+# probe, so the hourly check never waits on a hung uv).
+# shellcheck source=scripts/pyrunner.sh
+. "$REPO_ROOT/scripts/pyrunner.sh"
+pyrunner_select "$REPO_ROOT" check
 
 # Editions to check: every draft/live one (paused ones are skipped). An edition
 # whose config is invalid counts as one to check, so it surfaces as FAILED. The
