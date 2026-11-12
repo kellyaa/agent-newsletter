@@ -4,6 +4,8 @@ A daily, opinionated digest on building and running AI agents — for senior sof
 
 The site is at: **https://kellyaa.github.io/agent-newsletter**
 
+📚 **[Documentation Index](docs/index.md)** — Comprehensive guide to all resources (getting started, operations, development, troubleshooting)
+
 ## What's here
 
 ```
