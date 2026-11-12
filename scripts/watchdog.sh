@@ -68,6 +68,9 @@ DATE_TODAY="$(date +%F)"
 # The run/self lock paths and the flock helpers (the single-run lock contract).
 # shellcheck source=scripts/runlock.sh
 . "$REPO_ROOT/scripts/runlock.sh"
+# The content worktree path (the content-branch contract).
+# shellcheck source=scripts/contentbranch.sh
+. "$REPO_ROOT/scripts/contentbranch.sh"
 
 say() { printf '%s [watchdog] %s\n' "$(ts)" "$*"; }
 
@@ -99,8 +102,9 @@ fi
 # Days with no run_attempts row (run never started). Reads the content worktree
 # when there is one, as run.sh does. Never affects STATUS or the exit code.
 CONTENT_ROOT="${CONTENT_ROOT:-}"
-if [ -z "$CONTENT_ROOT" ] && [ -e "$REPO_ROOT/.worktrees/content/.git" ]; then
-  CONTENT_ROOT="$REPO_ROOT/.worktrees/content"
+CONTENT_WT="$(content_worktree_path "$REPO_ROOT")"
+if [ -z "$CONTENT_ROOT" ] && [ -e "$CONTENT_WT/.git" ]; then
+  CONTENT_ROOT="$CONTENT_WT"
 fi
 export CONTENT_ROOT
 MISSED_OUT="$("${PY_RUN[@]}" scripts/missed_days.py 2>/dev/null || true)"
