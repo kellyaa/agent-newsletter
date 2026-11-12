@@ -50,6 +50,7 @@ scripts/contentbranch.sh — sourced shell library: the content-branch contract 
 scripts/editionlist.sh — sourced shell library: the edition-list contract (`editionlist_load` runs `scripts/edition.py list` and fails when it fails, `editionlist_is_paused` / `editionlist_is_invalid`); sourced by run.sh and scripts/watchdog.sh
 scripts/runlog.sh       — sourced shell library: the run-log contract (`logs/<slug>/run-<date>.log`, `[run] DONE` / `FAILED at stage=` markers, `ts`/`log`, and the one `notify` alert helper); written by run_edition.sh, read by run.sh and scripts/watchdog.sh; the root watchdog.sh sources it for `notify`
 scripts/pyrunner.sh     — sourced shell library: the Python-runner contract (`pyrunner_select <root> run|check` picks `NEWSLETTER_PYTHON`, else `uv run python` (run mode only), else `.venv/bin/python`, else refuse (run) or `python3` (check)); sourced by run.sh and scripts/watchdog.sh
+scripts/envfiles.sh     — sourced shell library: the env-file contract (`envfiles_load <root>` sources `~/.config/agent-newsletter/env`, then `.env`, with `set -a`; the last file wins); called first by run.sh and both watchdogs
 scripts/runlock.sh      — sourced shell library: the single-run lock contract (`.watchdog.lock` / `.watchdog-self.lock` paths, `runlock_acquire` / `runlock_held`, and the distinct "flock not found" result); sourced by run.sh and scripts/watchdog.sh
 scripts/ai-audit-report.mjs — read-only audit trail: counts recent commits by automated contributors and lists any missing the DCO sign-off (`node scripts/ai-audit-report.mjs [--since …] [--check]`)
 scripts/generate-issues.mjs — auto issue generation: turns a markdown backlog (`## ` heading per issue) into GitHub issues via `gh`, skipping titles already open (`node scripts/generate-issues.mjs <backlog.md> [--label …] [--create]`; dry-run without `--create`)
@@ -165,7 +166,7 @@ Once the substitutions are done and `grep` is clean, install the jobs:
 
 ### LLM configuration (`.env`)
 
-The ranker and writer scripts read their endpoint, key, and model ids from environment variables. `run.sh` sources `.env` (repo-local, gitignored) at startup; you can also put values in `~/.config/agent-newsletter/env` for machine-wide defaults that `.env` overrides.
+The ranker and writer scripts read their endpoint, key, and model ids from environment variables. `run.sh` sources `.env` (repo-local, gitignored) at startup; you can also put values in `~/.config/agent-newsletter/env` for machine-wide defaults that `.env` overrides. Both watchdogs (`watchdog.sh`, `scripts/watchdog.sh`) load the same two files the same way (`scripts/envfiles.sh`), so `STALE_HOURS`, `WATCHDOG_WEBHOOK_URL` and `NEWSLETTER_PYTHON` can live there too.
 
 | Var | Required | Purpose |
 |---|---|---|

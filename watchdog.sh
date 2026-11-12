@@ -16,6 +16,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+# STALE_HOURS and WATCHDOG_WEBHOOK_URL may be set in the env files, as for
+# run.sh (scripts/envfiles.sh), so load them before reading either.
+# shellcheck source=scripts/envfiles.sh
+. "$REPO_ROOT/scripts/envfiles.sh"
+envfiles_load "$REPO_ROOT"
+
 STALE_HOURS="${STALE_HOURS:-36}"
 STATE_FILE="$REPO_ROOT/logs/watchdog-last-fire"
 mkdir -p "$REPO_ROOT/logs"
