@@ -196,9 +196,10 @@ def test_scripts_watchdog_reads_the_worktree_run_sh_creates(tmp_path):
     (repo / "editions" / "agents").mkdir(parents=True)
     shutil.copy2(REPO / "editions" / "agents" / "edition.yaml",
                  repo / "editions" / "agents" / "edition.yaml")
-    for reader in ("missed_days.py", "dead_sources.py"):
+    # Stand-ins keep the readers' contract: prefixed finding lines, exit 1 (#673).
+    for reader, prefix in (("missed_days.py", "MISSED:"), ("dead_sources.py", "DEAD:")):
         (repo / "scripts" / reader).write_text(
-            "import os\nprint('ROOT=' + os.environ.get('CONTENT_ROOT', ''))\n")
+            f"import os, sys\nprint('{prefix} ROOT=' + os.environ.get('CONTENT_ROOT', ''))\nsys.exit(1)\n")
     (repo / "run.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     wt = Path(_sh('content_worktree_path "$1"', str(repo)))
     wt.mkdir(parents=True)
@@ -207,5 +208,5 @@ def test_scripts_watchdog_reads_the_worktree_run_sh_creates(tmp_path):
     env["NEWSLETTER_PYTHON"] = sys.executable
     p = subprocess.run(["bash", str(repo / "scripts" / "watchdog.sh"), "--check"], cwd=repo,
                        env=env, capture_output=True, text=True, timeout=60)
-    roots = re.findall(r"^ROOT=.*$", p.stdout, re.M)
+    roots = re.findall(r"^(?:MISSED|DEAD): (ROOT=.*)$", p.stdout, re.M)
     assert roots == [f"ROOT={wt}", f"ROOT={wt}"], p.stdout + p.stderr

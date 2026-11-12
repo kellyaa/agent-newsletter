@@ -327,17 +327,21 @@ def test_yesterdays_completed_log_does_not_count_for_today(repo):
 
 # ─── CONTENT_ROOT handed to missed_days.py / dead_sources.py ────────────────
 
-# Stand-ins that report the CONTENT_ROOT the watchdog exported to them.
-ECHO_ROOT = '#!/usr/bin/env python3\nimport os\nprint("ROOT=" + os.environ.get("CONTENT_ROOT", ""))\n'
+# Stand-ins that report the CONTENT_ROOT the watchdog exported to them, as a
+# finding line under the reader's own prefix (exit 1), so they keep the
+# readers' output contract (#673).
+ECHO_ROOT = ('#!/usr/bin/env python3\nimport os, sys\n'
+             'print({prefix!r} + " ROOT=" + os.environ.get("CONTENT_ROOT", ""))\nsys.exit(1)\n')
 
 
 def _with_echo_scripts(repo):
-    for name in ("missed_days.py", "dead_sources.py"):
-        (repo / "scripts" / name).write_text(ECHO_ROOT)
+    for name, prefix in (("missed_days.py", "MISSED:"), ("dead_sources.py", "DEAD:")):
+        (repo / "scripts" / name).write_text(ECHO_ROOT.format(prefix=prefix))
 
 
 def _roots(p):
-    return [l for l in p.stdout.splitlines() if l.startswith("ROOT=")]
+    return [l.split(" ", 1)[1] for l in p.stdout.splitlines()
+            if l.startswith(("MISSED: ROOT=", "DEAD: ROOT="))]
 
 
 def _clean_env():
@@ -393,3 +397,47 @@ def test_crashing_informational_scripts_do_not_change_status(repo):
     p, out = _wd(repo, "--check")
     assert p.returncode == 0
     assert out == [f"EDITION: agents ALREADY_RAN {d}", f"EDITION: beta ALREADY_RAN {d}", f"STATUS: ALREADY_RAN {d}"]
+
+
+# ─── a failing MISSED:/DEAD: reader is reported, not read as "nothing found" (#673) ───
+
+CRASHING_READER = "raise RuntimeError('db schema drift')\n"
+
+
+def _check_lines(p, prefix):
+    return [l for l in p.stdout.splitlines() if l.startswith(prefix)]
+
+
+@pytest.mark.parametrize("reader", ["missed_days.py", "dead_sources.py"])
+def test_crashing_reader_prints_check_failed(repo, reader):
+    _with_echo_scripts(repo)
+    (repo / "scripts" / reader).write_text(CRASHING_READER)
+    p = _run_check(repo)
+    assert _check_lines(p, "CHECK-FAILED: ") == [
+        f"CHECK-FAILED: {reader} rc=1: RuntimeError: db schema drift"]
+    # Informational only: same STATUS and exit code as with working readers.
+    assert p.stdout.strip().splitlines()[-1] == f"STATUS: FAILED {_today()} agents:never-started beta:never-started"
+    assert p.returncode == 1
+
+
+@pytest.mark.parametrize("out, rc, ok", [
+    ("", 0, True),
+    ("MISSED: agents 2026-01-01\\nMISSED: beta 2026-01-02", 1, True),
+    ("", 1, False),                                   # crash with no lines
+    ("MISSED: agents 2026-01-01", 0, False),          # findings must exit 1
+    ("MISSED: agents 2026-01-01\\nTraceback", 1, False),
+    ("", 2, False),                                   # argparse error
+])
+def test_reader_contract(repo, out, rc, ok):
+    (repo / "scripts" / "missed_days.py").write_text(
+        f"import sys\nprint({out!r}.replace('\\\\n', '\\n'), end='')\n"
+        f"print('oops', file=sys.stderr)\nsys.exit({rc})\n")
+    (repo / "scripts" / "dead_sources.py").write_text("")
+    p = _run_check(repo)
+    failed = _check_lines(p, "CHECK-FAILED: ")
+    if ok:
+        assert failed == []
+        assert _check_lines(p, "MISSED: ") == [l for l in out.split("\\n") if l]
+    else:
+        assert failed == [f"CHECK-FAILED: missed_days.py rc={rc}: oops"]
+        assert _check_lines(p, "MISSED: ") == []
