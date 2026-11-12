@@ -136,7 +136,7 @@ def test_run_sh_without_flock_fails_instead_of_exiting_0(tmp_path):
 def test_watchdog_without_flock_is_failed_not_in_progress(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "edition.py", "models.py"):
+    for f in ("watchdog.sh", "runlog.sh", "runlock.sh", "contentbranch.sh", "editionlist.sh", "edition.py", "models.py"):
         shutil.copy2(REPO / "scripts" / f, repo / "scripts" / f)
     (repo / "run.sh").write_text("#!/usr/bin/env bash\necho called >> run-calls.txt\n")
     (repo / "editions" / "agents").mkdir(parents=True)

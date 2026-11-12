@@ -201,16 +201,14 @@ log "── migrate layout ──"
 
 # ─── Select editions ───────────────────────────────────────────────────────
 CURRENT_STAGE="select-editions"
-# `edition.py list` prints "slug<TAB>status<TAB>name" per edition folder, in run
+# The edition list (scripts/editionlist.sh): one slug per edition folder, in run
 # order. A folder with a broken config shows as "invalid": it still runs (and
-# fails loudly, with a notification) instead of silently vanishing.
-declare -A STATUS_OF=()
-ALL_SLUGS=()
-while IFS=$'\t' read -r slug status _name; do
-  [ -n "$slug" ] || continue
-  STATUS_OF["$slug"]="$status"
-  ALL_SLUGS+=("$slug")
-done < <("${PY_RUN[@]}" scripts/edition.py list)
+# fails loudly, with a notification) instead of silently vanishing. A failing
+# `edition.py list` fails this stage; it must never read as "nothing to run".
+# shellcheck source=scripts/editionlist.sh
+. "$REPO_ROOT/scripts/editionlist.sh"
+editionlist_load "${PY_RUN[@]}"
+ALL_SLUGS=(${EDITION_SLUGS[@]+"${EDITION_SLUGS[@]}"})
 
 # Latest attempt today for an edition: ok | failed | started | none.
 latest_attempt() {
@@ -220,7 +218,7 @@ latest_attempt() {
 SELECTED=()
 if [ "${#EDITIONS_WANTED[@]}" -gt 0 ]; then
   for slug in "${EDITIONS_WANTED[@]}"; do
-    if [ -z "${STATUS_OF[$slug]+x}" ]; then
+    if [ -z "${EDITION_STATUS_OF[$slug]+x}" ]; then
       log "unknown edition '$slug' (known: ${ALL_SLUGS[*]:-none})"
       exit 2
     fi
@@ -228,12 +226,12 @@ if [ "${#EDITIONS_WANTED[@]}" -gt 0 ]; then
   done
 else
   for slug in "${ALL_SLUGS[@]}"; do
-    status="${STATUS_OF[$slug]}"
-    [ "$status" = paused ] && continue
+    status="${EDITION_STATUS_OF[$slug]}"
+    editionlist_is_paused "$status" && continue
     latest="$(latest_attempt "$slug")"
     if [ "$FAILED_ONLY" = true ]; then
       # An invalid config never records an attempt; it has not succeeded either.
-      case "$latest" in failed|started) ;; *) [ "$status" = invalid ] || continue ;; esac
+      case "$latest" in failed|started) ;; *) editionlist_is_invalid "$status" || continue ;; esac
     elif [ "$FORCE" != true ] && [ "$latest" = ok ]; then
       log "── $slug ── already ok today; skipping"
       continue

@@ -32,8 +32,9 @@ def test_status_values_unchanged():
 
 
 def test_watchdog_skips_the_paused_status():
-    text = (SCRIPTS / "watchdog.sh").read_text()
-    assert f'[ "$status" = {EditionStatus.PAUSED.value} ]' in text
+    # The skip rule lives in scripts/editionlist.sh (#670); the watchdog uses it.
+    assert f"EDITIONLIST_PAUSED={EditionStatus.PAUSED.value}\n" in (SCRIPTS / "editionlist.sh").read_text()
+    assert "editionlist_is_paused" in (SCRIPTS / "watchdog.sh").read_text()
 
 
 def _status_literals(path: Path) -> list[str]:
