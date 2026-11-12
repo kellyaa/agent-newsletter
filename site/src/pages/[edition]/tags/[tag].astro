@@ -15,6 +15,7 @@ import { isTagSlug } from "../../../scripts/tag-slug";
 import { safeHref } from "../../../scripts/safe-href";
 import { loadRegistry, issuesFor } from "../../../scripts/editions";
 import ScoreBar from "../../../components/ScoreBar.astro";
+import type { Section } from "../../../scripts/sections";
 
 export async function getStaticPaths() {
   const all = await getCollection("issues");
@@ -29,7 +30,7 @@ export async function getStaticPaths() {
       tag: string;
       date: string;
       id: string;
-      section: "papers" | "news" | "blogs";
+      section: Section;
       title: string;
       url: string;
       source: string;
@@ -88,7 +89,7 @@ interface Props {
     tag: string;
     date: string;
     id: string;
-    section: "papers" | "news" | "blogs";
+    section: Section;
     title: string;
     url: string;
     source: string;
