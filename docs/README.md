@@ -10,7 +10,10 @@ This directory contains comprehensive guides for operating, extending, and under
 - **Contribute for the first time** → [getting-started-guide.md](getting-started-guide.md), then [Start here](../CONTRIBUTING.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
+- **Learn run strategies (--force, --refetch, --failed)** → [run-strategies-and-recovery.md](run-strategies-and-recovery.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
+- **Fix low featured item count** → [troubleshooting-low-featured-count.md](troubleshooting-low-featured-count.md)
+- **Understand LLM errors & content filtering** → [llm-error-handling-guide.md](llm-error-handling-guide.md)
 - **Add a feed source** → [adding-feed-sources-guide.md](adding-feed-sources-guide.md)
 - **Create a new newsletter edition** → [CONTRIBUTING.md § Adding an edition](../CONTRIBUTING.md#adding-an-edition), then [edition-yaml-reference.md](edition-yaml-reference.md)
 - **Tune an edition's keyword gate or sources** → [edition-tuning-guide.md](edition-tuning-guide.md)
@@ -41,9 +44,12 @@ This directory contains comprehensive guides for operating, extending, and under
 | Guide | Purpose |
 |-------|---------|
 | [operations-and-maintenance.md](operations-and-maintenance.md) | Daily checks, run model, where things live, when to investigate |
+| [run-strategies-and-recovery.md](run-strategies-and-recovery.md) | When to use --force, --refetch, --failed; recovery for each failure mode |
 | [operations-runbook.md](operations-runbook.md) | Fast lookup for common operational tasks; quick-reference companion to operations-and-maintenance |
 | [ai-ops-runbook.md](ai-ops-runbook.md) | Index for incidents: pipeline health, recovery, cost, and handling agent-authored changes |
 | [debugging-guide.md](debugging-guide.md) | Stage-by-stage failure diagnosis, common errors, recovery steps |
+| [troubleshooting-low-featured-count.md](troubleshooting-low-featured-count.md) | When an issue publishes with fewer featured items than expected; diagnosis and fixes |
+| [llm-error-handling-guide.md](llm-error-handling-guide.md) | LLM failures, content filtering, retries, timeouts; what happens when ranking or writing fails |
 | [database-recovery-guide.md](database-recovery-guide.md) | Recover a corrupted or inconsistent `state.db`; advanced troubleshooting beyond the debugging guide |
 | [monitoring-and-alerting-integration.md](monitoring-and-alerting-integration.md) | Integrate pipeline health with external monitoring and alerting systems |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
