@@ -218,12 +218,14 @@ tags:
 
 | Key | Type | Meaning |
 |-----|------|---------|
-| `featured_min` | int (1-10) | Minimum ranker score to be featured (typically 6-7) |
-| `appendix_min` | int (1-10) | Minimum score to land in appendix (typically 4-5, ≤ featured_min) |
+| `featured_min` | int (0-10) | Minimum ranker score to be featured (typically 6-7) |
+| `appendix_min` | int (0-10) | Minimum score to land in appendix (typically 4-5, ≤ featured_min) |
 | `cap` | int | Max featured items per section per issue |
 | `burst_cap` (papers only) | int | Higher cap on heavy arXiv days (optional) |
-| `burst_trigger_score` (papers only) | int | Score threshold triggering burst cap (optional) |
+| `burst_trigger_score` (papers only) | int (0-10) | Score threshold triggering burst cap (optional) |
 | `burst_trigger_count` (papers only) | int | # of high-scoring papers needed to trigger burst (optional) |
+
+The three score keys must lie in the ranker's score range, 0-10 (`models.SCORE_MIN` / `SCORE_MAX`). `edition.load` and `check_edition.py` reject a larger value, since no item could ever reach it.
 
 **Example (no burst):**
 ```yaml
