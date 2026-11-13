@@ -142,3 +142,10 @@ def test_keyword_gate_does_not_match_across_the_title_body_boundary():
     assert not gates.keyword_gate(item, kw)
     assert gates.keyword_gate({"title": "an agent loop", "raw_text": ""}, kw)
     assert gates.keyword_gate({"title": "x", "raw_text": "the agent loop"}, kw)
+
+
+def test_recency_treats_a_naive_now_as_utc():
+    naive_now = NOW.replace(tzinfo=None)
+    days = gates.RECENCY_DAYS["hn"]
+    assert gates.passes_recency(_item(age=timedelta(days=days)), naive_now)
+    assert not gates.passes_recency(_item(age=timedelta(days=days, seconds=1)), naive_now)
