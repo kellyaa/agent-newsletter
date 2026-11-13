@@ -35,6 +35,9 @@ import urls
         # Userinfo and IPv6 hosts survive the default-port strip.
         ("https://user@example.com:443/p", "https://user@example.com/p"),
         ("https://[::1]:443/x", "https://[::1]/x"),
+        # An empty port names the bare host, so it dedups with it.
+        ("https://example.com:/x", "https://example.com/x"),
+        ("https://EXAMPLE.com:", "https://example.com/"),
         # Path case is significant; host case is not.
         ("https://EXAMPLE.com/CaseSensitive", "https://example.com/CaseSensitive"),
         # Only one trailing slash run is collapsed and the root is kept.
