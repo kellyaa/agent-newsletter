@@ -24,6 +24,14 @@ INTERNAL_VARS = {
     "RUN_STARTED_AT",
 }
 
+# Variables read by shell scripts (.sh) rather than Python scripts (.py),
+# but still documented in .env.template for operator configuration.
+SHELL_ONLY_VARS = {
+    "NEWSLETTER_PYTHON",
+    "STALE_HOURS",
+    "WATCHDOG_WEBHOOK_URL",
+}
+
 _ENV_READ = re.compile(r"""os\.environ\.get\(\s*["']([A-Z][A-Z0-9_]*)["']""")
 # `NAME=value` or commented-out `# NAME=value` (the template's two forms).
 _ASSIGN = re.compile(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=(.*)$")
@@ -51,7 +59,7 @@ def test_every_operator_variable_is_documented_in_template():
 
 
 def test_template_documents_no_unused_variables():
-    stale = set(_template_assignments()) - _vars_read_by_code()
+    stale = set(_template_assignments()) - _vars_read_by_code() - SHELL_ONLY_VARS
     assert not stale, f".env.template lists variables no script reads: {sorted(stale)}"
 
 
