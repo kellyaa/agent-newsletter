@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest.mock import MagicMock
 
 import pytest
@@ -121,11 +122,26 @@ def _constants(path: Path) -> list[tuple[int, object]]:
     return [(n.lineno, n.value) for n in ast.walk(tree) if isinstance(n, ast.Constant)]
 
 
+ARXIV_API_HOST = urlsplit(urls.ARXIV_API_URL).hostname
+
+
+def _is_arxiv_api(value: str) -> bool:
+    """True for a URL (or bare host) whose host is the arXiv API host."""
+    return (urlsplit(value).hostname or value) == ARXIV_API_HOST
+
+
+def test_arxiv_api_detector():
+    assert _is_arxiv_api(urls.ARXIV_API_URL)
+    assert _is_arxiv_api("http://export.arxiv.org/api/query?x=1")
+    assert _is_arxiv_api(ARXIV_API_HOST)
+    assert not _is_arxiv_api("https://arxiv.org/abs/2403.00100")
+
+
 @pytest.mark.parametrize("path", sorted(set(SCRIPTS.glob("*.py")) - {SCRIPTS / "urls.py"}),
                          ids=lambda p: p.name)
 def test_arxiv_query_spelled_only_in_urls(path):
     hits = [(ln, v) for ln, v in _constants(path)
-            if isinstance(v, str) and ("export.arxiv.org" in v or v in {"sortBy", "submittedDate"})]
+            if isinstance(v, str) and (_is_arxiv_api(v) or v in {"sortBy", "submittedDate"})]
     assert hits == [], f"{path.name}: use urls.ARXIV_API_URL / urls.arxiv_query_params: {hits}"
 
 
