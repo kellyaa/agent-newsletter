@@ -539,19 +539,24 @@ def age_out_papers_pool(
     return cur.rowcount or 0
 
 
-def mark_candidates_published(conn: sqlite3.Connection, item_ids: list[str]) -> int:
-    """Promote `item_ids` still in ``candidate`` status to ``published``.
+def mark_candidates_published(
+    conn: sqlite3.Connection, item_ids: list[str], date: str,
+) -> int:
+    """Promote `item_ids` still in ``candidate`` status to ``published`` on ``date``.
 
-    Gated on status so re-runs (or rows promoted by another path) are left
-    alone. Commits; returns the rows promoted.
+    Sets ``published_date`` like :func:`publish_selected_items`: every path
+    that seals a row as ``published`` records the issue date, which
+    :func:`reset_processed_items_for` (``reset_day --force``) matches on to
+    restore pool papers. Gated on status so re-runs (or rows promoted by
+    another path) are left alone. Commits; returns the rows promoted.
     """
     if not item_ids:
         return 0
     marks = ",".join("?" * len(item_ids))
     cur = conn.execute(
-        f"UPDATE items SET status = '{Status.PUBLISHED}' "
+        f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
         f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
-        list(item_ids),
+        [date, *item_ids],
     )
     conn.commit()
     return cur.rowcount or 0
