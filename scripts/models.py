@@ -35,6 +35,16 @@ class Status(StrEnum):
     PUBLISHED = "published"
 
 
+# The ranker's score range (integers, inclusive). rank's output schema and
+# sanitizer, edition.yaml's score thresholds and the site's zod schema
+# (site/src/content.config.ts) all use it (tests/test_score_range_single_source.py).
+SCORE_MIN = 0
+SCORE_MAX = 10
+# edition.yaml `sections.<name>` keys compared against a score, so they must
+# lie in [SCORE_MIN, SCORE_MAX]; a value above it can never be reached.
+SECTION_SCORE_KEYS: tuple[str, ...] = ("featured_min", "appendix_min", "burst_trigger_score")
+
+
 class Section(StrEnum):
     """Newsletter sections. Values match the state.db `section` column."""
 
