@@ -31,7 +31,7 @@ from db import (
 )
 from llm import ContentFilterError, call_llm, ranker_config
 from llm_ids import alias_items, resolve_ids
-from models import SCORE_MAX, SCORE_MIN, ExitCode, RankDecision, ScoredItem, Section, Status
+from models import SCORE_MAX, SCORE_MIN, ExitCode, encode_tags, RankDecision, ScoredItem, Section, Status
 
 log = logging.getLogger("rank")
 
@@ -411,7 +411,7 @@ def persist(conn, decisions: dict[str, RankDecision]) -> dict[str, int]:
     valid_tags = edition.current().valid_tags()
     for item_id, d in decisions.items():
         clean_tags = [t for t in d["tags"] if t in valid_tags]
-        rows.append((item_id, d["score"], json.dumps(clean_tags), d["why"], d["status"]))
+        rows.append((item_id, d["score"], encode_tags(clean_tags), d["why"], d["status"]))
         counts[d["status"]] = counts.get(d["status"], 0) + 1
     apply_rank_decisions(conn, rows)
     return counts

@@ -20,14 +20,13 @@ This eliminates:
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from db import connect, load_candidate_rows
-from models import CandidateItem, Section, parse_instant
+from models import CandidateItem, Section, decode_tags, parse_instant
 
 log = logging.getLogger(__name__)
 
@@ -134,10 +133,7 @@ def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[Candi
             # Prescored paper — carry cached score/tags/why so the ranker
             # can skip the LLM call for this item.
             emitted["score"] = d["score"]
-            try:
-                emitted["tags"] = json.loads(d["tags"]) if d["tags"] else []
-            except (TypeError, ValueError):
-                emitted["tags"] = []
+            emitted["tags"] = decode_tags(d["tags"])
             emitted["why"] = d["why"] or ""
             grouped[PAPERS_PRESCORED].append(emitted)
         elif section in grouped:
