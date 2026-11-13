@@ -14,10 +14,10 @@ Quick lookup for all pipeline, testing, and operational commands. For detailed u
 | `./run.sh --force` | Reset today's post-fetch state; skip re-fetch (safe on arXiv) | [README.md](../README.md#daily-pipeline) |
 | `./run.sh --refetch --edition X` | Also re-fetch from all sources (use sparingly; arXiv rate-limits) | [README.md](../README.md#daily-pipeline) |
 | `./watchdog.sh` | Notify (macOS `osascript`, Linux `notify-send`, optional `WATCHDOG_WEBHOOK_URL` POST) if no successful run in >36h (STALE_HOURS) | [README.md](../README.md#troubleshooting-a-stalled-run) |
-| `./scripts/watchdog.sh` | Self-heal wrapper: check and re-run failed editions | [README.md](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
-| `./scripts/watchdog.sh --check` | Check only; never run the pipeline | [README.md](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
-| `./launchd/install.sh` | Install daily-run and hourly-watchdog launchd jobs (macOS) | [README.md](../README.md#scheduling-macos) |
-| `./launchd/install.sh --uninstall` | Uninstall scheduled jobs | [README.md](../README.md#scheduling-macos) |
+| `./scripts/watchdog.sh` | Self-heal wrapper: check and re-run failed editions | [README.md](../README.md#self-heal-watchdog-scriptswatchdogsh) |
+| `./scripts/watchdog.sh --check` | Check only; never run the pipeline | [README.md](../README.md#self-heal-watchdog-scriptswatchdogsh) |
+| `./launchd/install.sh` | Install daily-run and hourly-watchdog launchd jobs (macOS) | [README.md § Setup (one-time)](../README.md#setup-one-time) |
+| `./launchd/install.sh --uninstall` | Uninstall scheduled jobs | [README.md § Setup (one-time)](../README.md#setup-one-time) |
 
 ---
 
@@ -38,8 +38,8 @@ Quick lookup for all pipeline, testing, and operational commands. For detailed u
 | `uv run scripts/backfill.py --date YYYY-MM-DD` | Reconstruct missed issue from candidate pool (dry-run; doesn't modify state.db) | [CONTRIBUTING.md § scripts/backfill.py](../CONTRIBUTING.md#scriptsbackfillpy--reconstruct-a-missed-days-issue) |
 | `uv run scripts/backfill.py --date YYYY-MM-DD --apply-published` | Backfill for real: promote featured items to 'published' in live DB | [CONTRIBUTING.md § scripts/backfill.py](../CONTRIBUTING.md#scriptsbackfillpy--reconstruct-a-missed-days-issue) |
 | `uv run scripts/replay_writer.py YYYY-MM-DD` | Re-run writer against published items from a past date (logs to `logs/theme-replay-*.json`) | [CONTRIBUTING.md § scripts/replay_writer.py](../CONTRIBUTING.md#scriptsreplay_writerpy--replay-writer-against-a-past-issue) |
-| `uv run scripts/dead_sources.py` | List sources with no items (or only errors) for the last N days (default 7; `dead_after_days` overrides) | [README.md § Self-heal watchdog](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
-| `uv run scripts/missed_days.py` | List days with no `run_attempts` row in the last 7 days | [README.md § Self-heal watchdog](../README.md#self-heal-watchdog-scriptswatch-dogsh) |
+| `uv run scripts/dead_sources.py` | List sources with no items (or only errors) for the last N days (default 7; `dead_after_days` overrides) | [README.md § Self-heal watchdog](../README.md#self-heal-watchdog-scriptswatchdogsh) |
+| `uv run scripts/missed_days.py` | List days with no `run_attempts` row in the last 7 days | [README.md § Self-heal watchdog](../README.md#self-heal-watchdog-scriptswatchdogsh) |
 | `uv run scripts/ai-audit-report.mjs [--since …] [--check]` | Count commits by automation, check for missing DCO sign-off | [README.md § What's here](../README.md#whats-here) |
 | `uv run scripts/generate-issues.mjs <backlog.md> [--label …] [--create]` | Auto-generate GitHub issues from markdown backlog (dry-run without `--create`) | [README.md § What's here](../README.md#whats-here) |
 

@@ -58,7 +58,7 @@ tags:
   - todo-replace-me
 
 # Thresholds and caps per section; the only per-edition numeric overrides.
-#   featured_min  minimum ranker score to be featured
+#   featured_min  minimum ranker score (0-10) to be featured
 #   appendix_min  minimum score to land in the appendix (<= featured_min)
 #   cap           maximum featured items in the section per issue
 # papers may also set burst_cap, burst_trigger_score and burst_trigger_count
