@@ -136,6 +136,20 @@ SOURCE_BOOL_FLAGS: tuple[str, ...] = ("keyword_gate_bypass", "exclude_launches")
 SOURCE_POSITIVE_INT_KEYS: tuple[str, ...] = ("recency_days", "limit", "dead_after_days")
 REDDIT_DEFAULT_LIMIT = 10  # top-N posts per subreddit when `limit` is unset
 
+# Family-specific positive-int sources.yaml keys and the default fetch uses
+# when a key is unset (None = no default: the adapter applies no cap). fetch
+# reads them only via its `_family_int` helper (a bad value logs a warning and
+# falls back to the default), check_edition rejects a bad value, and
+# new_edition takes its fallbacks from here (tests/test_source_family_keys_single_source.py).
+SOURCE_FAMILY_INT_KEYS: dict[SourceFamily, dict[str, int | None]] = {
+    SourceFamily.ARXIV: {"max_results": 30},
+    SourceFamily.HN: {"hours_back": 48, "min_points": 50},
+    SourceFamily.HTML: {"max_items": None},
+}
+# Seconds between arXiv API requests (arXiv asks for at least 3 s). fetch
+# sleeps this long between arxiv collectors, new_edition between probes.
+ARXIV_REQUEST_DELAY_S = 3.0
+
 
 def is_positive_int(value: object) -> bool:
     """True for an int > 0. bool is an int subclass, so True/False are rejected."""

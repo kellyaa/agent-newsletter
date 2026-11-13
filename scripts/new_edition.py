@@ -46,7 +46,10 @@ import net
 import prompts
 import urls
 from edition import EditionError
-from models import REDDIT_DEFAULT_LIMIT, EditionStatus, SourceFamily, is_positive_int
+from models import (
+    ARXIV_REQUEST_DELAY_S, REDDIT_DEFAULT_LIMIT, SOURCE_FAMILY_INT_KEYS, EditionStatus,
+    SourceFamily, is_positive_int,
+)
 
 # The source families the LLM proposes and new_edition live-checks. The rest of
 # SourceFamily (html, github_releases) is scaffolded empty for a human to fill.
@@ -55,8 +58,11 @@ LLM_FAMILIES = tuple(f.value for f in (SourceFamily.RSS, SourceFamily.ARXIV,
 MANUAL_FAMILIES = tuple(f.value for f in SourceFamily if f.value not in LLM_FAMILIES)
 
 TEMPLATE_SLUG = "_template"
-ARXIV_API = "https://export.arxiv.org/api/query"
-ARXIV_DELAY_S = 3.0  # arXiv asks for >= 3 s between requests
+ARXIV_MAX_RESULTS_CAP = 100  # a scaffold never asks arXiv for more per query
+# The scaffold writes min_points: 40 for HN, a looser floor than fetch's
+# default (models.SOURCE_FAMILY_INT_KEYS) so a new edition's queries are not
+# empty on day one; it is written into sources.yaml, so fetch reads it as set.
+SCAFFOLD_HN_MIN_POINTS = 40
 
 
 # LLM fragment key -> file under editions/<slug>/prompts/
@@ -235,11 +241,7 @@ def check_rss(client: httpx.Client, url: str) -> str | None:
 
 def check_arxiv(client: httpx.Client, query: str) -> str | None:
     try:
-        resp = client.get(
-            ARXIV_API,
-            params={"search_query": query, "start": 0, "max_results": 1,
-                    "sortBy": "submittedDate", "sortOrder": "descending"},
-        )
+        resp = client.get(urls.ARXIV_API_URL, params=urls.arxiv_query_params(query, 1))
         resp.raise_for_status()
     except httpx.HTTPError as e:
         return f"query failed: {type(e).__name__}: {e}"[:160]
@@ -323,14 +325,15 @@ def validate_sources(
     seen = set()
     for i, e in enumerate(proposed.get("arxiv") or []):
         if i:
-            sleep(ARXIV_DELAY_S)
+            sleep(ARXIV_REQUEST_DELAY_S)
         query = str(e.get("query", "")).strip()
         mr = e.get("max_results")
         entry = {
             "id": _unique_id(str(e.get("id") or "arxiv"), "arxiv", seen),
             "name": str(e.get("name") or e.get("id") or "arXiv"),
             "query": query,
-            "max_results": mr if is_positive_int(mr) and mr <= 100 else 30,
+            "max_results": (mr if is_positive_int(mr) and mr <= ARXIV_MAX_RESULTS_CAP
+                            else SOURCE_FAMILY_INT_KEYS[SourceFamily.ARXIV]["max_results"]),
         }
         reason = check_arxiv(client, query) if query else "empty query"
         if reason:
@@ -349,8 +352,8 @@ def validate_sources(
             "id": _unique_id(str(e.get("id") or f"hn-{query}"), "hn", seen),
             "name": str(e.get("name") or f"HN: {query}"),
             "query": query,
-            "hours_back": 48,
-            "min_points": mp if is_positive_int(mp) else 40,
+            "hours_back": SOURCE_FAMILY_INT_KEYS[SourceFamily.HN]["hours_back"],
+            "min_points": mp if is_positive_int(mp) else SCAFFOLD_HN_MIN_POINTS,
         })
 
     seen = set()

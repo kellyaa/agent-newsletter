@@ -32,8 +32,8 @@ from db import (
 )
 from db import count_items_seen_on
 from models import (
-    REDDIT_DEFAULT_LIMIT, ExitCode, Section, SourceFamily, is_positive_int, item_source,
-    parse_instant, source_label,
+    ARXIV_REQUEST_DELAY_S, REDDIT_DEFAULT_LIMIT, SOURCE_FAMILY_INT_KEYS, ExitCode, Section,
+    SourceFamily, is_positive_int, item_source, parse_instant, source_label,
 )
 
 log = logging.getLogger("fetch")
@@ -109,22 +109,30 @@ def fetch_rss(source: dict, *, client: httpx.Client | None = None) -> Iterable[I
         )
 
 
+def _family_int(family: SourceFamily, source: dict, key: str) -> int | None:
+    """``source[key]`` if it is a positive int, else the models default.
+
+    The family-specific numeric keys (``models.SOURCE_FAMILY_INT_KEYS``) are
+    read only through here. A bad value (``"48"``, ``0``, ``-5``, ``true``)
+    logs a warning and falls back, as ``limit`` / ``recency_days`` do, so it
+    neither reaches the API nor crashes the collector; check_edition rejects it.
+    """
+    default = SOURCE_FAMILY_INT_KEYS[family][key]
+    value = source.get(key)
+    if value is None or is_positive_int(value):
+        return default if value is None else value
+    log.warning("source %s: invalid %s %r (must be positive int); using %s",
+                source.get("id", "?"), key, value, default)
+    return default
+
+
 def fetch_arxiv(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     query = source["query"]
-    max_results = source.get("max_results", 30)
+    max_results = _family_int(SourceFamily.ARXIV, source, "max_results")
     log.info("arxiv: fetching %s", source["id"])
     _client = client or _make_http_client()
     try:
-        resp = _client.get(
-            "https://export.arxiv.org/api/query",
-            params={
-                "search_query": query,
-                "start": 0,
-                "max_results": max_results,
-                "sortBy": "submittedDate",
-                "sortOrder": "descending",
-            },
-        )
+        resp = _client.get(urls.ARXIV_API_URL, params=urls.arxiv_query_params(query, max_results))
         resp.raise_for_status()
     finally:
         if client is None:
@@ -151,8 +159,8 @@ def fetch_arxiv(source: dict, *, client: httpx.Client | None = None) -> Iterable
 def fetch_hn(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     import time
     query = source["query"]
-    hours_back = source.get("hours_back", 48)
-    min_points = source.get("min_points", 50)
+    hours_back = _family_int(SourceFamily.HN, source, "hours_back")
+    min_points = _family_int(SourceFamily.HN, source, "min_points")
     cutoff = int(time.time()) - hours_back * 3600
     # `exclude_launches: true` drops Show HN / Launch HN posts at the API.
     # Algolia tags are AND-ed, and a leading `-` negates one.
@@ -213,7 +221,8 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
                                  The first `datetime` attribute is preferred;
                                  otherwise the text content is parsed as ISO.
       excerpt_selector         — optional; CSS selector for a summary blurb.
-      max_items                — optional int; cap emitted items per fetch.
+      max_items                — optional positive int; cap emitted items
+                                 per fetch (a bad value: warning, no cap).
 
     Failure modes are defensive per the issue:
       - No matches for link_selector → log a warning, yield nothing.
@@ -252,7 +261,7 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
     title_sel = source.get("title_selector")
     date_sel = source.get("date_selector")
     excerpt_sel = source.get("excerpt_selector")
-    max_items = source.get("max_items")
+    max_items = _family_int(SourceFamily.HTML, source, "max_items")
 
     log.info("html: fetching %s (%s)", sid, url)
     _client = client or _make_http_client()
@@ -274,7 +283,7 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
     seen_urls: set[str] = set()
     emitted = 0
     for element in matches:
-        if max_items is not None and emitted >= int(max_items):
+        if max_items is not None and emitted >= max_items:
             break
 
         # link_selector may match the anchor directly or a wrapping element.
@@ -614,7 +623,7 @@ def iter_collectors(sources: dict, http_client: httpx.Client):
     arxiv_sources = sources.get(SourceFamily.ARXIV) or []
     for i, src in enumerate(arxiv_sources):
         if i > 0:
-            time.sleep(3.0)
+            time.sleep(ARXIV_REQUEST_DELAY_S)
         yield source_label(SourceFamily.ARXIV, src), with_override(
             src, fetch_arxiv(src, client=http_client))
     for src in sources.get(SourceFamily.HN) or []:

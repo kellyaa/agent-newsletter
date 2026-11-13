@@ -77,6 +77,7 @@ def fetch_xxx(source: dict, *, client: httpx.Client | None = None) -> Iterable[I
 
 Notes:
 
+- The numeric keys in the table (`max_results`, `hours_back`, `min_points`, `max_items`, `limit`) must be positive integers. `check_edition.py` rejects anything else; `fetch` logs a warning and uses the default (no cap for `max_items`). The family keys and their defaults live in `models.SOURCE_FAMILY_INT_KEYS`.
 - `github_releases` shells out to `gh api` instead of using the HTTP client, and
   its items use the source prefix `gh:` (not `github_releases:`). The shipped
   `agents` edition currently has it set to `[]`.
