@@ -654,13 +654,13 @@ class TestBackfillMain:
         out_path.write_text("# Issue")
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
         monkeypatch.setattr("backfill.apply_published_to_live",
-                            lambda ids: apply_calls.append(ids) or len(ids))
+                            lambda ids, date: apply_calls.append((ids, date)) or len(ids))
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15", "--apply-published"])
         result = bf.main()
 
         assert result == 0
-        assert apply_calls == [["feat1"]]
+        assert apply_calls == [(["feat1"], "2026-07-15")]
 
     def test_main_uses_sandbox_by_explicit_path_without_patching_db(
         self, tmp_path, monkeypatch,
@@ -792,7 +792,7 @@ class TestBackfillMainEdgeCases:
         out_path.write_text("# Issue")
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
         # Only promote 1 of 2 — triggers the partial-promotion warning
-        monkeypatch.setattr("backfill.apply_published_to_live", lambda ids: 1)
+        monkeypatch.setattr("backfill.apply_published_to_live", lambda ids, date: 1)
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15", "--apply-published"])
         with caplog.at_level(logging.WARNING, logger="backfill"):
@@ -827,7 +827,7 @@ class TestBackfillMainEdgeCases:
         out_path = tmp_path / "2026-07-15.md"
         out_path.write_text("# Issue")
         monkeypatch.setattr("backfill.run_writer_for_date", lambda conn, date, force: out_path)
-        monkeypatch.setattr("backfill.apply_published_to_live", lambda ids: len(ids))
+        monkeypatch.setattr("backfill.apply_published_to_live", lambda ids, date: len(ids))
 
         monkeypatch.setattr("sys.argv", ["backfill.py", "--date", "2026-07-15", "--apply-published"])
         with caplog.at_level(logging.INFO, logger="backfill"):
