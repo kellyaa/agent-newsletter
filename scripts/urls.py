@@ -58,6 +58,9 @@ def canonicalize_url(url: str) -> str:
     default_port = {"http": ":80", "https": ":443"}.get(scheme)
     if default_port and netloc.endswith(default_port):
         netloc = netloc[: -len(default_port)]
+    elif netloc.endswith(":") and not netloc.endswith("::"):
+        # An empty port ("host:") also names the bare host.
+        netloc = netloc[:-1]
     path = parsed.path or "/"
 
     # Exact host or a subdomain (export.arxiv.org); a bare endswith("arxiv.org")
