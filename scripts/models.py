@@ -13,6 +13,7 @@ Import from here in prefilter, rank, write, backfill, replay_writer.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from enum import IntEnum, StrEnum
 from typing import TypedDict
@@ -206,6 +207,34 @@ def parse_instant(raw: str) -> datetime:
     return dt
 
 
+def encode_tags(tags: list[str]) -> str:
+    """Encode a tag list for the ``items.tags`` column (a JSON array of strings).
+
+    The one writer of the column's format; ``decode_tags`` is its one reader
+    (``tests/test_tags_codec_single_source.py``).
+    """
+    return json.dumps([t for t in tags if isinstance(t, str)])
+
+
+def decode_tags(raw: object) -> list[str]:
+    """Decode an ``items.tags`` value into a list of strings, never raising.
+
+    NULL, empty, unparseable, non-string and non-list values (a hand edit, a
+    JSON string like ``"agents"``) decode to ``[]``, and non-string elements are
+    dropped. A bare ``json.loads`` would hand ``"agents"`` to the frontmatter
+    as six one-letter tags.
+    """
+    if not raw or not isinstance(raw, (str, bytes, bytearray)):
+        return []
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [t for t in value if isinstance(t, str)]
+
+
 def edition_state_db_relpath(slug: str) -> str:
     """``editions/<slug>/state.db``, relative to the content root (a git path)."""
     return f"{EDITIONS_DIRNAME}/{slug}/{STATE_DB_NAME}"
@@ -294,7 +323,7 @@ class ItemRow(TypedDict, total=False):
     fetched_at: str
     raw_text: str | None
     score: int | None
-    tags: str | None  # JSON-encoded list in DB
+    tags: str | None  # JSON-encoded list in DB: models.encode_tags / decode_tags
     section: str | None
     section_override: str | None
     keyword_gate_bypass: int

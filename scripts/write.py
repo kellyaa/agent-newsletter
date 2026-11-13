@@ -43,6 +43,7 @@ from models import (
     FrontmatterFeatured,
     IssueMetadata,
     Section,
+    decode_tags,
     issue_filename,
 )
 
@@ -110,15 +111,12 @@ WRITER_SCHEMA = {
 def featured_item_from_row(r) -> FeaturedItem:
     """Project one ``items`` row onto the writer's FeaturedItem shape.
 
-    Single home for the row -> writer-input mapping (tag JSON decode,
+    Single home for the row -> writer-input mapping (tags via models.decode_tags,
     raw_text truncation to RAW_TEXT_MAX). Shared by load_today_items and
     scripts/replay_writer.py so a replay sees exactly what production sent;
     tests/test_writer_input_single_source.py enforces that.
     """
-    try:
-        tags = json.loads(r["tags"]) if r["tags"] else []
-    except json.JSONDecodeError:
-        tags = []
+    tags = decode_tags(r["tags"])
     raw = r["raw_text"] or ""
     if len(raw) > RAW_TEXT_MAX:
         raw = raw[:RAW_TEXT_MAX] + "\n...[truncated]"
