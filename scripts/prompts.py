@@ -20,9 +20,42 @@ import re
 from pathlib import Path
 
 from edition import REPO_ROOT, Edition, EditionError, current
+from models import EDITIONS_DIRNAME, PROMPTS_DIRNAME
 
-PROMPTS_DIR = REPO_ROOT / "prompts"
+# The prompt layout. This module is its only home: rank, prefilter, write,
+# replay_writer, new_edition and check_edition take paths and fragment names
+# from here (tests/test_prompt_layout_single_source.py enforces this).
+PROMPTS_DIR = REPO_ROOT / PROMPTS_DIRNAME
 STAGES = ("rank", "write")
+TEMPLATE_SUFFIX = ".md"
+# The meta-prompt new_edition.py sends to draft a new edition. It has its own
+# slots (filled by new_edition.build_prompt), not edition fragments.
+DRAFT_EDITION_TEMPLATE = PROMPTS_DIR / f"draft_edition{TEMPLATE_SUFFIX}"
+# Slots edition.yaml fills (see _scalar_slots); every other slot is a fragment.
+SCALAR_SLOTS = ("name", "tagline", "reader_profile", "downweighted", "tags")
+
+
+def template_path(stage: str) -> Path:
+    """The base template of *stage*: ``prompts/<stage>.md``."""
+    if stage not in STAGES:
+        raise EditionError(f"unknown prompt stage {stage!r} (expected one of {list(STAGES)})")
+    return PROMPTS_DIR / f"{stage}{TEMPLATE_SUFFIX}"
+
+
+# render()'s ``template_path`` parameter shadows the function inside it.
+_base_template_path = template_path
+
+
+def fragment_filename(stage: str, slot: str) -> str:
+    """The fragment file that fills *slot* of *stage*: ``<stage>.<slot>.md``."""
+    return f"{stage}.{slot}{TEMPLATE_SUFFIX}"
+
+
+def fragment_slots(stage: str, template: str | None = None) -> list[str]:
+    """Slots of *stage*'s template (default: the base one) that need a fragment file."""
+    text = template_path(stage).read_text() if template is None else template
+    return [s for s in template_slots(text) if s not in SCALAR_SLOTS]
+
 
 # Prepended to every LLM prompt that embeds fetched feed content (titles,
 # raw_text, authors). Feed content is attacker-controllable, so the model is
@@ -56,10 +89,10 @@ def _fragments(ed: Edition, stage: str) -> dict[str, Path]:
     d = ed.paths().prompt_fragments
     if not d.is_dir():
         return {}
-    prefix = f"{stage}."
+    prefix, suffix = fragment_filename(stage, "*").split("*")
     out: dict[str, Path] = {}
-    for p in sorted(d.glob(f"{stage}.*.md")):
-        out[p.name[len(prefix):-len(".md")]] = p
+    for p in sorted(d.glob(fragment_filename(stage, "*"))):
+        out[p.name[len(prefix):-len(suffix)]] = p
     return out
 
 
@@ -86,10 +119,9 @@ def fill_slots(template: str, values: dict[str, str]) -> str:
 
 def render(stage: str, ed: Edition | None = None, template_path: Path | None = None) -> str:
     """Render ``prompts/<stage>.md`` (or *template_path*) for *ed* (default: current)."""
-    if stage not in STAGES:
-        raise EditionError(f"unknown prompt stage {stage!r} (expected one of {list(STAGES)})")
+    default = _base_template_path(stage)  # also rejects an unknown stage
     ed = ed or current()
-    path = template_path or PROMPTS_DIR / f"{stage}.md"
+    path = template_path or default
     template = path.read_text()
 
     fragments = _fragments(ed, stage)
@@ -99,7 +131,7 @@ def render(stage: str, ed: Edition | None = None, template_path: Path | None = N
     unused = sorted(set(fragments) - set(used))
     if unused:
         raise EditionError(
-            f"edition {ed.slug!r}: prompt fragment(s) {[f'{stage}.{u}.md' for u in unused]} "
+            f"edition {ed.slug!r}: prompt fragment(s) {[fragment_filename(stage, u) for u in unused]} "
             f"are not used by {path.name} (typo in the fragment name?)"
         )
 
@@ -109,7 +141,7 @@ def render(stage: str, ed: Edition | None = None, template_path: Path | None = N
         if in_fragment and in_scalar:
             raise EditionError(
                 f"edition {ed.slug!r}: slot {{{{{slot}}}}} in {path.name} is defined both by "
-                f"{stage}.{slot}.md and by edition.yaml"
+                f"{fragment_filename(stage, slot)} and by edition.yaml"
             )
         if in_fragment:
             text = fragments[slot].read_text()
@@ -119,7 +151,7 @@ def render(stage: str, ed: Edition | None = None, template_path: Path | None = N
         else:
             raise EditionError(
                 f"edition {ed.slug!r}: no value for slot {{{{{slot}}}}} in {path.name} "
-                f"(add editions/{ed.slug}/prompts/{stage}.{slot}.md)"
+                f"(add {EDITIONS_DIRNAME}/{ed.slug}/{PROMPTS_DIRNAME}/{fragment_filename(stage, slot)})"
             )
 
     return fill_slots(template, values)

@@ -47,8 +47,8 @@ import prompts
 import urls
 from edition import EditionError
 from models import (
-    ARXIV_REQUEST_DELAY_S, REDDIT_DEFAULT_LIMIT, SOURCE_FAMILY_INT_KEYS, EditionStatus,
-    SourceFamily, is_positive_int,
+    ARXIV_REQUEST_DELAY_S, EDITIONS_DIRNAME, LEGACY_EDITION, PROMPTS_DIRNAME,
+    REDDIT_DEFAULT_LIMIT, SOURCE_FAMILY_INT_KEYS, EditionStatus, SourceFamily, is_positive_int,
 )
 
 # The source families the LLM proposes and new_edition live-checks. The rest of
@@ -65,19 +65,24 @@ ARXIV_MAX_RESULTS_CAP = 100  # a scaffold never asks arXiv for more per query
 SCAFFOLD_HN_MIN_POINTS = 40
 
 
-# LLM fragment key -> file under editions/<slug>/prompts/
-FRAGMENTS = {
-    "rank_subject": "rank.subject.md",
-    "rank_intro": "rank.intro.md",
-    "rank_reader": "rank.reader.md",
-    "rank_relevance": "rank.relevance.md",
-    "rank_sections": "rank.sections.md",
-    "write_subject": "write.subject.md",
-    "write_intro": "write.intro.md",
-    "write_voice": "write.voice.md",
-    "write_sections": "write.sections.md",
-    "write_theme_examples": "write.theme-examples.md",
-}
+# The edition whose files build_prompt shows the LLM as a worked example.
+REFERENCE_EDITION = LEGACY_EDITION
+
+
+def _fragment_map() -> dict[str, str]:
+    """LLM fragment key (``<stage>_<slot>``) -> file under editions/<slug>/prompts/.
+
+    Derived from the base templates' fragment slots, so a slot added to
+    prompts/rank.md or prompts/write.md is asked of the LLM and scaffolded too.
+    """
+    return {
+        f"{stage}_{slot.replace('-', '_')}": prompts.fragment_filename(stage, slot)
+        for stage in prompts.STAGES
+        for slot in prompts.fragment_slots(stage)
+    }
+
+
+FRAGMENTS = _fragment_map()
 
 
 class NewEditionError(Exception):
@@ -546,10 +551,11 @@ def render_review(slug: str, name: str, v: Validated | None, seed_urls: list[str
 
 
 def build_prompt(slug: str, name: str, describe: str, seed_urls: list[str], repo_root: Path) -> str:
-    ex = repo_root / "editions" / "agents"
+    ex_rel = f"{EDITIONS_DIRNAME}/{REFERENCE_EDITION}"
+    ex = repo_root / ex_rel
     frags = []
-    for p in sorted((ex / "prompts").glob("*.md")):
-        frags.append(f"### editions/agents/prompts/{p.name}\n\n```markdown\n{p.read_text().rstrip()}\n```")
+    for p in sorted((ex / PROMPTS_DIRNAME).glob(f"*{prompts.TEMPLATE_SUFFIX}")):
+        frags.append(f"### {ex_rel}/{PROMPTS_DIRNAME}/{p.name}\n\n```markdown\n{p.read_text().rstrip()}\n```")
     values = {
         "slug": slug,
         "name": name,
@@ -559,11 +565,12 @@ def build_prompt(slug: str, name: str, describe: str, seed_urls: list[str], repo
         "example_sources": (ex / "sources.yaml").read_text().rstrip(),
         "example_fragments": "\n\n".join(frags),
     }
-    template = (repo_root / "prompts" / "draft_edition.md").read_text()
+    draft = prompts.DRAFT_EDITION_TEMPLATE.relative_to(edition_mod.REPO_ROOT)
+    template = (repo_root / draft).read_text()
     try:
         return prompts.fill_slots(template, values)
     except EditionError as e:
-        raise NewEditionError(f"prompts/draft_edition.md: {e}") from e
+        raise NewEditionError(f"{draft.as_posix()}: {e}") from e
 
 
 # ------------------------------------------------------------------ main
@@ -627,7 +634,8 @@ def scaffold(
             client.close()
 
     shutil.copytree(template, dest)
-    (dest / "prompts" / "README.md").unlink(missing_ok=True)
+    fragments_dir = dest / PROMPTS_DIRNAME
+    (fragments_dir / "README.md").unlink(missing_ok=True)
     try:
         if proposal is not None:
             (dest / "edition.yaml").write_text(
@@ -635,7 +643,7 @@ def scaffold(
             )
             (dest / "sources.yaml").write_text(render_sources_yaml(name, proposal.sources, proposal.dropped))
             for key, fname in FRAGMENTS.items():
-                (dest / "prompts" / fname).write_text(proposal.prompts[key])
+                (fragments_dir / fname).write_text(proposal.prompts[key])
         else:
             text = (dest / "edition.yaml").read_text()
             for old, new in (
