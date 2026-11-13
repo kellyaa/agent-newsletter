@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from models import PrefilterItem, Section, item_source_prefix, parse_instant
 
@@ -83,6 +83,8 @@ def passes_recency(item: PrefilterItem, now: datetime) -> bool:
         dt = parse_instant(pub)
     except (ValueError, AttributeError):
         return True  # don't drop things we can't parse; let the LLM judge
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)  # zone-less => UTC, as parse_instant
     return (now - dt) <= timedelta(days=window)
 
 
