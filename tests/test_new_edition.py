@@ -239,7 +239,7 @@ def test_arxiv_requests_are_spaced(editions_dir, net, llm_stub):
     _routes(net)
     sleeps = []
     new_edition.scaffold("sp", "Sp", "d", [], use_llm=True, client=net, sleep=sleeps.append)
-    assert sleeps == [new_edition.ARXIV_DELAY_S, new_edition.ARXIV_DELAY_S]  # 3 queries -> 2 gaps
+    assert sleeps == [new_edition.ARXIV_REQUEST_DELAY_S, new_edition.ARXIV_REQUEST_DELAY_S]  # 3 queries -> 2 gaps
 
 
 def test_duplicate_ids_are_made_unique(editions_dir, net, llm_stub):

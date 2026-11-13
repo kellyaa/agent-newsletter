@@ -107,3 +107,19 @@ def reddit_rss_url(url: str, limit: int) -> str:
     query = dict(parse_qsl(parts.query))
     query["limit"] = str(limit)
     return urlunsplit(parts._replace(path=path, query=urlencode(query)))
+
+
+# The arXiv export API and the query fetch.fetch_arxiv sends. new_edition's
+# probe uses the same two, so it checks the query the pipeline will run.
+ARXIV_API_URL = "https://export.arxiv.org/api/query"
+
+
+def arxiv_query_params(query: str, max_results: int) -> dict[str, str | int]:
+    """Query params for :data:`ARXIV_API_URL`: newest submissions first."""
+    return {
+        "search_query": query,
+        "start": 0,
+        "max_results": max_results,
+        "sortBy": "submittedDate",
+        "sortOrder": "descending",
+    }

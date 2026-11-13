@@ -36,6 +36,7 @@ import prompts as prompts_mod
 from edition import Edition, EditionError
 from models import (
     SOURCE_BOOL_FLAGS,
+    SOURCE_FAMILY_INT_KEYS,
     SOURCE_POSITIVE_INT_KEYS,
     SOURCE_REQUIRED_KEYS,
     EditionStatus,
@@ -128,7 +129,7 @@ def _check_sources(sources: dict, result: LintResult) -> None:
             for flag in SOURCE_BOOL_FLAGS:
                 if flag in entry and not isinstance(entry[flag], bool):
                     result.errors.append(f"{where}: {flag} must be true or false")
-            for key in SOURCE_POSITIVE_INT_KEYS:
+            for key in (*SOURCE_POSITIVE_INT_KEYS, *SOURCE_FAMILY_INT_KEYS.get(SourceFamily(family), {})):
                 if key in entry and not is_positive_int(entry[key]):
                     result.errors.append(f"{where}: {key} must be a positive integer")
     if active == 0:
