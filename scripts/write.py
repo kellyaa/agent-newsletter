@@ -49,7 +49,7 @@ from models import (
 log = logging.getLogger("write")
 
 # Base template; main() renders it with the edition's fragments.
-PROMPT_PATH = REPO_ROOT / "prompts" / "write.md"
+PROMPT_PATH = prompts.template_path("write")
 
 
 def issues_dir() -> Path:

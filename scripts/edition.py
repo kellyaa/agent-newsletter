@@ -31,6 +31,7 @@ from models import (
     EDITIONS_DIRNAME,
     ISSUES_DIRNAME,
     LEGACY_EDITION,
+    PROMPTS_DIRNAME,
     STATE_DB_NAME,
     EditionStatus,
     Section,
@@ -130,7 +131,7 @@ class Edition:
             root=root,
             config=root / "edition.yaml",
             sources=root / "sources.yaml",
-            prompt_fragments=root / "prompts",
+            prompt_fragments=root / PROMPTS_DIRNAME,
             logs=LOGS_ROOT / self.slug,
         )
 

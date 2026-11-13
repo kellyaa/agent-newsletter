@@ -86,7 +86,7 @@ PAPER_POOL_MAX_AGE_DAYS = 7
 # Cached rubric hash. When prompts/rank.md changes, all cached papers scores
 # become stale (they were assigned under a different rubric), so we wipe them
 # and let rank.py re-score from scratch on the next run.
-RUBRIC_PATH = REPO_ROOT / "prompts" / "rank.md"
+RUBRIC_PATH = prompts.template_path("rank")  # the file rank.main renders
 RUBRIC_HASH_KEY = MetaKey.RUBRIC_HASH  # key in the edition's state.db `meta` table
 
 

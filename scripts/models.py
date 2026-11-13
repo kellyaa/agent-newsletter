@@ -164,6 +164,10 @@ def is_positive_int(value: object) -> bool:
 EDITIONS_DIRNAME = "editions"
 STATE_DB_NAME = "state.db"
 ISSUES_DIRNAME = "issues"
+# The folder name of both the base prompt templates (<repo>/prompts/) and an
+# edition's prompt fragments (editions/<slug>/prompts/). scripts/prompts.py owns
+# the rest of the prompt layout (tests/test_prompt_layout_single_source.py).
+PROMPTS_DIRNAME = "prompts"
 # One issue file per edition per day: editions/<slug>/issues/<YYYY-MM-DD>.md.
 # write/backfill create it, publish/replay_writer read it, reset_day deletes it,
 # and site/src/content.config.ts globs it (tests/test_issue_filename_single_source.py).

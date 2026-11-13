@@ -35,8 +35,9 @@ from models import ExitCode, RankDecision, ScoredItem, Section, Status
 
 log = logging.getLogger("rank")
 
-# Base template; main() renders it with the edition's fragments.
-PROMPT_PATH = REPO_ROOT / "prompts" / "rank.md"
+# Base template; main() renders it with the edition's fragments. prefilter
+# hashes the same file (its RUBRIC_PATH) to invalidate cached paper scores.
+PROMPT_PATH = prompts.template_path("rank")
 
 
 def ranked_path() -> Path:

@@ -141,10 +141,12 @@ def _is_live(result: LintResult) -> bool:
     return result.edition is not None and result.edition.status == EditionStatus.LIVE
 
 
-def _scan_todos(root: Path) -> list[str]:
-    """Files under *root* still holding a ``TODO`` placeholder from the template."""
+def _scan_todos(ed: Edition) -> list[str]:
+    """Files of *ed* still holding a ``TODO`` placeholder from the template."""
     hits: list[str] = []
-    files = [root / "edition.yaml", root / "sources.yaml", *sorted((root / "prompts").glob("*.md"))]
+    paths = ed.paths()
+    root = paths.root
+    files = [paths.config, paths.sources, *sorted(paths.prompt_fragments.glob(f"*{prompts_mod.TEMPLATE_SUFFIX}"))]
     for path in files:
         if not path.is_file():
             continue
@@ -179,7 +181,7 @@ def lint(slug: str) -> LintResult:
     result.sources = _load_sources(ed.paths().sources, result)
     _check_sources(result.sources, result)
 
-    todos = _scan_todos(ed.paths().root)
+    todos = _scan_todos(ed)
     if todos:
         msg = f"unfinished TODO placeholders from the template in: {', '.join(todos)}"
         (result.errors if ed.status == EditionStatus.LIVE else result.warnings).append(msg)
