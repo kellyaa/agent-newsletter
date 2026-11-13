@@ -31,7 +31,7 @@ from db import (
 )
 from llm import ContentFilterError, call_llm, ranker_config
 from llm_ids import alias_items, resolve_ids
-from models import ExitCode, RankDecision, ScoredItem, Section, Status
+from models import SCORE_MAX, SCORE_MIN, ExitCode, RankDecision, ScoredItem, Section, Status
 
 log = logging.getLogger("rank")
 
@@ -110,7 +110,7 @@ RANKER_OUTPUT_SCHEMA = {
                 "additionalProperties": False,
                 "properties": {
                     "id":    {"type": "string", "minLength": 1},
-                    "score": {"type": "integer", "minimum": 0, "maximum": 10},
+                    "score": {"type": "integer", "minimum": SCORE_MIN, "maximum": SCORE_MAX},
                     "tags":  {"type": "array", "items": {"type": "string"}, "maxItems": 5},
                     "why":   {"type": "string", "minLength": 1, "maxLength": 300},
                 },
@@ -185,7 +185,7 @@ def sanitize_rankings(rankings: list, sent_ids: set[str], label: str) -> list[di
             or item_id in seen
             or isinstance(score, bool)
             or not isinstance(score, int)
-            or not 0 <= score <= 10
+            or not SCORE_MIN <= score <= SCORE_MAX
         ):
             dropped += 1
             continue

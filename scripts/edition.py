@@ -32,6 +32,9 @@ from models import (
     ISSUES_DIRNAME,
     LEGACY_EDITION,
     PROMPTS_DIRNAME,
+    SCORE_MAX,
+    SCORE_MIN,
+    SECTION_SCORE_KEYS,
     STATE_DB_NAME,
     EditionStatus,
     Section,
@@ -237,6 +240,12 @@ def _validate_sections(path: Path, raw: Any) -> dict[str, dict[str, int]]:
         for k, v in rules.items():
             if not _is_int(v) or v < 0:
                 raise _fail(path, f"sections.{name}.{k} must be a non-negative integer")
+            if k in SECTION_SCORE_KEYS and not SCORE_MIN <= v <= SCORE_MAX:
+                raise _fail(
+                    path,
+                    f"sections.{name}.{k} must be between {SCORE_MIN} and {SCORE_MAX} "
+                    f"(the ranker's score range), got {v}",
+                )
         if rules["appendix_min"] > rules["featured_min"]:
             raise _fail(
                 path,
