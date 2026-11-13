@@ -54,12 +54,17 @@ def test_public_hostname_allowed(monkeypatch):
         assert client.get("https://example.com/feed").text == "ok"
 
 
-def test_unresolvable_hostname_not_blocked_by_guard(monkeypatch):
+def test_unresolvable_hostname_is_refused(monkeypatch):
+    # Fail-closed: a name that does not resolve here is refused, not let
+    # through. The connection would resolve the name again on its own, so an
+    # attacker-controlled resolver that NXDOMAINs this lookup and answers a
+    # private address at connect time must not slip past the guard.
     def boom(*a, **k):
         raise socket.gaierror("nope")
     monkeypatch.setattr(socket, "getaddrinfo", boom)
     with _client(lambda r: httpx.Response(200, text="ok")) as client:
-        assert client.get("https://nx.example/feed").text == "ok"
+        with pytest.raises(httpx.RequestError, match="does not resolve"):
+            client.get("https://nx.example/feed")
 
 
 def test_redirect_to_metadata_endpoint_refused(monkeypatch):

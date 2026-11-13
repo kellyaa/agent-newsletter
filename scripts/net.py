@@ -48,10 +48,25 @@ def reject_non_public_target(request: httpx.Request) -> None:
 
     httpx runs request hooks for every hop, so a public feed URL that redirects
     to loopback, RFC-1918, link-local (cloud metadata at 169.254.169.254) or
-    other non-global addresses is stopped before the connection is made. A host
-    that does not resolve is let through; the request itself then fails.
+    other non-global addresses is stopped before the connection is made.
     Set FETCH_ALLOW_PRIVATE_HOSTS=1 to disable the check (local test feeds,
     self-hosted internal sources).
+
+    Fail-closed on resolution failure. A host that does not resolve here is
+    refused rather than let through: letting it through was only safe on the
+    assumption that the connection would then fail too, but the connection
+    runs its *own* name resolution later, so an attacker-controlled resolver
+    that answers NXDOMAIN (or times out) for this lookup and a private address
+    at connect time would otherwise slip past the guard.
+
+    Residual risk — this guard resolves the name once, here, and httpx resolves
+    it again when it opens the socket. A resolver that returns a public address
+    to this lookup and a private one at connect time (classic DNS rebinding)
+    still reaches the private address. Closing that window needs the connection
+    pinned to the address vetted here (a custom transport resolver); until then
+    the guard raises the attacker's cost (two answers, right order) rather than
+    eliminating it. Sources are operator-configured, not reader-supplied, which
+    bounds the exposure.
     """
     if os.environ.get("FETCH_ALLOW_PRIVATE_HOSTS") == "1":
         return
@@ -61,8 +76,11 @@ def reject_non_public_target(request: httpx.Request) -> None:
     except ValueError:
         try:
             infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-        except socket.gaierror:
-            return
+        except socket.gaierror as exc:
+            raise httpx.RequestError(
+                f"refusing to fetch {host}: name does not resolve ({exc})",
+                request=request,
+            ) from exc
         addrs = [ipaddress.ip_address(info[4][0].split("%", 1)[0]) for info in infos]
     for addr in addrs:
         if not addr.is_global:

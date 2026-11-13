@@ -81,6 +81,28 @@ def test_opt_out_skips_dns_lookup_entirely(monkeypatch):
     assert net.reject_non_public_target(_req("https://anything.example/")) is None
 
 
+def test_unresolvable_name_fails_closed(monkeypatch):
+    # The connection opens its own socket and resolves the name again, so a
+    # name that fails to resolve in the hook but resolves to a private address
+    # at connect time would slip past a fail-open guard. Refuse instead.
+    def boom(*a, **k):
+        raise socket.gaierror("Name or service not known")
+    monkeypatch.setattr(socket, "getaddrinfo", boom)
+    with pytest.raises(httpx.RequestError, match="does not resolve"):
+        net.reject_non_public_target(_req("https://nx.attacker.example/feed"))
+
+
+def test_unresolvable_name_allowed_when_guard_disabled(monkeypatch):
+    # The opt-out short-circuits before any lookup, so an unresolvable name is
+    # not turned into a refusal when the operator has asked for private hosts.
+    monkeypatch.setenv("FETCH_ALLOW_PRIVATE_HOSTS", "1")
+
+    def boom(*a, **k):
+        raise socket.gaierror("Name or service not known")
+    monkeypatch.setattr(socket, "getaddrinfo", boom)
+    assert net.reject_non_public_target(_req("https://nx.example/feed")) is None
+
+
 def test_error_carries_the_request(monkeypatch):
     req = _req("http://10.9.8.7/feed")
     with pytest.raises(httpx.RequestError) as ei:
