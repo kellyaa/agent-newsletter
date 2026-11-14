@@ -8,7 +8,7 @@ Tests the full DB-level flow without any LLM calls:
   - demotion of rejected 'new' items to 'dropped'
   - candidates.json emission (grouped by section, prescored vs unscored)
   - pre-rank cap on unscored papers
-  - appendix retry eligibility
+  - appendix rows are sealed (not re-gated)
 """
 from __future__ import annotations
 
@@ -317,18 +317,15 @@ class TestPrefilterMainPrescored:
 
 
 # ---------------------------------------------------------------------------
-# main() — appendix retry eligibility
+# main() — appendix rows are not re-gated
 # ---------------------------------------------------------------------------
 
-class TestPrefilterMainAppendixRetry:
-    def test_appendix_item_below_max_appearances_re_enters(self, db_path, candidates_out, rubric_file, monkeypatch):
-        """appendix items with appearances < APPENDIX_MAX_APPEARANCES should be re-gated."""
+class TestPrefilterMainAppendixSealed:
+    def test_appendix_item_is_not_re_gated(self, db_path, candidates_out, rubric_file, monkeypatch):
+        """appendix rows are sealed: prefilter must leave them untouched (#704)."""
         import db as db_mod
-        from prefilter import APPENDIX_MAX_APPEARANCES
         conn = db_mod.connect(db_path)
-        # appearances = 1, max = 2 → eligible for retry
-        _insert_item(conn, "app1", status="appendix",
-                     appearances=APPENDIX_MAX_APPEARANCES - 1,
+        _insert_item(conn, "app1", status="appendix", appearances=1,
                      title="LLM agent scheduling system", raw_text="planning tool use",
                      published_at="2026-07-08T00:00:00Z")
         conn.close()
@@ -338,9 +335,7 @@ class TestPrefilterMainAppendixRetry:
         conn = db_mod.connect(db_path)
         row = conn.execute("SELECT status FROM items WHERE id='app1'").fetchone()
         conn.close()
-        # Should have been re-processed (may become candidate or stay appendix/dropped
-        # depending on gate results - but it was re-entered into the pipeline)
-        assert row["status"] in ("candidate", "dropped", "appendix")
+        assert row["status"] == "appendix"
 
 
 # ---------------------------------------------------------------------------

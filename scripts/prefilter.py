@@ -66,9 +66,6 @@ def __getattr__(name: str):
 # Recency windows, source priority and section-by-family live in gates.py
 # alongside the pure gate functions; re-exported here for existing callers.
 
-# Featured items are sealed; appendix items get up to 2 chances total.
-APPENDIX_MAX_APPEARANCES = 2
-
 # Multi-day candidate pool for the papers section (see issue #16).
 # Papers that pass prefilter sit in `status = candidate` for up to
 # PAPER_POOL_MAX_AGE_DAYS days from their published_at, competing each run
@@ -184,8 +181,8 @@ def main(now: datetime | None = None) -> int:
     unjudged = count_never_scored_expired(conn, Section.PAPERS)
     log.info("papers expired without ever being scored (cumulative): %d", unjudged)
 
-    # Fetch all `new` items, plus any existing `appendix` items eligible for retry.
-    items = load_prefilter_eligible(conn, APPENDIX_MAX_APPEARANCES)
+    # Fetch all `new` items; featured and appendix items are sealed at publish.
+    items = load_prefilter_eligible(conn)
     log.info("loaded %d items eligible for prefilter", len(items))
 
     if items:

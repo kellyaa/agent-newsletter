@@ -148,7 +148,7 @@ This shows the score the ranker assigned and the section. If `status` is `candid
 
 ### Scenario 2: "Item appeared twice in different issues"
 
-Cross-day dedup prevents re-featuring, but an appendix-only item can re-enter once:
+Cross-day dedup prevents re-featuring: featured and appendix items are both sealed as `published` at publish and never re-enter prefilter. To trace a URL:
 
 ```bash
 -- Find all entries for a URL across all statuses
@@ -161,7 +161,7 @@ ORDER BY date DESC;
 SQL
 ```
 
-If you see the same `id` appear in `runs` from two different dates with `featured` status, that's a bug — report it. If it's `featured` then `published` on the same date, that's correct (status transition). If it's `appendix` then `featured` on day 2, that's the appendix-retry mechanism working (rare, needs `appearances < limit`).
+If you see the same `id` appear in `runs` from two different dates with `featured` status, that's a bug — report it. If it's `featured` then `published` on the same date, that's correct (status transition). An item that is `appendix` and then `featured` on a later day is also a bug: there is no appendix-retry mechanism, because publish seals appendix rows.
 
 ### Scenario 3: "Prefilter was too tight yesterday"
 
@@ -207,7 +207,7 @@ Rising tokens-per-featured suggests the ranker is processing more candidates or 
 
 3. **`status = 'candidate'` doesn't mean "low quality"** — it means "not yet ranked." Papers stay `candidate` if they lost the cap on a heavy day (they'll re-compete tomorrow).
 
-4. **Watch the `appearances` column** — tells you if an item is re-entering the pool or stuck in the appendix.
+4. **Watch the `appearances` column** — tells you how many times fetch has re-seen an item.
 
 5. **`tokens_in` + `tokens_out` in `runs` is cumulative** — if a single run made the ranker call three times (papers, news, blogs) plus the writer once, you're looking at total tokens across all four calls.
 

@@ -372,16 +372,11 @@ _PREFILTER_COLUMNS = (
 )
 
 
-def load_prefilter_eligible(
-    conn: sqlite3.Connection, max_appendix_appearances: int
-) -> list[dict]:
-    """Rows prefilter gates this run: every ``new`` item, plus ``appendix``
-    items that have appeared fewer than `max_appendix_appearances` times."""
+def load_prefilter_eligible(conn: sqlite3.Connection) -> list[dict]:
+    """Rows prefilter gates this run: every ``new`` item. Appendix items are
+    sealed at publish like featured ones, so they never re-enter."""
     rows = conn.execute(
-        f"SELECT {_PREFILTER_COLUMNS} FROM items "
-        f"WHERE status = '{Status.NEW}' "
-        f"OR (status = '{Status.APPENDIX}' AND appearances < ?)",
-        (max_appendix_appearances,),
+        f"SELECT {_PREFILTER_COLUMNS} FROM items WHERE status = '{Status.NEW}'",
     ).fetchall()
     return [dict(r) for r in rows]
 
