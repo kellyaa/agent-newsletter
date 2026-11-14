@@ -167,7 +167,7 @@ def sanitize_rankings(rankings: list, sent_ids: set[str], label: str) -> list[di
     same id twice. Unchecked, a bad score crashes the whole rank stage in
     assign_statuses' sort, and a made-up id takes a featured slot and counts
     against the cap while its UPDATE matches no row. Dropping the entry sends
-    the real item (if any) through main()'s unscored → appendix fallback.
+    the real item (if any) through score_candidates' unscored fallback.
     Duplicates keep the first entry.
     """
     clean: list[dict] = []
@@ -218,10 +218,10 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     On a block we bisect: rank each half independently, so only the offending
     item goes unscored. Recursion bottoms out at a single item, which we skip.
 
-    A skipped item returns no ranking, so main()'s defensive fallback sweeps it
-    into the appendix with score 0 — it still appears in the issue, by title and
-    URL only, with no LLM-written summary. That's the pre-existing behaviour for
-    any unscored candidate; keeping it means we never silently lose an item.
+    A skipped item returns no ranking, so score_candidates' unscored fallback
+    handles it: a news/blogs item goes to the appendix with score 0 (title and
+    URL only, no LLM-written summary), and a paper stays in the pool unscored
+    to be sent again next run (#720). Either way we never silently lose an item.
 
     Separately, call_llm() can exhaust its retries and raise RuntimeError —
     truncation, a repetition loop, or content that even the tolerant parser in
@@ -231,9 +231,9 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     had already scored cleanly. We now catch it here, log it, and leave the
     whole batch unscored instead — the same appendix fallback that handles a
     content-filter block or an LLM omission. The run finishes and publishes
-    whatever sections *did* score; the failed section's items reappear next
-    run (unscored papers re-compete; news/blogs land in the appendix with no
-    summary rather than vanishing).
+    whatever sections *did* score; unscored papers stay 'candidate' and are
+    sent to the ranker again next run, or on a retry of the same day (#720);
+    news/blogs land in the appendix with no summary rather than vanishing.
     """
     try:
         # The model sees short per-call aliases (i1…iN), not 64-hex ids, so a
@@ -332,9 +332,11 @@ def score_candidates(
     buckets go to the LLM, each through :func:`rank_section` (content-filter
     bisection, per-section failure isolation, output sanitising);
     ``papers_prescored`` items keep their cached score and compete with the
-    fresh ones in :func:`assign_statuses`. Any candidate the ranker did not
-    score falls back to the appendix with score 0, so an item is never left
-    in limbo. ``ranked_path``, when given, receives the sanitised rankings
+    fresh ones in :func:`assign_statuses`. A news/blogs candidate the ranker
+    did not score falls back to the appendix with score 0; an unscored paper
+    gets no decision, so it stays in the pool (``candidate``, score NULL) and
+    is sent to the ranker again next run, until PAPER_AGE_OUT_SQL retires it
+    as ``expired_unjudged`` (#720). ``ranked_path``, when given, receives the sanitised rankings
     for debugging (the daily run only; backfill leaves live logs alone).
     Persisting and ``times_competed`` bookkeeping stay with the caller.
     tests/test_rank_scoring_single_source.py keeps backfill on this path.
@@ -389,10 +391,20 @@ def score_candidates(
 
     decisions = assign_statuses(scored_by_section)
 
-    # Defensive fallback: any candidate not scored → appendix with score 0.
-    # (Only triggers when the LLM omits an id it was sent. Prescored items
-    # are merged into scored_by_section directly so they can never end up here.)
+    # Defensive fallback for any candidate the ranker did not score (an omitted
+    # id, a content-filtered item, or a section whose call failed). Prescored
+    # items are merged into scored_by_section directly so they never land here.
+    #   - papers get no decision: they stay 'candidate' with score NULL, so the
+    #     next run (or a retry of this day) sends them to the ranker again, and
+    #     PAPER_AGE_OUT_SQL retires them as 'expired_unjudged' if they never
+    #     get a score. Sealing them as appendix lost them for good (#720).
+    #   - news/blogs have no pool, so they fall back to the appendix, score 0.
     missing = [iid for iid in by_id_section if iid not in decisions]
+    unscored_papers = [iid for iid in missing if by_id_section[iid] == Section.PAPERS]
+    if unscored_papers:
+        log.warning("%d papers not scored → left in the pool to re-compete",
+                    len(unscored_papers))
+    missing = [iid for iid in missing if by_id_section[iid] != Section.PAPERS]
     if missing:
         log.warning("%d candidates not scored → fallback to appendix", len(missing))
         for iid in missing:
