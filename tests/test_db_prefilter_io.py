@@ -45,14 +45,21 @@ def _row(conn, item_id):
     ).fetchone())
 
 
-def test_load_prefilter_eligible_takes_new_and_retryable_appendix(conn):
+def test_load_prefilter_eligible_takes_only_new(conn):
     _add(conn, "new", Status.NEW)
-    _add(conn, "app-retry", Status.APPENDIX, appearances=1)
-    _add(conn, "app-spent", Status.APPENDIX, appearances=2)
+    _add(conn, "app", Status.APPENDIX, appearances=1)
     _add(conn, "feat", Status.FEATURED)
-    rows = db_mod.load_prefilter_eligible(conn, 2)
-    assert sorted(r["id"] for r in rows) == ["app-retry", "new"]
+    rows = db_mod.load_prefilter_eligible(conn)
+    assert [r["id"] for r in rows] == ["new"]
     assert {"keyword_gate_bypass", "recency_days_override", "section_override"} <= set(rows[0])
+
+
+def test_publish_then_prefilter_never_offers_sealed_rows(conn):
+    """Guard for #704: whatever publish seals, prefilter must not re-offer."""
+    _add(conn, "app", Status.APPENDIX, appearances=1)
+    _add(conn, "feat", Status.FEATURED, appearances=1)
+    assert db_mod.publish_selected_items(conn, "2026-06-01") == 2
+    assert db_mod.load_prefilter_eligible(conn) == []
 
 
 def test_promote_to_candidates_sets_status_and_section(conn):

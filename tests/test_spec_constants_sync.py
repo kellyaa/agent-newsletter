@@ -28,9 +28,9 @@ def test_spec_pool_constants_match_code():
         assert int(m.group(1)) == getattr(mod, name), name
 
 
-def test_spec_appendix_retry_cap_matches_prefilter():
-    assert "capped at 2 total appearances" in SPEC
-    assert prefilter.APPENDIX_MAX_APPEARANCES == 2
+def test_spec_does_not_promise_appendix_retry():
+    assert "capped at 2 total appearances" not in SPEC
+    assert not hasattr(prefilter, "APPENDIX_MAX_APPEARANCES")
 
 
 def test_watchdog_default_stale_hours_documented():
