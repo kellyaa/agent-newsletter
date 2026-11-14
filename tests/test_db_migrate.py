@@ -65,6 +65,16 @@ class TestDbMigrate:
         conn.close()
         assert "published_date" in cols
 
+    def test_adds_last_competed_date(self, tmp_path):
+        import db as db_mod
+        db_path = tmp_path / "old.db"
+        self._create_old_db(db_path, ["last_competed_date"])
+        db_mod.init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
+        conn.close()
+        assert "last_competed_date" in cols
+
     def test_adds_all_three_missing_columns(self, tmp_path):
         import db as db_mod
         db_path = tmp_path / "old.db"

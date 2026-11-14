@@ -52,6 +52,8 @@ The core table tracking articles, papers, releases, and discussions fetched from
 | `tags` | TEXT | JSON array of tags (`["frameworks", "evals", ...]`) |
 | `one_line_why` | TEXT | Ranker's one-sentence justification |
 | `appearances` | INTEGER | Times this item has re-entered the candidate pool (cross-day dedup) |
+| `times_competed` | INTEGER | Papers pool: days the paper competed and stayed in the pool (at most one per run date); ages out at `PAPER_POOL_MAX_COMPETES` |
+| `last_competed_date` | TEXT | Run date `times_competed` was last bumped, so a retried day is not counted twice |
 
 #### Item Lifecycle: `status` Values
 

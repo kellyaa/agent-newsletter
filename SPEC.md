@@ -248,7 +248,7 @@ arXiv supply is highly bursty (0 papers Sat/Sun; 90+ on a heavy weekday) but the
 - Each daily run, `candidates.py` (`load_candidates_from_db()`) provides two papers buckets to `rank.py`: `papers` (unscored newcomers, capped at `PAPER_PRERANK_CAP = 100` via a recency × keyword-density heuristic) and `papers_prescored` (everything in the pool that already has a score). `rank.py` calls the LLM only on `papers`, then merges the LLM output with `papers_prescored` and applies `featured_min`/`appendix_min`/`cap=5` against the union. `prefilter.py` also writes a `candidates.json` debug artifact with the same content for manual inspection.
 - Papers with `score >= featured_min` that *lose the featured cap* on a heavy day stay at `status = 'candidate'` to re-compete the next day. Today (pre-issue-16) those papers get sealed to `appendix` and never reappear, even if they scored 9 or 10 — on a 30-paper day, the bottom 25 of the would-be-featured set are wasted. The pool flips this: a strong paper appears in the issue at most once, on whichever day it actually wins a featured slot, and is held back from the appendix until then.
 - Mid-band papers (`appendix_min <= score < featured_min`) still go to `appendix` (terminal). They're not strong enough to ever win featured, so leaving them in the pool would just bloat it without ever surfacing them. Papers with `score < appendix_min` go to `dropped` (same as today).
-- A per-row `times_competed` counter (incremented on each run where a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them.
+- A per-row `times_competed` counter (incremented once per run date on which a paper competes and stays in the pool) caps a single paper's pool lifetime independently of wall-clock age. Featured and appendix items are sealed, so the counter is gated on `status = 'candidate'` to make the increment a no-op for them. `last_competed_date` records the day counted, so retrying a failed day (several rank attempts on one `RUN_DATE`) counts one competition, not one per attempt.
 - The cached score is only valid against the rubric it was scored under. When the rendered rank prompt changes (the base `prompts/rank.md` or any `editions/<slug>/prompts/rank.*.md` fragment), prefilter detects the new hash and bulk-resets `score = NULL` for all papers candidates so they get re-scored on the next run. The previous hash is persisted in `.rubric_hash`.
 - Cost impact: papers ranking only runs on days with new arrivals, and only against those new arrivals (typically 5–30 abstracts on weekdays, 0 on weekends — the LLM call is skipped entirely on weekends). News and blogs are unchanged.
 
@@ -279,6 +279,7 @@ CREATE TABLE items (
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
   times_competed INTEGER NOT NULL DEFAULT 0, -- papers multi-day pool counter (issue #16)
+  last_competed_date TEXT,                   -- run date times_competed was last bumped; at most one bump per day
   published_date TEXT                        -- issue date publish.py (or backfill --apply-published) promoted it in; lets --force restore pool papers (#326, #705)
 );
 
