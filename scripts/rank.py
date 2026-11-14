@@ -248,7 +248,7 @@ def rank_section(section: str, items: list[dict], rubric: str) -> list[dict]:
     except ContentFilterError:
         if len(items) == 1:
             log.warning(
-                "%s: content-filtered item left unscored (appendix fallback): %r",
+                "%s: content-filtered item left unscored: %r",
                 section, items[0].get("title"),
             )
             return []
@@ -334,7 +334,8 @@ def score_candidates(
     ``papers_prescored`` items keep their cached score and compete with the
     fresh ones in :func:`assign_statuses`. Any candidate the ranker did not
     score falls back to the appendix with score 0, so an item is never left
-    in limbo. ``ranked_path``, when given, receives the sanitised rankings
+    in limbo, except papers, which stay in the pool unscored to re-compete.
+    ``ranked_path``, when given, receives the sanitised rankings
     for debugging (the daily run only; backfill leaves live logs alone).
     Persisting and ``times_competed`` bookkeeping stay with the caller.
     tests/test_rank_scoring_single_source.py keeps backfill on this path.
@@ -389,10 +390,20 @@ def score_candidates(
 
     decisions = assign_statuses(scored_by_section)
 
-    # Defensive fallback: any candidate not scored → appendix with score 0.
-    # (Only triggers when the LLM omits an id it was sent. Prescored items
-    # are merged into scored_by_section directly so they can never end up here.)
+    # Defensive fallback: any news/blog candidate not scored → appendix with
+    # score 0. (Triggers when the LLM omits an id it was sent, or its section
+    # call failed. Prescored items are merged into scored_by_section directly
+    # so they can never end up here.) Unscored papers get no decision: they
+    # stay candidate with score NULL, re-compete on the next run or retry, and
+    # PAPER_AGE_OUT_SQL retires them if they never get scored (#720).
     missing = [iid for iid in by_id_section if iid not in decisions]
+    unscored_papers_left = [i for i in missing if by_id_section[i] == Section.PAPERS.value]
+    if unscored_papers_left:
+        log.warning(
+            "%d papers not scored → left in the pool to re-compete",
+            len(unscored_papers_left),
+        )
+    missing = [i for i in missing if by_id_section[i] != Section.PAPERS.value]
     if missing:
         log.warning("%d candidates not scored → fallback to appendix", len(missing))
         for iid in missing:

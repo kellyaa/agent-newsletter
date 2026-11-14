@@ -278,6 +278,51 @@ class TestRankMainFallback:
         assert rows["blog1"]["status"] == "appendix"
         assert rows["blog1"]["score"] == 0
 
+    def test_unscored_papers_stay_in_pool_when_ranker_fails_then_rescore_on_retry(
+        self, db_path, prompt_path, monkeypatch
+    ):
+        """A failed papers call must not seal papers as appendix/0: they stay
+        unscored candidates (not bumped), so a retry sends them to the ranker
+        again. news keeps the appendix fallback. Refs #720."""
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        _insert_candidate(conn, "p0", section="papers")
+        _insert_candidate(conn, "p1", section="papers")
+        _insert_candidate(conn, "n0", section="news")
+        conn.close()
+
+        def failing(prompt, label):
+            if label == "papers":
+                raise RuntimeError("endpoint down")
+            return [{"id": "n0", "score": 9, "tags": [], "why": "ok"}]
+
+        with patch("rank.invoke_ranker", side_effect=failing):
+            assert _run_main(db_path, prompt_path, monkeypatch) == 0
+
+        conn = db_mod.connect(db_path)
+        rows = {r["id"]: r for r in conn.execute(
+            "SELECT id, status, score, times_competed FROM items").fetchall()}
+        conn.close()
+        for pid in ("p0", "p1"):
+            assert rows[pid]["status"] == "candidate"
+            assert rows[pid]["score"] is None
+            assert rows[pid]["times_competed"] == 0
+
+        # Retry with a healthy endpoint: the papers are scored this time.
+        def healthy(prompt, label):
+            return [{"id": "p0", "score": 9, "tags": [], "why": "ok"},
+                    {"id": "p1", "score": 9, "tags": [], "why": "ok"}]
+
+        with patch("rank.invoke_ranker", side_effect=healthy):
+            assert _run_main(db_path, prompt_path, monkeypatch) == 0
+
+        conn = db_mod.connect(db_path)
+        scores = {r["id"]: r["score"] for r in conn.execute(
+            "SELECT id, score FROM items").fetchall()}
+        conn.close()
+        assert scores["p0"] == 9
+        assert scores["p1"] == 9
+
 
 # ---------------------------------------------------------------------------
 # main() — times_competed bump for papers
