@@ -13,6 +13,7 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 ### Running and Monitoring
 
 - **[Operations Runbook](./operations-runbook.md)** — Daily operations, incident response, common tasks
+- **[Operations and Maintenance](./operations-and-maintenance.md)** — Detailed guide to maintaining the pipeline, common maintenance tasks
 - **[Run Strategies and Recovery](./run-strategies-and-recovery.md)** — Different run modes, failure scenarios, recovery steps
 - **[Monitoring and Alerting Integration](./monitoring-and-alerting-integration.md)** — Watchdog behavior, notification channels, health checks
 - **[Multi-Edition Operations](./multi-edition-operations.md)** — Managing multiple live editions, cost accounting, runtime
@@ -77,12 +78,15 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 - **[Review Rubric](./review-rubric.md)** — How to evaluate pull requests and contributions
 - **[Quality](./quality.md)** — Quality standards, test coverage requirements, linting rules
 - **[AGENTS.md](../AGENTS.md)** — Rules for AI agents; import boundaries, constants locations, contracts
+- **[Agent Task Traceability](./agent-tasks/README.md)** — How to trace agent work from issue to merged PR
 
 ## Strategic Resources
 
 - **[Strategy](./strategy.md)** — Long-term vision, roadmap context, decision log
 - **[ROADMAP.md](../ROADMAP.md)** — Near-term priorities, maintainer decisions, milestones
 - **[AI Ops Runbook](./ai-ops-runbook.md)** — Managing AI agent workflows, decision logs, cost analysis
+- **[Reflections](./reflections/README.md)** — Lessons learned log; what past incidents and reviews taught us
+- **[Public Metrics](./metrics/README.md)** — Pipeline metrics and how they're calculated
 
 ## Advanced Topics
 
