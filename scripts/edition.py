@@ -38,6 +38,7 @@ from models import (
     STATE_DB_NAME,
     EditionStatus,
     Section,
+    SourceFamily,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -326,6 +327,81 @@ def load(slug: str, editions_dir: Path | None = None) -> Edition:
         tags=tags,
         sections=sections,
     )
+
+
+@dataclass(frozen=True)
+class SourcesFile:
+    """The structural read of one ``sources.yaml`` (see :func:`read_sources`).
+
+    ``fatal`` is set when the file is unusable as a whole (missing, invalid
+    YAML, top level not a mapping); then there are no families. ``problems``
+    name the parts that were skipped: an unknown family, a family that is not
+    a list, an entry that is not a mapping. ``families`` keeps only known
+    families, in ``SourceFamily`` order, as ``(original index, entry)`` pairs
+    for the entries that are mappings, so lint can still point at ``rss[3]``.
+    """
+    fatal: str | None
+    problems: tuple[str, ...]
+    families: tuple[tuple[str, tuple[tuple[int, dict], ...]], ...]
+
+    def entries(self, family: str) -> tuple[tuple[int, dict], ...]:
+        for name, items in self.families:
+            if name == family:
+                return items
+        return ()
+
+    def as_dict(self) -> dict[str, list[dict]]:
+        """``{family: [entry, ...]}`` with only the entries that are mappings."""
+        return {name: [e for _i, e in items] for name, items in self.families}
+
+
+def read_sources(path: Path) -> SourcesFile:
+    """Read ``path`` (an edition's ``sources.yaml``) and check its shape.
+
+    The only place a ``sources.yaml`` is parsed: fetch walks ``as_dict()``,
+    check_edition reports ``fatal`` / ``problems`` as lint errors, and
+    dead_sources labels the same entries, so lint, fetch and the watchdog can
+    never disagree about which sources exist. An empty or comments-only file
+    is valid and has no sources. Never raises for a bad file.
+    """
+    def fatal(msg: str) -> SourcesFile:
+        return SourcesFile(fatal=msg, problems=(), families=())
+
+    if not path.is_file():
+        return fatal(f"{path}: missing")
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as e:
+        return fatal(f"{path}: unreadable: {e}")
+    except yaml.YAMLError as e:
+        return fatal(f"{path}: invalid YAML: {e}")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        return fatal(f"{path}: top level must be a mapping of source families")
+
+    known = [f.value for f in SourceFamily]
+    problems: list[str] = []
+    unknown = sorted(set(map(str, raw)) - set(known))
+    if unknown:
+        problems.append(f"sources.yaml: unknown source families {unknown} (allowed: {known})")
+    families: list[tuple[str, tuple[tuple[int, dict], ...]]] = []
+    for family in known:
+        value = raw.get(family)
+        if value is None:
+            families.append((family, ()))
+            continue
+        if not isinstance(value, list):
+            problems.append(f"sources.yaml: {family!r} must be a list")
+            continue
+        kept: list[tuple[int, dict]] = []
+        for i, entry in enumerate(value):
+            if isinstance(entry, dict):
+                kept.append((i, entry))
+            else:
+                problems.append(f"sources.yaml: {family}[{i}] must be a mapping")
+        families.append((family, tuple(kept)))
+    return SourcesFile(fatal=None, problems=tuple(problems), families=tuple(families))
 
 
 @lru_cache(maxsize=None)

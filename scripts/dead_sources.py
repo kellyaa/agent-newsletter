@@ -36,8 +36,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
-
 import edition
 import logsetup
 from db import content_root, load_source_fetch_outcomes
@@ -51,21 +49,16 @@ DEFAULT_DAYS = 7
 def configured_thresholds(sources_file: Path, default: int) -> dict[str, int] | None:
     """``{label: dead_after_days}`` for every source in `sources_file`.
 
-    None when the file is missing or unreadable. Labels come from
-    ``models.source_label``, the same function fetch records them with.
+    None when the file is unusable (missing, unreadable, not a mapping). The
+    entries are the ones fetch walks, via ``edition.read_sources``, and labels
+    come from ``models.source_label``, the same function fetch records them with.
     """
-    try:
-        data = yaml.safe_load(sources_file.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return None
-    if not isinstance(data, dict):
+    sf = edition.read_sources(sources_file)
+    if sf.fatal:
         return None
     out: dict[str, int] = {}
     for family in SourceFamily:
-        entries = data.get(family.value)
-        for entry in entries if isinstance(entries, list) else []:
-            if not isinstance(entry, dict):
-                continue
+        for _i, entry in sf.entries(family.value):
             label = source_label(family, entry)
             value = entry.get("dead_after_days")
             if value is not None and not is_positive_int(value):

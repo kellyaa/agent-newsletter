@@ -19,7 +19,6 @@ from urllib.parse import urlsplit
 
 import feedparser
 import httpx
-import yaml
 
 import edition
 import logsetup
@@ -523,9 +522,13 @@ def sources_path() -> Path:
     return edition.current().paths().sources
 
 
-def load_sources(path: Path | None = None) -> dict:
-    with open(path or sources_path()) as f:
-        return yaml.safe_load(f)
+def load_sources(path: Path | None = None) -> edition.SourcesFile:
+    """Read ``sources.yaml`` through :func:`edition.read_sources`, the one parser.
+
+    fetch walks ``.as_dict()``: exactly the families and entries check_edition
+    accepts, so a part that lint reports is skipped here, never a crash.
+    """
+    return edition.read_sources(path or sources_path())
 
 
 # Section names come from models.Section so a sources.yaml `section:` override
@@ -657,7 +660,15 @@ def main(now: datetime | None = None) -> int:
     init_db()
     if now is None:
         now = datetime.now(timezone.utc)
-    sources = load_sources()
+    sf = load_sources()
+    if sf.fatal:
+        # Nothing to fetch: say why, instead of a traceback from .get() on None.
+        log.error("fetch: %s; fix it (uv run scripts/check_edition.py <slug>)", sf.fatal)
+        return ExitCode.BAD_CONFIG
+    for problem in sf.problems:
+        # Skipped like a failing source: the other sources still run.
+        log.warning("%s; skipped (check_edition reports this as an error)", problem)
+    sources = sf.as_dict()
     conn = connect()
 
     existing = _already_fetched_today(conn)

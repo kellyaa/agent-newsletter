@@ -10,8 +10,9 @@ Read the "Contract" section of the feed-sources guide first. Failure behaviour i
 ## 1. Architecture in one page
 
 ```
-editions/<slug>/sources.yaml ──► fetch.load_sources()
-                                   │
+editions/<slug>/sources.yaml ──► fetch.load_sources() ──► edition.read_sources()
+                                   │   (the one parser; unusable file => exit 3,
+                                   │    a bad family/entry is skipped with a warning)
                     iter_collectors(sources, http_client)
                       one lazy generator per source, overrides stamped on
                                    │

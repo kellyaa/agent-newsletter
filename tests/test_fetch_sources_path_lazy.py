@@ -56,7 +56,9 @@ def test_sources_path_follows_edition_env_at_call_time(monkeypatch):
 def test_load_sources_reads_an_explicit_path(tmp_path):
     p = tmp_path / "sources.yaml"
     p.write_text("rss:\n  - id: a\n    url: https://example.com/f\n")
-    assert fetch.load_sources(p) == {"rss": [{"id": "a", "url": "https://example.com/f"}]}
+    sf = fetch.load_sources(p)
+    assert sf.fatal is None and sf.problems == ()
+    assert sf.as_dict()["rss"] == [{"id": "a", "url": "https://example.com/f"}]
 
 
 def test_check_edition_does_not_touch_the_environment():
