@@ -384,10 +384,10 @@ class TestRankWithOptionalLlm:
         decisions = bf.rank_with_optional_llm(None, grouped)
 
         assert "ghost" not in decisions
-        # A null-score entry is dropped; u1 then takes the same unscored ->
-        # appendix fallback as the daily rank run (rank.score_candidates).
-        assert decisions["u1"]["status"] == "appendix"
-        assert decisions["u1"]["score"] == 0
+        # A null-score entry is dropped; u1 then takes the same unscored
+        # fallback as the daily rank run (rank.score_candidates): a paper gets
+        # no decision and stays in the pool to be scored again (#720).
+        assert "u1" not in decisions
         assert decisions["u2"]["score"] == 8
 
 

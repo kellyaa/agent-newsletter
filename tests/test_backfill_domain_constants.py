@@ -78,9 +78,10 @@ def test_rank_with_optional_llm_ranks_every_models_section(monkeypatch):
     assert set(captured) == {s.value for s in Section}
     assert sorted(it["id"] for it in captured[Section.PAPERS]) == ["papers-1", "pp"]
     # fake_assign decided nothing, so every candidate takes the shared
-    # unscored -> appendix fallback, keyed by its models.Section.
+    # unscored fallback, keyed by its models.Section: news/blogs go to the
+    # appendix, papers get no decision and stay in the pool (#720).
     assert {iid: d["section"] for iid, d in decisions.items()} == {
-        **{f"{s.value}-1": s.value for s in Section}, "pp": Section.PAPERS.value,
+        f"{s.value}-1": s.value for s in Section if s != Section.PAPERS
     }
     assert {d["status"] for d in decisions.values()} == {Status.APPENDIX}
 
