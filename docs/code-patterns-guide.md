@@ -2,42 +2,34 @@
 
 Reference for patterns used throughout the project. Use these when writing new code or understanding existing code.
 
+`scripts/` is not a Python package: scripts import each other as top-level modules (`import edition`, `from db import connect`). A script run as `uv run scripts/x.py` has `scripts/` on `sys.path`, and `tests/conftest.py` adds it for tests. Never write `from scripts.x import ...`; it fails with `ModuleNotFoundError: No module named 'edition'`. The examples below are checked against the real code by `tests/test_docs_code_examples.py`.
+
 ---
 
 ## Database Access Pattern
 
 **Where:** All stage scripts (`fetch.py`, `prefilter.py`, `rank.py`, etc.)
 
-**Pattern:** Open connection → read/write → commit → close (via context manager)
+**Pattern:** `init_db()` → `connect()` → call a `db.py` helper → close. SQL lives in `scripts/db.py`; stages call its helpers rather than writing statements inline.
 
 ```python
-import sqlite3
-from scripts.db import init_db
+from db import connect, count_items_in_status, init_db
+from models import Status
 
-# Initialize (creates tables if missing, runs schema migrations)
-init_db(slug, db_path)
-
-# Read
-with sqlite3.connect(db_path) as conn:
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM items WHERE status = 'candidate'").fetchall()
-    for row in rows:
-        print(row["title"])
-
-# Write
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        "UPDATE items SET score = ? WHERE id = ?",
-        (score, item_id)
-    )
-    conn.commit()
+# Path defaults to db.db_path(): the selected edition's state.db under CONTENT_ROOT
+init_db()            # creates tables if missing, runs migrations
+conn = connect()     # WAL, busy timeout, row_factory = sqlite3.Row
+try:
+    pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
+finally:
+    conn.close()
 ```
 
 **Key rules:**
-- Always use context manager (`with`) for auto-close on error
-- Set `row_factory = sqlite3.Row` to access columns by name, not index
-- Call `conn.commit()` explicitly; context manager doesn't auto-commit on error
+- New SQL goes in a `db.py` helper (most helpers commit); stages don't run statements inline
+- Status and section values come from `models.Status` / `models.Section`, never string literals
 - Use parameterized queries (`?` placeholders) to prevent SQL injection
+- Pass a path (`init_db(path)`, `connect(path)`) only for a throwaway DB (tests, `backfill` sandbox, `check_edition` dry run)
 
 See [scripts/db.py](../scripts/db.py) for schema and helpers.
 
@@ -50,27 +42,25 @@ See [scripts/db.py](../scripts/db.py) for schema and helpers.
 **Pattern:** Load via `scripts/edition.py`, validate strictly
 
 ```python
-from scripts.edition import Edition
+import edition
 
-# Load and validate
-edition = Edition.load(slug)  # from $EDITION env var
-# or
-edition = Edition.from_path(Path("editions/agents"))
+ed = edition.current()        # the edition named by $EDITION (no default), cached
+# or, for a specific slug:
+ed = edition.load("agents")   # raises edition.EditionError if invalid
 
 # Access fields
-print(edition.reader_profile)
-print(edition.featured_min["papers"])
-print(edition.sources)
-
-# Safe defaults
-tags = edition.tags or []
+print(ed.reader_profile)
+print(ed.section_rules()["papers"]["featured_min"])
+print(ed.paths().sources)     # editions/<slug>/sources.yaml
+keyword_re = ed.keyword_re()  # the keyword gate as one pattern
 ```
 
 **Key rules:**
-- Load happens in one place; validation is strict
-- Raises on invalid YAML or missing required fields
+- Load happens in one place (`edition.load`); validation is strict
+- Raises `EditionError` on invalid YAML or missing required fields
+- Resolve the edition when called (`edition.current()`), never into a module-level constant
 - Never hard-code edition-specific logic (e.g., `if slug == "agents"`)
-- Tests use `--no-llm` editions or fixtures
+- Tests run against the real `agents` edition (`tests/conftest.py` sets `EDITION`) or a temp edition dir
 
 See [scripts/edition.py](../scripts/edition.py) and [tests/conftest.py](../tests/conftest.py) for fixtures.
 
@@ -78,52 +68,28 @@ See [scripts/edition.py](../scripts/edition.py) and [tests/conftest.py](../tests
 
 ## Item Data Model Pattern
 
-**Where:** When you construct or parse an `Item`
+**Where:** When you pass an item between stages
 
-**Pattern:** Use `scripts/models.py` TypedDict; validate shape
+**Pattern:** Use the stage-boundary TypedDicts in `scripts/models.py`: `ItemRow` (an `items` row), `PrefilterItem`, `CandidateItem`, `ScoredItem`, `RankDecision`, `FeaturedItem`, `AppendixItem`.
 
 ```python
-from scripts.models import Item
+from models import ItemRow, Status, item_source
 
-# Construct
-item: Item = {
-    "id": sha256_of_canonical_url,
-    "source": "rss:simonw",
-    "url": url,
-    "canonical_url": canonical,
-    "title": title,
-    "author": author or None,
-    "published_at": published_iso8601 or None,
-    "fetched_at": datetime.now().isoformat(),
-    "raw_text": abstract or summary[:500],
-    "score": None,  # set by ranker
-    "tags": None,
-    "section": "blogs",  # set by prefilter
-    "section_override": None,
-    "keyword_gate_bypass": False,
-    "recency_days_override": None,
-    "why": None,
-    "status": "new",
-    "first_seen_date": today,
-    "last_seen_date": today,
-    "appearances": 1,
-    "times_competed": 0,
-    "published_date": None,
+row: ItemRow = {
+    "id": item_id,                         # urls.url_id(url)
+    "source": item_source(family, entry),  # e.g. "rss:simonw"; never spelled inline
+    "status": Status.NEW,
+    # ...
 }
-
-# Insert into DB
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        "INSERT OR IGNORE INTO items VALUES (...)",
-        tuple(item.values())
-    )
 ```
 
+New items enter the DB only through `fetch.upsert_items` → `db.upsert_item`, which sets `status = 'new'`, `appearances = 1` and the first/last-seen dates, and merges re-fetched items (`ON CONFLICT(id)`).
+
 **Key rules:**
-- Use TypedDict from `scripts/models.py`, not raw dicts
-- `score`, `tags`, `why`, `section` are set upstream (nullable until then)
-- `status` lifecycle: `new` → `candidate` → `featured`/`appendix`/`published`/`dropped`
-- Always validate URL canonicalization before storing
+- Use the TypedDicts from `scripts/models.py` at stage boundaries
+- `score`, `tags`, `why`, `section` are set downstream (nullable until then); `tags` is read and written only via `models.decode_tags` / `encode_tags`
+- `status` lifecycle: `new` → `candidate` → `featured`/`appendix` → `published`, or `dropped` / `expired_unjudged`
+- URL policy (canonicalization, ids, scheme allowlist) is `scripts/urls.py` only
 
 See [scripts/models.py](../scripts/models.py) for all TypedDicts.
 
@@ -133,30 +99,23 @@ See [scripts/models.py](../scripts/models.py) for all TypedDicts.
 
 **Where:** Any code that needs config from `.env` or runtime env
 
-**Pattern:** Use `os.getenv()` with explicit defaults; document in README
+**Pattern:** Read each variable in the one module that owns it, at call time, never into a module-level constant
 
 ```python
-import os
-from pathlib import Path
+import edition
+from db import content_root
+from llm import ranker_config
 
-# LLM credentials (required)
-LLM_BASE_URL = os.getenv("LLM_BASE_URL")
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-if not LLM_BASE_URL:
-    raise RuntimeError("LLM_BASE_URL not set; see README § LLM configuration")
-
-# Timeouts (optional, with defaults)
-RANKER_TIMEOUT_S = int(os.getenv("RANKER_TIMEOUT_S", "1800"))
-WRITER_TIMEOUT_S = int(os.getenv("WRITER_TIMEOUT_S", "1200"))
-
-# Edition (from $EDITION; required for most scripts)
-EDITION_SLUG = os.getenv("EDITION")
-if not EDITION_SLUG:
-    raise RuntimeError("EDITION env var not set")
+slug = edition.selected_slug()   # $EDITION; raises EditionError if unset (no default)
+root = content_root()            # $CONTENT_ROOT, else cwd
+cfg = ranker_config()            # RANKER_MODEL / RANKER_TIMEOUT_S / RANKER_MAX_TOKENS
+# LLM_BASE_URL / LLM_API_KEY / LLM_EXTRA_HEADERS are read inside llm.py only
 ```
 
 **Key rules:**
-- Required vars: raise RuntimeError with helpful message if missing
+- One reader per variable: role settings via `llm.ranker_config()` / `writer_config()`, the edition via `edition.current()` / `selected_slug()`, the content root via `db.content_root()`
+- Read when called, so a test or a backfill that changes the env is honoured
+- Required vars: raise with a helpful message if missing
 - Optional vars: provide sensible defaults
 - Document all env vars in `.env.template` and README.md
 - Never read `.env` file directly; use environment variables (`.env` is sourced by shell before Python runs)
@@ -173,39 +132,33 @@ See [README.md § LLM configuration](../README.md#llm-configuration-env) and `.e
 **Pattern:** Use `scripts/llm.py`'s `call_llm()`, never `openai` directly
 
 ```python
-from scripts.llm import call_llm
-from scripts.models import RankerOutput
+from llm import call_llm, writer_config
 
-# Plain text response
-response: str = call_llm(
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What is an agent?"},
-    ]
-)
+MY_SCHEMA = {
+    "type": "object",
+    "properties": {"score": {"type": "integer"}, "reasoning": {"type": "string"}},
+    "required": ["score", "reasoning"],
+    "additionalProperties": False,
+}
 
-# Structured output (validates against schema)
-from typing import TypedDict
-
-class MyResponse(TypedDict):
-    score: int
-    tags: list[str]
-    reasoning: str
-
-response: MyResponse = call_llm(
-    messages=[...],
-    json_schema=MyResponse,
-    timeout_seconds=1800,  # override default
-    max_tokens=32000,      # override default
+cfg = writer_config()            # per call, never a module-level constant
+response: dict = call_llm(
+    prompt,                      # a single user message
+    MY_SCHEMA,                   # a JSON Schema dict
+    "my_response",               # schema name
+    model=cfg.model,
+    timeout_s=cfg.timeout_s,
+    max_tokens=cfg.max_tokens,
+    label="my-stage",
 )
 ```
 
 **Key rules:**
-- Import `call_llm` from `scripts/llm.py` only
-- Pass `json_schema` as a TypedDict for structured output
-- All configuration comes from environment variables (set in `.env`)
-- Retries are automatic; do not implement your own
-- Log all calls (automatic via `llm.py`)
+- Import `call_llm` from `llm` only; it always returns a dict (there is no plain-text mode)
+- The schema is a JSON Schema dict; `call_llm` checks the reply is a JSON object, callers sanitise fields
+- Model, timeout and token cap come from `ranker_config()` / `writer_config()`
+- One retry on a bad reply is automatic; do not add your own. Catch `ContentFilterError` if you can split the batch
+- Echoed ids go through `llm_ids.alias_items` / `resolve_ids`
 
 See [scripts/llm.py](../scripts/llm.py) and [docs/llm-integration-guide.md](llm-integration-guide.md).
 
@@ -218,34 +171,29 @@ See [scripts/llm.py](../scripts/llm.py) and [docs/llm-integration-guide.md](llm-
 **Pattern:** Fixtures + arrange-act-assert
 
 ```python
+from datetime import datetime, timezone
+
 import pytest
-from pathlib import Path
-from scripts.prefilter import recency_gate
+from gates import passes_recency
+
+NOW = datetime(2026, 11, 2, 10, tzinfo=timezone.utc)  # pin the clock
 
 @pytest.fixture
 def sample_item():
     return {
         "id": "abc123",
-        "source": "rss:simonw",
+        "source": "rss:simonw",                 # rss => 30-day window
         "published_at": "2026-11-01T10:00:00Z",
         "fetched_at": "2026-11-02T10:00:00Z",
         # ...
     }
 
-def test_recency_gate_recent_item_passes(sample_item):
-    # Arrange
-    result = recency_gate(
-        item=sample_item,
-        family="rss",
-        recency_days=30,  # 30 days for RSS
-    )
-    # Act & Assert
-    assert result is True
+def test_recent_rss_item_passes(sample_item):
+    assert passes_recency(sample_item, NOW) is True
 
-def test_recency_gate_old_item_fails(sample_item):
+def test_old_rss_item_fails(sample_item):
     sample_item["published_at"] = "2026-09-01T10:00:00Z"  # 2 months old
-    result = recency_gate(sample_item, "rss", 30)
-    assert result is False
+    assert passes_recency(sample_item, NOW) is False
 ```
 
 **Key rules:**
@@ -266,10 +214,13 @@ See [docs/testing-patterns-guide.md](testing-patterns-guide.md) for detailed pat
 **Pattern:** Throwaway DB, fixture data, verify output
 
 ```python
-import pytest
-from pathlib import Path
-import subprocess
+import os
+import shutil
 import sqlite3
+import subprocess
+
+import pytest
+from db import init_db
 
 @pytest.fixture
 def tmp_pipeline(tmp_path, sample_edition_dir):
@@ -280,7 +231,7 @@ def tmp_pipeline(tmp_path, sample_edition_dir):
     
     # Create throwaway DB
     db_path = edition_path / "state.db"
-    init_db("test", str(db_path))
+    init_db(db_path)
     
     return tmp_path, db_path
 
@@ -321,27 +272,22 @@ See [tests/e2e/](../tests/e2e/) for examples.
 **Pattern:** Use `scripts/prompts.py` to merge base + fragments
 
 ```python
-from scripts.prompts import render_rank_prompt
-from scripts.edition import Edition
+import edition
+import prompts
 
-edition = Edition.load("agents")
+ed = edition.load("agents")
 
-# Render the rank prompt with edition-specific fragments
-prompt_text = render_rank_prompt(edition)
-
-# Pass to LLM
-response = call_llm(
-    messages=[
-        {"role": "system", "content": "You are a ranking assistant."},
-        {"role": "user", "content": prompt_text},
-    ],
-    json_schema=RankerOutput,
-)
+# Render the rank prompt (prompts/rank.md) with the edition's fragments
+rubric = prompts.render("rank", ed)
+# render_and_log also writes it to logs/<slug>/rank.rendered.md
+rubric = prompts.render_and_log("rank", ed)
 ```
+
+`rank.py` then appends the candidates JSON and passes the result to `call_llm` with `rank.RANKER_OUTPUT_SCHEMA` (see the LLM Call Pattern above).
 
 **Key rules:**
 - Never hand-assemble prompts from file reads
-- Use `scripts/prompts.py` helpers (`render_rank_prompt`, `render_write_prompt`)
+- Use `prompts.render(stage, ed)` / `render_and_log`; file names come from `prompts.template_path` / `fragment_filename`
 - Edition fragments override base templates via `{{slot}}` substitution
 - Changes to `prompts/rank.md` invalidate cached paper scores (hash check in prefilter)
 
@@ -399,18 +345,19 @@ with sqlite3.connect(db_path) as conn:
 
 ```python
 import logging
-from scripts.llm import call_llm
+from llm import ContentFilterError, call_llm
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger("my-stage")
 
 try:
-    response = call_llm(messages=[...], json_schema=RankerOutput)
-except ValueError as e:
-    logger.error(f"Ranker returned invalid JSON: {e}")
-    raise RuntimeError("Ranker validation failed") from e
-except TimeoutError as e:
-    logger.warning(f"Ranker timeout; check LLM endpoint")
-    raise RuntimeError("Ranker timed out") from e
+    response = call_llm(prompt, MY_SCHEMA, "my_response", model=cfg.model)
+except ContentFilterError:
+    # Not retried by llm.py: split the batch and drop the blocked item (rank does this)
+    raise
+except RuntimeError as e:
+    # Both attempts failed (bad JSON, truncation, timeout, HTTP error)
+    log.error("my-stage LLM call failed: %s", e)
+    raise
 ```
 
 **Key rules:**
@@ -428,32 +375,37 @@ See [scripts/llm.py](../scripts/llm.py) for retry patterns.
 ### File and Path Handling
 
 ```python
-from pathlib import Path
+import edition
+from db import content_root, db_path
+from models import issue_filename
 
-# Get repo root
-REPO_ROOT = Path(__file__).parent.parent
-db_path = REPO_ROOT / ".worktrees" / "content" / "editions" / slug / "state.db"
-
-# Write to CONTENT_ROOT (set by run.sh)
-import os
-content_root = Path(os.getenv("CONTENT_ROOT", "."))
-issue_file = content_root / "editions" / slug / "issues" / f"{date}.md"
+# The selected edition's state.db and issue folder under CONTENT_ROOT (set by run.sh)
+state_db = db_path()
+paths = edition.runtime_paths(content_root())
+issue_file = paths.issues_dir / issue_filename(date)   # <YYYY-MM-DD>.md
 issue_file.parent.mkdir(parents=True, exist_ok=True)
 issue_file.write_text(markdown_content)
+
+# Debug artifacts for the edition
+logs_dir = edition.current().paths().logs              # logs/<slug>/
 ```
 
 ### Date and Time
 
 ```python
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 
-# ISO 8601 format (stored in DB, used in logs)
-now = datetime.utcnow().isoformat() + "Z"
-today = datetime.utcnow().date()
-yesterday = today - timedelta(days=1)
+from db import run_date
+from models import parse_instant
 
-# Parsing
-published_dt = datetime.fromisoformat(item["published_at"].replace("Z", "+00:00"))
+# The run's date key ($RUN_DATE from run_edition.sh, else the local date)
+today = run_date()
+
+# Wall-clock instants: aware UTC, injectable as `now` so tests can pin them
+now = datetime.now(timezone.utc)
+
+# Parsing stored instants: trailing Z accepted, zone-less => UTC
+published_dt = parse_instant(item["published_at"])
 ```
 
 ### Logging
@@ -461,11 +413,16 @@ published_dt = datetime.fromisoformat(item["published_at"].replace("Z", "+00:00"
 ```python
 import logging
 
-logger = logging.getLogger(__name__)
+import logsetup
 
-logger.info("Fetched %d items from %s", count, source)
-logger.warning("Source %s returned 429; retrying in 10s", source)
-logger.error("Database write failed: %s", exc, exc_info=True)
+log = logging.getLogger("my-stage")
+
+log.info("Fetched %d items from %s", count, source)
+log.warning("Source %s returned 429; retrying in 10s", source)
+log.error("Database write failed: %s", exc, exc_info=True)
+
+if __name__ == "__main__":
+    logsetup.configure()   # only here, never at import time or via basicConfig
 ```
 
 ---
@@ -481,19 +438,20 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-# Project imports
-from scripts.edition import Edition
-from scripts.models import Item, RankerOutput, Section  # TypedDicts
-from scripts.db import init_db  # schema + migrations
-from scripts.llm import call_llm  # LLM calls only
-from scripts.prompts import render_rank_prompt  # prompt rendering
-from scripts.candidates import load_candidates_from_db  # shared queries
+# Project imports (scripts/ is on sys.path; not a package)
+import edition                                   # edition.current(), runtime_paths()
+import logsetup                                  # logsetup.configure() under __main__
+import prompts                                   # prompts.render(stage, ed)
+from candidates import load_ranking_pool         # the ranker's candidate pool
+from db import connect, init_db                  # schema, migrations and all SQL
+from llm import call_llm, ranker_config          # LLM calls only
+from models import ItemRow, Section, Status      # domain constants and TypedDicts
 ```
 
 **Don't import:**
 - `openai` directly (use `scripts/llm.py`)
-- Other stage scripts (e.g., from `rank.py` inside `write.py`)
-- Relative imports across packages (use absolute imports from repo root)
+- Other stage scripts (e.g., from `rank.py` inside `write.py`; `tests/test_stage_import_boundary.py` enforces this)
+- `scripts.<module>` (scripts/ is not a package)
 
 ---
 

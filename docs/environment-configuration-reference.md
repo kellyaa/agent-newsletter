@@ -25,7 +25,7 @@ These are meant to be set in `.env` or `~/.config/agent-newsletter/env` before r
 | `MODEL_PRICES_USD` | no | (none) | **Not yet implemented.** No code reads this variable, so setting it has no effect and `runs.cost_usd` is always NULL. Planned format: JSON map of model IDs to `[usd_per_1M_in, usd_per_1M_out]`. Price from `runs.tokens_in/out` downstream until this is built. |
 | `BUDGET_USD` | no | (none) | **Not enforced, and no cap is planned for now** (maintainer decision on #438). Setting it has no effect. Tokens are recorded in `runs.tokens_in/out`; `runs.cost_usd` is not populated. |
 | `STALE_HOURS` | no | `36` | Hours without a successful daily run before `watchdog.sh` fires a notification. Set in `watchdog.sh`, can be overridden in `.env` (the root `watchdog.sh` loads it via `scripts/envfiles.sh`). |
-| `CONTENT_ROOT` | no (usually) | `cwd` | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. |
+| `CONTENT_ROOT` | no (usually) | repo root (`db.content_root()`) | Path to the content worktree (`.worktrees/content`). Set automatically by `run.sh`; must be exported manually when running scripts ad-hoc outside `run.sh`. |
 
 ### Configuration Examples
 

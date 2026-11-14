@@ -123,20 +123,17 @@ mv /tmp/state_good.db "editions/$EDITION/state.db"
 If state.db is beyond repair and you don't have a good backup, reinitialize and accept data loss:
 
 ```bash
-# This DELETES state.db and creates a fresh one
-uv run scripts/edition.py --dump-schema --edition "$EDITION" > /tmp/schema.sql
-sqlite3 "editions/$EDITION/state.db" < /tmp/schema.sql
+# Run from the content worktree (CONTENT_ROOT). Move the broken DB aside first:
+# init_db only creates missing tables and columns, it does not replace a file.
+mv "editions/$EDITION/state.db" "editions/$EDITION/state.db.broken"
 
-# or via Python
-python3 << 'PYTHON'
-import os
-os.environ["EDITION"] = "agents"
-from scripts.db import init_db
-from scripts.edition import runtime_paths
-init_db(runtime_paths(".")state_db)
-print("Fresh database created.")
-PYTHON
+# Create a fresh, fully migrated DB (scripts/ is not a package, so put it on sys.path)
+EDITION="$EDITION" CONTENT_ROOT="$PWD" uv run --project "$REPO_ROOT" python -c "
+import sys; sys.path.insert(0, '$REPO_ROOT/scripts')
+import db; db.init_db(); print('Fresh database created at', db.db_path())"
 ```
+
+`$REPO_ROOT` is your code checkout (the directory with `run.sh`). `db.init_db()` resolves the path from `$EDITION` and `$CONTENT_ROOT`; set `CONTENT_ROOT` explicitly, because when it is unset the DB is created under the code checkout, not the current directory.
 
 ---
 
@@ -375,10 +372,7 @@ cp "$DB" "$DB.corrupted"
 
 # Remove and reinitialize
 rm "$DB"
-uv run scripts/fetch.py --edition "$EDITION"  # Initializes DB as side effect
-
-# Or explicit init
-python3 -c "import os; os.environ['EDITION']='$EDITION'; from scripts.db import init_db; from scripts.edition import runtime_paths; init_db(runtime_paths('.').state_db)"
+EDITION="$EDITION" CONTENT_ROOT="$PWD" uv run --project "$REPO_ROOT" python -c "import sys; sys.path.insert(0, '$REPO_ROOT/scripts'); import db; db.init_db()"
 
 # Run a fresh pipeline
 ./run.sh --edition "$EDITION" --refetch

@@ -103,7 +103,7 @@ Check the detailed log:
 grep -A 5 "ranker call failed" logs/agents/run-$(date +%Y-%m-%d).log
 ```
 
-Was it a timeout, rate limit, or server error? Check `logs/agents/llm-rank.log` for the full error.
+The text in parentheses is the reason for the bad reply (truncation, unparseable JSON). A timeout, rate limit or server error is not caught there: it fails the rank stage, and the run log ends with a traceback and `FAILED at stage=rank`.
 
 **Retry:**
 
@@ -246,7 +246,7 @@ Commit and re-run: `./run.sh --force --edition agents`.
 1. **Confirm the issue is reproducible.** Re-run: `./run.sh --force --edition agents`. Does it happen again?
 2. **Check your edition's config.** Review `editions/agents/edition.yaml` (keywords, thresholds).
 3. **Check the endpoint.** Is your LLM endpoint slow, rate-limiting, or down? Test with curl or a simple OpenAI call.
-4. **Check logs.** `tail logs/agents/llm-rank.log` and `logs/agents/llm-write.log` for LLM-specific errors.
+4. **Check logs.** `grep " llm: " logs/agents/run-$(date +%F).log` for LLM errors and retries; `logs/agents/ranker-output-<section>.json` / `writer-output.json` hold a reply with the wrong shape.
 5. **Check sources.** Are they returning items? Run `uv run scripts/check_edition.py agents`.
 
 If all checks pass but the issue persists, create an issue with:

@@ -89,13 +89,15 @@ Score interpretation within sections:
 # Lint and syntax-check your edition
 uv run scripts/check_edition.py my-ops
 
-# Manually run the ranker against test candidates
-# (This requires LLM credentials; see README § LLM configuration)
-uv run scripts/rank.py --edition my-ops --dry-run
+# Render both prompts with your fragments, then fetch + apply the cheap gates
+# into a throwaway DB (no LLM, nothing written to the real state.db)
+uv run scripts/check_edition.py my-ops
 
-# Review the scored items and reasoning
-cat logs/my-ops/ranked.json | jq '.papers[:3]'
+# Print the rank prompt exactly as the ranker will see it
+uv run python -c "import sys; sys.path.insert(0, 'scripts'); import edition, prompts; print(prompts.render('rank', edition.load('my-ops')))" | less
 ```
+
+To see real scores, run the pipeline for the edition while it is still `status: draft` (`./run.sh --edition my-ops`) and read `logs/my-ops/ranked.json`. `rank.py` takes no flags: running it directly is a real ranking that spends tokens and writes `featured` / `appendix` / `dropped` to the edition's `state.db`.
 
 ### Step 5: Deploy and monitor
 
@@ -189,8 +191,9 @@ Changing them requires coordinating code and tests. This is tier 2+ (high-risk).
    ```bash
    uv run --extra test pytest tests/test_rank.py -v
    uv run scripts/check_edition.py agents
-   uv run scripts/rank.py --dry-run
    ```
+
+   There is no ranker dry run (`rank.py` reads no flags, so any invocation is a live ranking).
 
 8. **Open a PR** (tier 1–2 depending on scope). Link the issue.
 

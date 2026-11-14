@@ -185,10 +185,10 @@ When reviewing a PR that touches `uv.lock` or `pnpm-lock.yaml`:
 New code that needs to make HTTP requests should use `scripts/net.py`:
 
 ```python
-from net import make_client
+from net import make_http_client
 
-async_client = make_client()
-response = async_client.get(url, timeout=20)
+with make_http_client() as client:
+    response = client.get(url)
 ```
 
 This gives you:
