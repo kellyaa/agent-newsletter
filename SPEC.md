@@ -104,7 +104,7 @@ Rules (gate functions and their tables live in `scripts/gates.py`; pool/age-out 
 - **Recency** (per source family): RSS = 30d, arXiv = 7d, HN/Reddit = 3d. RSS is intentionally wide because practitioner blogs publish weekly-or-monthly; the cross-day dedup layer prevents re-featuring already-seen items. (GitHub releases had a 14d recency window but the source was removed 2026-05-14 — see §Source list realities.)
 - **Keyword gate:** title or abstract must contain at least one term from a tuned list (`agent`, `agentic`, `tool use`, `mcp`, `LLM`, `RAG`, `eval`, `tool-calling`, `multi-agent`, etc.). **Trusted RSS sources bypass this gate** (see `KEYWORD_GATE_BYPASS` in `prefilter.py`) — a curated set of low-volume practitioner blogs whose every post is plausibly relevant; the LLM ranker scores them downstream.
 - **Source reputation floor:** HN items need ≥40 points (most HN sources; the `hn-mcp` query uses ≥30 — see `editions/agents/sources.yaml`); Reddit is the top-N of the day per subreddit (`limit`, default 10; the Atom feed carries no score); arXiv papers need an abstract (not just title).
-- **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` or `status = 'appendix'` (with `appearances < limit`) are eligible to re-enter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
+- **Dedup across time:** skip any item whose `id` is already at a terminal status (`featured`, `published`, `dropped`) or in the papers pool (`candidate` with a score). Only items with `status = 'new'` are eligible to enter prefilter. (See Dedup section. Note: `ranked` is never a real status value — `rank.py` transitions directly to `featured`/`appendix`/`dropped`/`candidate`.)
 - **Near-dup within run:** normalize titles (lowercase, strip punctuation), drop items whose title has >0.85 Jaccard similarity to another higher-ranked-source item in this batch. Prefer arxiv > HN > Reddit when collapsing.
 
 Survivors get `status = 'candidate'`.
@@ -236,7 +236,7 @@ The single most important correctness property. Three layers:
 
 **Layer 3: Cross-day dedup (the one that bites everyone).**
 - The `items` table tracks `status`. Once an item reaches a terminal status (`featured`, `published`, or `dropped`) it will never be re-ranked or re-summarized even if it's still trending. (`ranked` is never written as a status — `rank.py` transitions items directly from `candidate` to `featured`/`appendix`/`dropped`, never via an intermediate `ranked` step.)
-- **But:** if an item was appendix-only yesterday and is still buzzing with meaningful new discussion today, we want the option to promote it. Mechanism: appendix items keep `status = 'appendix'`, and prefilter allows them back in for one retry (capped at 2 total appearances total). Featured items are sealed.
+- **Appendix items are sealed too.** Publish moves featured and appendix items to `published`, so an appendix-only item never re-enters prefilter or gets a second chance at featured. (A retry mechanism was specced originally but never reachable in code; see #704.)
 - Topic-level dedup is **not implemented, by decision** (#619): a study (#599) found about 4 cross-day topic repeats per edition (about 3% of featured slots), too few to justify a ranker `topic` field, a `db.py` helper and a pruning job. The unused `topics_covered` stub table was dropped; `db.py` removes it from existing DBs on `init_db()`.
 
 **Papers multi-day candidate pool (issue #16, score-once semantics).**
@@ -279,7 +279,7 @@ CREATE TABLE items (
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
   times_competed INTEGER NOT NULL DEFAULT 0, -- papers multi-day pool counter (issue #16)
-  published_date TEXT                        -- issue date publish.py promoted it in; lets --force restore pool papers (#326)
+  published_date TEXT                        -- issue date publish.py (or backfill --apply-published) promoted it in; lets --force restore pool papers (#326, #705)
 );
 
 CREATE TABLE runs (
@@ -310,7 +310,7 @@ The pipeline is edition-agnostic. An **edition** is one newsletter subject, defi
 | `sources.yaml` | the edition's feed list |
 | `prompts/<stage>.<slot>.md` | fragments filled into the `{{slots}}` of the shared `prompts/rank.md` and `prompts/write.md` |
 
-Code never contains subject-specific text. `scripts/edition.py` loads and strictly validates an edition; `EDITION=<slug>` selects it at runtime and there is deliberately **no default**. Constants that are not editorial (`RECENCY_DAYS`, `SOURCE_PRIORITY`, the paper-pool parameters, HN/Reddit floors, `APPENDIX_MAX_APPEARANCES`) stay in code and apply to every edition.
+Code never contains subject-specific text. `scripts/edition.py` loads and strictly validates an edition; `EDITION=<slug>` selects it at runtime and there is deliberately **no default**. Constants that are not editorial (`RECENCY_DAYS`, `SOURCE_PRIORITY`, the paper-pool parameters, HN/Reddit floors) stay in code and apply to every edition.
 
 `status` means: `draft` runs daily and sends failure notifications but is hidden from the site unless `SHOW_DRAFTS=1`; `live` is listed; `paused` stays listed, labelled "paused". `order` is the sort key for run order and homepage cards (lower first). The slug is stable forever once live because it is in URLs.
 

@@ -191,19 +191,19 @@ class TestApplyPublishedToLive:
         conn.close()
 
         promoted = backfill_mod.apply_published_to_live(
-            ["item-0", "item-1"], live_db=db_path,
+            ["item-0", "item-1"], "2026-06-26", live_db=db_path,
         )
 
         assert promoted == 2
         conn = db_mod.connect(db_path)
-        statuses = {
-            r["id"]: r["status"]
-            for r in conn.execute("SELECT id, status FROM items").fetchall()
+        rows = {
+            r["id"]: (r["status"], r["published_date"])
+            for r in conn.execute("SELECT id, status, published_date FROM items").fetchall()
         }
         conn.close()
-        assert statuses["item-0"] == "published"
-        assert statuses["item-1"] == "published"
-        assert statuses["item-2"] == "candidate"  # not in the list
+        assert rows["item-0"] == ("published", "2026-06-26")
+        assert rows["item-1"] == ("published", "2026-06-26")
+        assert rows["item-2"] == ("candidate", None)  # not in the list
 
     def test_idempotent_already_published(self, db_path):
         """Re-running with already-published IDs is a no-op (gated on status='candidate')."""
@@ -223,7 +223,7 @@ class TestApplyPublishedToLive:
         conn.commit()
         conn.close()
 
-        promoted = backfill_mod.apply_published_to_live(["pub-1"], live_db=db_path)
+        promoted = backfill_mod.apply_published_to_live(["pub-1"], "2026-06-26", live_db=db_path)
 
         assert promoted == 0  # already published, not re-promoted
 
@@ -246,4 +246,4 @@ class TestApplyPublishedToLive:
         conn.close()
         monkeypatch.setattr(db_mod, "db_path", lambda: db_path)
 
-        assert backfill_mod.apply_published_to_live(["c-1"]) == 1
+        assert backfill_mod.apply_published_to_live(["c-1"], "2026-06-26") == 1

@@ -251,7 +251,7 @@ uv run scripts/backfill.py --date 2026-06-10 --apply-published
 
 **What it does:** Extracts a pre-run `state.db` snapshot from git history, runs the ranker and writer against the historical candidate pool, and writes the issue file. It does **not** re-fetch from external sources. The ranker LLM is usually skipped — papers in the candidate pool are typically already prescored from prior runs — but will be invoked for any unscored candidates if present. A `runs` row is **not** recorded in the live `state.db`; the run history will show a gap for the backfilled date.
 
-**`--apply-published` (important):** Without this flag, the backfill's featured ids remain at `status='candidate'` in the live `state.db` after the issue file is written. On the next normal run, those same papers would re-enter the candidate pool and could feature again. Pass `--apply-published` to promote them to `status='published'` and prevent re-featuring. The default (no flag) is a safe dry-run mode; use `--apply-published` for all real backfills.
+**`--apply-published` (important):** Without this flag, the backfill's featured ids remain at `status='candidate'` in the live `state.db` after the issue file is written. On the next normal run, those same papers would re-enter the candidate pool and could feature again. Pass `--apply-published` to promote them to `status='published'` (with `published_date` set to `--date`, so `reset_day.py --force` for that date can restore them) and prevent re-featuring. The default (no flag) is a safe dry-run mode; use `--apply-published` for all real backfills.
 
 ### `scripts/replay_writer.py` — replay writer against a past issue
 

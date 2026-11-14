@@ -151,10 +151,14 @@ def setup_sandbox(target_date: str) -> Path:
     return sandbox  # pragma: no cover  (loop always returns or raises)
 
 
-def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None) -> int:
+def apply_published_to_live(
+    featured_ids: list[str], date: str, live_db: Path | None = None,
+) -> int:
     """Promote the backfill's featured ids to status='published' in the LIVE
-    state.db. Without this step, those ids stay 'candidate' in the live pool
-    and would compete (and could re-feature) on the next normal run.
+    state.db, with ``published_date = date`` (the backfilled issue's date).
+    Without this step, those ids stay 'candidate' in the live pool and would
+    compete (and could re-feature) on the next normal run. The date is what
+    ``reset_day --force`` matches on to restore them.
 
     ``live_db`` defaults to the edition's real state.db (``db.db_path()``). The
     sandbox is never consulted here: the backfill run itself only ever holds a
@@ -167,7 +171,7 @@ def apply_published_to_live(featured_ids: list[str], live_db: Path | None = None
 
     conn = db_mod.connect(live_db or db_mod.db_path())
     try:
-        return db_mod.mark_candidates_published(conn, featured_ids)
+        return db_mod.mark_candidates_published(conn, featured_ids, date)
     finally:
         conn.close()
 
@@ -318,7 +322,7 @@ def main() -> int:
         featured_ids = [
             iid for iid, d in decisions.items() if d["status"] == Status.FEATURED
         ]
-        promoted = apply_published_to_live(featured_ids)
+        promoted = apply_published_to_live(featured_ids, args.date)
         log.info(
             "promoted %d/%d featured ids to status='published' in live %s",
             promoted, len(featured_ids), db_mod.db_path(),

@@ -2,7 +2,7 @@
 ceiling, the published_at/fetched_at fallback and the unjudged-vs-dropped split.
 
 Cluster: scripts/prefilter.py age_out_papers + PAPER_POOL_MAX_COMPETES /
-PAPER_POOL_MAX_AGE_DAYS / APPENDIX_MAX_APPEARANCES (db.PAPER_AGE_OUT_SQL).
+PAPER_POOL_MAX_AGE_DAYS (db.PAPER_AGE_OUT_SQL).
 Existing tests only probe one day past the ceiling and the cap via backfill.
 """
 from __future__ import annotations
@@ -45,7 +45,6 @@ def _status(conn, item_id):
 def test_pool_constants_are_pinned():
     assert pf_mod.PAPER_POOL_MAX_COMPETES == 7
     assert pf_mod.PAPER_POOL_MAX_AGE_DAYS == 7
-    assert pf_mod.APPENDIX_MAX_APPEARANCES == 2
 
 
 def test_competition_cap_is_inclusive(conn):

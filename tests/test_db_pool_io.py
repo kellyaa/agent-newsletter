@@ -82,15 +82,21 @@ def test_mark_candidates_published_only_touches_candidates(conn):
     _add(conn, "c", Status.CANDIDATE)
     _add(conn, "f", Status.FEATURED)
     _add(conn, "other", Status.CANDIDATE)
-    assert db_mod.mark_candidates_published(conn, ["c", "f", "missing"]) == 1
+    assert db_mod.mark_candidates_published(conn, ["c", "f", "missing"], "2026-06-09") == 1
     assert _status(conn, "c") == Status.PUBLISHED
+    assert conn.execute(
+        "SELECT published_date FROM items WHERE id = 'c'"
+    ).fetchone()[0] == "2026-06-09"
+    assert conn.execute(
+        "SELECT published_date FROM items WHERE id = 'other'"
+    ).fetchone()[0] is None
     assert _status(conn, "f") == Status.FEATURED
     assert _status(conn, "other") == Status.CANDIDATE
     assert not conn.in_transaction
 
 
 def test_mark_candidates_published_empty_is_noop(conn):
-    assert db_mod.mark_candidates_published(conn, []) == 0
+    assert db_mod.mark_candidates_published(conn, [], "2026-06-09") == 0
 
 
 def test_backfill_has_no_inline_execute():
