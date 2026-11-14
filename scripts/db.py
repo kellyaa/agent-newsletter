@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS items (
   last_seen_date TEXT NOT NULL,
   appearances INTEGER NOT NULL DEFAULT 1,
   times_competed INTEGER NOT NULL DEFAULT 0,
+  last_competed_date TEXT,
   published_date TEXT
 );
 
@@ -256,6 +257,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
     if "published_date" not in cols:
         conn.execute("ALTER TABLE items ADD COLUMN published_date TEXT")
+    if "last_competed_date" not in cols:
+        conn.execute("ALTER TABLE items ADD COLUMN last_competed_date TEXT")
     run_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
     for col in ("papers_expired_unjudged", "papers_prerank_cut"):
         if col not in run_cols:
@@ -470,19 +473,25 @@ def reset_unpublished_featured(conn: sqlite3.Connection) -> int:
     return cur.rowcount or 0
 
 
-def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str]) -> int:
-    """Increment ``times_competed`` for `item_ids` still in the ``candidate`` pool.
+def bump_times_competed(conn: sqlite3.Connection, item_ids: list[str], date: str) -> int:
+    """Count one competition on run date `date` for `item_ids` still in the pool.
 
-    Gating on status means sealed (featured/appendix) winners are never
-    inflated. Commits; returns the rows bumped.
+    At most one per paper per run date: ``last_competed_date`` records the day
+    counted, so a retried day (run.sh --failed, the watchdog, run_edition.sh
+    re-running rank after a later stage failed) does not count again. Without
+    it every rank attempt counted, and a day with 7 attempts aged a paper out
+    after one day instead of a week. Gating on status means sealed
+    (featured/appendix) winners are never inflated. Commits; returns the rows
+    bumped.
     """
     if not item_ids:
         return 0
     marks = ",".join("?" * len(item_ids))
     cur = conn.execute(
-        "UPDATE items SET times_competed = times_competed + 1 "
-        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks})",
-        list(item_ids),
+        "UPDATE items SET times_competed = times_competed + 1, last_competed_date = ? "
+        f"WHERE status = '{Status.CANDIDATE}' AND id IN ({marks}) "
+        "AND (last_competed_date IS NULL OR last_competed_date <> ?)",
+        [date, *item_ids, date],
     )
     conn.commit()
     return cur.rowcount or 0

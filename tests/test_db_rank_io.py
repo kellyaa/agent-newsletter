@@ -81,14 +81,14 @@ def test_bump_times_competed_only_touches_candidates(conn):
     _add(conn, "pool", Status.CANDIDATE, times_competed=1)
     _add(conn, "won", Status.FEATURED)
     _add(conn, "other", Status.CANDIDATE)
-    assert db_mod.bump_times_competed(conn, ["pool", "won"]) == 1
+    assert db_mod.bump_times_competed(conn, ["pool", "won"], "2026-06-01") == 1
     assert _row(conn, "pool")["times_competed"] == 2
     assert _row(conn, "won")["times_competed"] == 0
     assert _row(conn, "other")["times_competed"] == 0
 
 
 def test_bump_times_competed_empty_is_noop(conn):
-    assert db_mod.bump_times_competed(conn, []) == 0
+    assert db_mod.bump_times_competed(conn, [], "2026-06-01") == 0
 
 
 def test_rank_has_no_inline_execute():

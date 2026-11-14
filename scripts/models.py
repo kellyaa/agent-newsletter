@@ -334,6 +334,7 @@ class ItemRow(TypedDict, total=False):
     last_seen_date: str
     appearances: int
     times_competed: int
+    last_competed_date: str | None  # run date times_competed last counted
     published_date: str | None
 
 
