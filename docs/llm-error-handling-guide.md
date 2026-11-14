@@ -11,9 +11,10 @@ The pipeline distinguishes two types of LLM failures:
 | Error | Cause | Recovery | Logged As |
 |-------|-------|----------|-----------|
 | **ContentFilterError** | Content filter blocked the batch | Bisect the batch; retry subsets | Warning: `content filter blocked a batch` |
-| **RuntimeError** | Transient failure (timeout, 5xx, parse error) | Retry with exponential backoff up to 3 times | Error: `ranker/writer call failed` |
+| **RuntimeError** | Bad reply: truncated, not JSON, not an object | `call_llm` retries once, immediately; rank then leaves the batch unscored | Error: `ranker call failed for a batch of N items` |
+| **`openai.APIError`** (timeout, 429, 5xx, 4xx) | The HTTP call itself failed | The OpenAI SDK retries (default 2 retries, with its own backoff); then it propagates and **fails the stage** | Traceback in the run log; `FAILED at stage=<stage>` |
 
-Both are caught separately because their recovery strategies differ.
+ContentFilterError and RuntimeError are caught separately because their recovery strategies differ. `openai.APIError` is neither, so `call_llm`'s retry and `rank`'s per-section isolation do not catch it (see #711).
 
 ---
 
@@ -86,67 +87,65 @@ Option C: Switch to a different LLM endpoint that has more permissive filtering 
 
 ### What It Is
 
-A RuntimeError occurs when the LLM endpoint itself fails transiently:
+`call_llm` raises `RuntimeError` when the endpoint answered (HTTP 200) but the reply is unusable:
 
-| HTTP Status | Meaning | Typical Cause |
-|-------------|---------|---------------|
-| HTTP 429 | Rate limited | Too many requests, or a quota reset |
-| HTTP 500, 502, 503 | Server error | Endpoint temporarily down or overloaded |
-| Timeout | Request took too long | Network latency or endpoint slow |
-| JSON parse error | Invalid JSON response | Endpoint returned malformed JSON (rare) |
+| Cause | Log line |
+|-------|----------|
+| Truncated at `max_tokens` (`finish_reason=length`, usually a repetition loop) | `response truncated (finish_reason=length)` |
+| Not JSON, and no complete JSON object with the schema's required keys inside it | `could not parse llm content as JSON` |
+| JSON, but not an object | `llm returned non-object` |
+| No choices in the response | `llm response had no choices` |
+
+HTTP-level failures (429, 5xx, timeouts, connection errors) are **not** `RuntimeError`: they are `openai.APIError` subclasses, retried by the OpenAI SDK itself (2 retries by default, with its own backoff), and then propagated. See [HTTP failures](#http-failures-openaiapierror) below.
 
 ### How the Pipeline Recovers
 
-`llm.py`'s `call_llm()` function implements automatic retry with exponential backoff:
+`llm.py`'s `call_llm()` makes up to `max_attempts` attempts (default 2, so one retry), with no sleep between them:
 
 ```python
-def call_llm(...) -> str | dict:
-    """Make an OpenAI-compatible chat-completions call.
-    
-    Retries on RuntimeError (timeout, 5xx, parse failure) up to 3 times with
-    exponential backoff. ContentFilterError is not retried (caller must bisect).
-    """
-    max_attempts = 3
-    for attempt in range(max_attempts):
-        try:
-            response = client.chat.completions.create(...)
-            return json.loads(response.content)
-        except RuntimeError as e:
-            if attempt < max_attempts - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                log.warning("retrying in %d seconds...", wait_time)
-                time.sleep(wait_time)
-            else:
-                raise
+for attempt in range(1, max_attempts + 1):
+    if attempt > 1:
+        log.warning("%s: retry %d/%d after parse/truncation failure", label, attempt, max_attempts)
+    try:
+        return _one_shot(..., bypass_cache=attempt > 1 and retry_no_cache)
+    except RuntimeError as e:
+        last_err = e
+        continue
+raise RuntimeError(f"llm failed after {max_attempts} attempts for {label}: {last_err}")
 ```
 
 **Behavior on retry:**
 
-- On the **first retry**, `cache: {no-cache: true}` is added to the request body (if `LLM_RETRY_NO_CACHE=1`, the default). This prevents LiteLLM proxies from serving the same bad cached response.
-- On the **second and third retries**, the request is identical to the first.
-- If all 3 attempts fail, the exception is propagated to `rank.py` or `write.py`, which catches it and logs the failure.
+- The retry adds `cache: {no-cache: true}` to the request body (unless `LLM_RETRY_NO_CACHE=0`). This prevents LiteLLM proxies from serving the same bad cached response.
+- If both attempts fail, `RuntimeError("llm failed after 2 attempts ...")` propagates to `rank.py` or `write.py`.
+- `ContentFilterError` and `openai.APIError` are not caught by this loop.
 
 ### Example Logs
 
 **Successful retry (transparent to the user):**
 
 ```
-── rank ── start
-papers: ranker call attempt 1 → HTTP 503 (server error)
-papers: retrying in 2 seconds...
-papers: ranker call attempt 2 → success (45 entries)
-── rank ── ok
+ERROR llm: papers (attempt 1): response truncated (finish_reason=length); first 2KB: ...
+WARNING llm: papers: retry 2/2 after parse/truncation failure
+INFO llm: papers (attempt 2): prompt_tokens=... completion_tokens=... total=...
 ```
 
-**All retries exhausted (run continues with graceful fallback):**
+**Both attempts failed (rank continues with the appendix fallback):**
 
 ```
-── rank ── start
-papers: ranker call failed for a batch of 87 items (HTTPError: 503);
-        leaving unscored (appendix fallback) instead of aborting the run
-news: ranker returned 15 entries
-── rank ── ok
+ERROR rank: papers: ranker call failed for a batch of 87 items (llm failed after 2 attempts
+        for papers: ...); leaving unscored (appendix fallback) instead of aborting the run
 ```
+
+### HTTP failures (`openai.APIError`)
+
+A timeout, 429, 5xx or other HTTP error is retried by the OpenAI SDK, then raised as `openai.APITimeoutError`, `RateLimitError`, `InternalServerError`, etc. None of these is a `RuntimeError`, so today:
+
+- `call_llm` does not retry it again;
+- `rank.rank_section` does **not** isolate it: the exception leaves `rank.py`, the rank stage fails, and the run is recorded `failed` at stage `rank` (unlike a bad reply, which only costs that section);
+- `write.py` fails the write stage the same way.
+
+Re-run with `./run.sh --failed` once the endpoint recovers. Whether rank should isolate HTTP errors per section like bad replies is an open maintainer decision on #711.
 
 ### Timeout Configuration
 
@@ -174,7 +173,7 @@ WRITER_TIMEOUT_S=1800   # 30 min
 
 ## What Happens When Ranking Fails
 
-When `rank.py` catches a RuntimeError (after 3 failed retries), it **leaves all items in that section unscored**:
+When `rank.py` catches a RuntimeError (both `call_llm` attempts failed on a bad reply), it **leaves all items in that batch unscored**:
 
 ```python
 except RuntimeError as e:
@@ -211,13 +210,9 @@ else:
 
 ## What Happens When Writing Fails
 
-If `write.py` fails after 3 retries, the run **aborts**:
+If the main writer call fails (a `RuntimeError` after both attempts, a `ContentFilterError`, or an HTTP error), the run **aborts**:
 
-```python
-except (RuntimeError, ContentFilterError) as e:
-    log.error("writer call failed: %s", e)
-    raise  # Abort the run; the issue file is not written
-```
+`write.py` does not catch errors from the main writer call: the exception leaves `write.main`, the stage exits non-zero and the issue file is not written. (Only the follow-up call that asks for summaries the writer left out is wrapped; if it fails, the issue goes out without those items.)
 
 Unlike ranking (which is per-section), **writing produces the entire issue**. If the writer fails, there is no fallback — the issue cannot be published without new prose.
 
@@ -255,8 +250,9 @@ If writing fails:
 |------|----------|
 | `logs/<slug>/run-<date>.log` | Per-edition full output; ranked/written output |
 | `logs/<slug>/usage-<date>.jsonl` | Token counts per LLM call (one JSON line per call) |
-| `logs/<slug>/llm-rank.log` | Detailed rank.py debug logs |
-| `logs/<slug>/llm-write.log` | Detailed write.py debug logs |
+| `logs/<slug>/rank.rendered.md`, `write.rendered.md` | The rendered prompt each stage sent |
+| `logs/<slug>/ranker-output-<label>.json`, `writer-output.json` | A reply that parsed but had the wrong shape |
+| `logs/<slug>/write.response.json` | The last parsed writer reply |
 
 ### Notifications
 

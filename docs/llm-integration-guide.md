@@ -4,20 +4,29 @@ This guide explains how to integrate new LLM calls into the pipeline, debug LLM 
 
 ## Quick Start: Adding an LLM Call
 
-All LLM interactions use `scripts/llm.py`, which wraps the OpenAI SDK and handles retries, structured output validation, and logging. Never import `openai` directly in pipeline code.
+All LLM interactions use `scripts/llm.py`, which wraps the OpenAI SDK and handles the parse/truncation retry, structured output, and token-usage logging. Never import `openai` directly in pipeline code.
+
+Scripts in `scripts/` import each other as top-level modules (`scripts/` is on `sys.path` when a script runs, and `tests/conftest.py` adds it for tests), so write `from llm import ...`, not `from scripts.llm import ...`.
 
 ```python
-from scripts.llm import call_llm
+from llm import call_llm, ranker_config
 
-# Basic usage
+cfg = ranker_config()  # RANKER_MODEL / _TIMEOUT_S / _MAX_TOKENS, read now
 response = call_llm(
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What is an agent?"},
-    ],
-    json_schema=None,  # None for plain text, or a Pydantic schema for structured output
+    "Score these items ...",          # one user message
+    {                                  # a JSON Schema dict
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    },
+    "my_answer",                       # schema_name sent to the endpoint
+    model=cfg.model,
+    timeout_s=cfg.timeout_s,
+    max_tokens=cfg.max_tokens,
+    label="my-stage",                  # shows up in logs and the usage log
 )
-# Returns: string (plain text) or dict (if json_schema provided)
+# Always returns a dict parsed from the model's JSON reply.
 ```
 
 ## Architecture: How `llm.py` Works
@@ -25,36 +34,33 @@ response = call_llm(
 ### Design Principles
 
 1. **Single point of entry** — all LLM calls use `scripts/llm.py`'s `call_llm()` function
-2. **Structured output by default** — responses are validated against a JSON schema (`json_schema` parameter)
-3. **Automatic retries on failure** — parse errors, truncations, and timeouts are retried with exponential backoff
-4. **Transparent logging** — all requests/responses logged to `logs/<slug>/llm-<stage>.log` for debugging
-5. **Environment-driven config** — models, endpoints, timeouts all via `.env` variables
+2. **Structured output by default** — the request carries a JSON Schema (`response_format: json_schema`, strict) and the reply is parsed into a dict
+3. **One retry on a bad reply** — a truncated (`finish_reason=length`), non-JSON or non-object reply is retried once (`max_attempts=2`), immediately, with no backoff. Network errors and 5xx are retried by the OpenAI SDK itself. A content-filter block raises `ContentFilterError` and is never retried.
+4. **Logging** — each call logs model, token counts and failures to the stage's log (the run log under `logs/<slug>/` when run by `run.sh`), and appends token usage to `$LLM_USAGE_LOG`
+5. **Environment-driven config** — endpoint and headers are read by `llm.py`; per-role model/timeout/token cap only via `llm.ranker_config()` / `llm.writer_config()`, called per LLM call
 
 ### Function Signature
 
 ```python
 def call_llm(
-    messages: list[dict],
-    json_schema: type | None = None,
-    timeout_seconds: int | None = None,
+    prompt: str,
+    schema: dict[str, Any],
+    schema_name: str,
+    *,
+    model: str,
+    timeout_s: int = DEFAULT_TIMEOUT_S,   # 1200
+    label: str = "llm",
     max_tokens: int | None = None,
-) -> str | dict:
-    """
-    Make an OpenAI-compatible chat-completions call.
-    
-    Args:
-        messages: List of {"role": "...", "content": "..."} dicts
-        json_schema: Pydantic model or TypedDict for response validation (optional)
-        timeout_seconds: Override default timeout (RANKER_TIMEOUT_S or WRITER_TIMEOUT_S)
-        max_tokens: Override default max_tokens (RANKER_MAX_TOKENS or WRITER_MAX_TOKENS)
-    
-    Returns:
-        str if json_schema is None, else dict (parsed from validated JSON)
-    
-    Raises:
-        RuntimeError on repeated failures after retries
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    """Send a single-turn prompt and return a dict matching the schema.
+
+    Raises RuntimeError if every attempt fails, ContentFilterError (not a
+    RuntimeError) if the endpoint's content filter blocks the reply.
     """
 ```
+
+`call_llm` takes no defaults from the environment for the role: pass `model` / `timeout_s` / `max_tokens` from `ranker_config()` or `writer_config()`.
 
 ### Environment Variables (`.env`)
 
@@ -76,38 +82,34 @@ def call_llm(
 
 ## Using Structured Output (JSON Schema)
 
-When you need the LLM to return structured data (not free-form text), provide a Pydantic model or TypedDict as the `json_schema` parameter. The response is validated against the schema and automatically parsed into a dict.
+Every call is structured: the `schema` argument is a JSON Schema dict, sent to the endpoint as `response_format` (unless `LLM_RESPONSE_FORMAT` downgrades it), and the reply is parsed into a dict. There is no plain-text mode.
 
-### Example: Ranked Items
+### Example: the ranker
+
+This is what `rank.invoke_ranker` does (`rank.RANKER_OUTPUT_SCHEMA` is the real schema):
 
 ```python
-from typing import TypedDict
-from scripts.llm import call_llm
+from llm import call_llm, ranker_config
+from rank import RANKER_OUTPUT_SCHEMA
 
-class RankedItem(TypedDict):
-    id: str
-    score: int  # 0-10
-    tags: list[str]
-    one_line_why: str
-
-# The LLM receives the schema and must return JSON matching it
-response = call_llm(
-    messages=[
-        {"role": "system", "content": "You are a ranker. Return JSON with scored items."},
-        {"role": "user", "content": "Score these papers: ..."},
-    ],
-    json_schema=RankedItem,
+cfg = ranker_config()
+out = call_llm(
+    prompt,                      # rendered rubric + candidates JSON
+    RANKER_OUTPUT_SCHEMA,
+    schema_name="ranker_output",
+    model=cfg.model,
+    timeout_s=cfg.timeout_s,
+    label="papers",
+    max_tokens=cfg.max_tokens,
 )
-
-# response is now a dict: {"id": "...", "score": 7, "tags": [...], ...}
-assert isinstance(response, dict)
+rankings = out.get("rankings")   # the caller checks the shape and sanitises entries
 ```
 
 ### Validation Behavior
 
-- If the LLM's response doesn't match the schema, `call_llm()` retries with the schema re-sent
-- On repeated validation failures, raises `RuntimeError` after `MAX_RETRIES` attempts
-- The retry mechanism sends `cache: {no-cache: true}` (configurable via `LLM_RETRY_NO_CACHE`) to prevent cached bad responses on proxies like LiteLLM
+- `call_llm()` checks that the reply is JSON and a JSON object. If the content is not a single JSON object, it recovers the last complete object that has the schema's `required` keys. It does **not** validate field types; callers sanitise (`rank.sanitize_rankings`, `llm_ids.resolve_ids`).
+- A truncated, unparseable or non-object reply is retried once (`max_attempts=2`); if both attempts fail it raises `RuntimeError("llm failed after 2 attempts ...")`
+- The retry sends `cache: {no-cache: true}` (disable with `LLM_RETRY_NO_CACHE=0`) so proxies like LiteLLM don't serve the same cached bad reply
 
 ---
 
@@ -122,23 +124,23 @@ assert isinstance(response, dict)
 | HTTP 429 (Rate Limit) | Endpoint throttled | Increase timeout, wait, retry |
 | HTTP 500+ (Server Error) | Endpoint down | Check endpoint status page; retry later |
 | Timeout | LLM call took too long | Increase `RANKER_TIMEOUT_S` or `WRITER_TIMEOUT_S` in `.env` |
-| Parse Error | Response not valid JSON | Check `logs/<slug>/llm-rank.log` for the bad response; retry usually fixes it |
+| Parse Error | Response not valid JSON | The stage log has `could not parse llm content as JSON` and the first 2KB of the raw reply; the one automatic retry usually fixes it |
 | Validation Error | JSON doesn't match schema | Schema is too strict or LLM isn't following instructions; see "Prompt Tuning" below |
 
 ### Where to Look
 
-1. **Pipeline logs**: `logs/<slug>/run-<date>.log` (high-level failure message)
-2. **LLM-specific logs**: `logs/<slug>/llm-rank.log` or `llm-write.log` (full request/response)
-3. **Run attempt record**: `sqlite3 editions/<slug>/state.db "SELECT outcome, failed_stage, notes FROM run_attempts WHERE date = date('now');"`
+1. **Pipeline logs**: `logs/<slug>/run-<date>.log` (every stage's log lines, including `llm` errors, retries and token counts)
+2. **LLM artifacts** in `logs/<slug>/`: `rank.rendered.md` / `write.rendered.md` (the prompt sent), `ranker-output-<label>.json` / `writer-output.json` (a reply with the wrong shape), `write.response.json` (the last parsed writer reply)
+3. **Run attempt record**: `sqlite3 editions/<slug>/state.db "SELECT outcome, failed_stage, exit_code FROM run_attempts WHERE date = date('now');"`
 
 ### Example: Ranker Fails with Parse Error
 
 ```bash
-# Check the log
-tail -50 logs/agents/llm-rank.log
+# Check the run log
+grep -E " llm: " logs/agents/run-$(date +%F).log | tail -50
 
-# Look for lines starting with "ERROR" or "RETRY"
-# Example: "ERROR: response is not valid JSON. Retrying..."
+# Look for "could not parse llm content as JSON", "response truncated" or
+# "retry 2/2 after parse/truncation failure"
 
 # If it happens repeatedly, the endpoint might be unstable
 # or the schema is too strict (common with LiteLLM proxies)
@@ -163,28 +165,23 @@ The ranker will still get structured output, but the schema validation is softer
 
 Use pytest fixtures to mock LLM responses:
 
+Patch the name in the module that calls it (`rank.call_llm`, `write.call_llm`), since those modules did `from llm import call_llm`:
+
 ```python
 # tests/test_my_feature.py
 from unittest.mock import patch
 
-def test_my_feature_with_mocked_llm():
-    mock_response = {"id": "123", "score": 8, "tags": ["test"]}
-    
-    with patch("scripts.llm.call_llm", return_value=mock_response):
-        # Now call_llm() returns mock_response instead of hitting the endpoint
-        result = my_pipeline_function()
-        assert result["score"] == 8
+import rank
+
+def test_ranker_with_mocked_llm():
+    with patch("rank.call_llm", return_value={"rankings": []}):
+        # invoke_ranker now gets the canned reply instead of hitting the endpoint
+        assert rank.invoke_ranker("prompt", "papers") == []
 ```
 
 ### Testing with Real LLM Calls
 
-E2E tests in `tests/e2e/` use real LLM calls against a throwaway database:
-
-```bash
-uv run --extra test pytest tests/e2e/ -v -k "test_rank"
-```
-
-These tests hit your configured `LLM_BASE_URL` and `RANKER_MODEL`. They're slow but catch real failures (schema mismatches, endpoint issues, etc.). Run them before merging anything that touches LLM behavior.
+The test suite never calls a real endpoint (`tests/e2e/` runs fetch and the gates with no LLM and no internet). To check a prompt or schema change against your configured `LLM_BASE_URL`, replay the writer for a past date (below) or run the pipeline for a draft edition with `./run.sh --edition <slug>`. Note that `rank.py` takes no flags: running it is a real ranking that spends tokens and writes statuses to the edition's `state.db`.
 
 ### Prompt Iteration Workflow
 
@@ -207,25 +204,20 @@ The replay scripts reuse the candidate pool and published item set from a past d
 
 ```python
 # scripts/my_new_stage.py
-from scripts.llm import call_llm
-from scripts.edition import Edition
+import edition
+import prompts
+from llm import call_llm, writer_config
 
-def my_stage(edition: Edition) -> dict:
-    # Fetch data
-    data = load_data(edition)
-    
-    # Call LLM
-    result = call_llm(
-        messages=[
-            {"role": "system", "content": "..."},
-            {"role": "user", "content": f"Process: {data}"},
-        ],
-        json_schema=MyResultSchema,
+MY_SCHEMA = {"type": "object", "properties": {...}, "required": [...]}
+
+def my_stage(data: str) -> dict:
+    prompt = prompts.render("write", edition.current()) + f"\n\n{data}"
+    cfg = writer_config()  # per call, never a module-level constant
+    return call_llm(
+        prompt, MY_SCHEMA, "my_result",
+        model=cfg.model, timeout_s=cfg.timeout_s, max_tokens=cfg.max_tokens,
+        label="my-stage",
     )
-    
-    # Save to DB
-    save_result(edition, result)
-    return result
 ```
 
 **Don't:**
@@ -238,7 +230,7 @@ def my_stage(edition: Edition) -> dict:
 ```python
 # If LLM call fails, have a fallback
 try:
-    result = call_llm(messages=...)
+    result = call_llm(prompt, MY_SCHEMA, "my_result", model=cfg.model)
 except RuntimeError as e:
     logger.error(f"LLM call failed: {e}")
     # Fallback: return sensible default or propagate error
@@ -257,9 +249,9 @@ File an issue if this is needed.
 
 ## Tips and Gotchas
 
-1. **Never put `.env` secrets in logs** — `llm.py` scrubs `LLM_API_KEY` from logs automatically
-2. **Retries are transparent** — if `call_llm()` retries, you won't see it in your code, but it will be in `logs/<slug>/llm-*.log`
-3. **Validation is strict** — if your schema is too narrow, the LLM will retry and eventually fail. Test early with `tests/e2e/`
+1. **Never put `.env` secrets in logs** — `llm.py` never logs `LLM_API_KEY`, and logs only the *names* of `LLM_EXTRA_HEADERS`; don't log them yourself
+2. **Retries are transparent** — if `call_llm()` retries, you won't see it in your code, but the stage log has `retry 2/2 after parse/truncation failure`
+3. **Strict schemas are endpoint-enforced** — in `json_schema` mode a schema the endpoint can't satisfy gives an HTTP 400 or a bad reply; check with a mocked unit test and one real draft-edition run
 4. **Timeouts accumulate** — `RANKER_TIMEOUT_S` is per-call, so 3 ranker calls (papers, news, blogs) can take up to 3× the timeout
 5. **Cost is not computed automatically** — `runs.cost_usd` is NULL; cost is calculated downstream from `tokens_in` and `tokens_out` using your provider's rates
 
