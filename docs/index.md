@@ -50,6 +50,8 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 - **[Code Patterns Guide](./code-patterns-guide.md)** — Recommended patterns for pipeline stages, testing, error handling
 - **[Testing Patterns Guide](./testing-patterns-guide.md)** — Unit tests, integration tests, coverage gates
 - **[LLM Integration Guide](./llm-integration-guide.md)** — How LLM calls work, token budgets, model selection
+- **[Python-Shell Integration Guide](./python-shell-integration-guide.md)** — How Python scripts receive configuration from shell, environment variables, exit codes
+- **[Shell Architecture Guide](./shell-architecture-guide.md)** — Understanding the shell orchestration layer (contracts, worktrees, locking)
 - **[Site Development Guide](./site-development-guide.md)** — Astro setup, component development, styling
 
 ### DevOps and Infrastructure
