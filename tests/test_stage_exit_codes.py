@@ -60,6 +60,7 @@ def test_exit_code_values_are_stable():
         "OK": 0,
         "NO_DATA": 1,
         "MISSING_INPUT": 2,
+        "BAD_CONFIG": 3,
         "ISSUE_TOO_SMALL": 4,
         "EMPTY_ISSUE": 5,
     }

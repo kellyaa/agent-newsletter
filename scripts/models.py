@@ -280,6 +280,9 @@ class ExitCode(IntEnum):
     NO_DATA = 1
     # A file the stage needs is missing: a prompt, or the issue from write.
     MISSING_INPUT = 2
+    # fetch: the edition's sources.yaml is unusable (missing, invalid YAML,
+    # top level not a mapping), so there is nothing to fetch.
+    BAD_CONFIG = 3
     # publish: the issue file is too small to be a real issue.
     ISSUE_TOO_SMALL = 4
     # publish: no featured and no appendix items, so the issue would be empty.

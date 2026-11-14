@@ -20,8 +20,19 @@ REQUIRED_KEYS = {f.value: set(keys) for f, keys in SOURCE_REQUIRED_KEYS.items()}
 
 
 @pytest.fixture(scope="module")
-def sources():
+def sources_file():
     return load_sources()
+
+
+@pytest.fixture(scope="module")
+def sources(sources_file):
+    return sources_file.as_dict()
+
+
+def test_committed_sources_file_has_no_structural_problems(sources_file):
+    # edition.read_sources is the one parser; anything it skips, fetch skips.
+    assert sources_file.fatal is None
+    assert sources_file.problems == ()
 
 
 def _entries(sources):

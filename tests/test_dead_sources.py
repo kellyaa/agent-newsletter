@@ -170,11 +170,20 @@ def test_configured_thresholds_is_none_for_invalid_yaml(tmp_path):
     assert dead_sources.configured_thresholds(f, 7) is None
 
 
-@pytest.mark.parametrize("text", ["", "- just\n- a list\n", "plain scalar\n"])
+@pytest.mark.parametrize("text", ["- just\n- a list\n", "plain scalar\n"])
 def test_configured_thresholds_is_none_when_top_level_is_not_a_mapping(tmp_path, text):
     f = tmp_path / "sources.yaml"
     f.write_text(text)
     assert dead_sources.configured_thresholds(f, 7) is None
+
+
+@pytest.mark.parametrize("text", ["", "# sources to come\n"])
+def test_configured_thresholds_empty_file_has_no_sources(tmp_path, text):
+    # Same as fetch and check_edition (edition.read_sources): an empty or
+    # comments-only file is a valid file with no sources, not an unusable one.
+    f = tmp_path / "sources.yaml"
+    f.write_text(text)
+    assert dead_sources.configured_thresholds(f, 7) == {}
 
 
 def test_configured_thresholds_skips_non_mapping_entries(tmp_path):

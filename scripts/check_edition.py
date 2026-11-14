@@ -27,13 +27,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
 import edition as edition_mod
 import gates
 import logsetup
 import prompts as prompts_mod
-from edition import Edition, EditionError
+from edition import Edition, EditionError, SourcesFile
 from models import (
     SOURCE_BOOL_FLAGS,
     SOURCE_FAMILY_INT_KEYS,
@@ -75,41 +73,21 @@ class SourceCount:
 
 # ---------------------------------------------------------------- lint
 
-def _load_sources(path: Path, result: LintResult) -> dict:
-    if not path.is_file():
-        result.errors.append(f"{path}: missing")
-        return {}
-    try:
-        raw = yaml.safe_load(path.read_text())
-    except yaml.YAMLError as e:
-        result.errors.append(f"{path}: invalid YAML: {e}")
-        return {}
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        result.errors.append(f"{path}: top level must be a mapping of source families")
-        return {}
-    return raw
+def _check_sources(sf: SourcesFile, result: LintResult) -> None:
+    """Per-entry rules on top of the shape check in :func:`edition.read_sources`.
 
-
-def _check_sources(sources: dict, result: LintResult) -> None:
-    unknown = sorted(set(map(str, sources)) - set(FAMILIES))
-    if unknown:
-        result.errors.append(f"sources.yaml: unknown source families {unknown} (allowed: {list(FAMILIES)})")
+    The shape (file readable, families known and lists, entries mappings) is
+    checked only there, so fetch skips exactly what lint reports.
+    """
+    if sf.fatal:
+        result.errors.append(sf.fatal)
+        return
+    result.errors.extend(sf.problems)
     active = 0
     for family in FAMILIES:
-        entries = sources.get(family)
-        if entries is None:
-            continue
-        if not isinstance(entries, list):
-            result.errors.append(f"sources.yaml: {family!r} must be a list")
-            continue
         seen_ids: set[str] = set()
-        for i, entry in enumerate(entries):
+        for i, entry in sf.entries(family):
             where = f"sources.yaml: {family}[{i}]"
-            if not isinstance(entry, dict):
-                result.errors.append(f"{where} must be a mapping")
-                continue
             active += 1
             missing = sorted(REQUIRED_KEYS[family] - set(entry))
             if missing:
@@ -178,8 +156,9 @@ def lint(slug: str) -> LintResult:
         if left:
             result.errors.append(f"{stage} prompt still contains unfilled placeholders {sorted(set(left))}")
 
-    result.sources = _load_sources(ed.paths().sources, result)
-    _check_sources(result.sources, result)
+    sf = edition_mod.read_sources(ed.paths().sources)
+    _check_sources(sf, result)
+    result.sources = sf.as_dict()  # what fetch would walk; dry_run fetches it
 
     todos = _scan_todos(ed)
     if todos:
