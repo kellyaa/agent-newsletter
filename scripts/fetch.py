@@ -496,7 +496,7 @@ def upsert_items(
             continue
         canonical = canonicalize_url(it.url)
         item_id = url_id(it.url)
-        if upsert_item(  # pragma: no cover — ON CONFLICT DO UPDATE always reports a row
+        if upsert_item(
             conn,
             item_id=item_id, source=it.source, url=it.url, canonical_url=canonical,
             title=it.title, author=it.author, published_at=it.published_at,

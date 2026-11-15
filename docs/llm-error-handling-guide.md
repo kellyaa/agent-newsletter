@@ -35,7 +35,7 @@ When `rank.py` hits a ContentFilterError, it **bisects the batch**:
 ```python
 except ContentFilterError:
     if len(items) == 1:
-        # Single item was filtered; leave it unscored (appendix fallback)
+        # Single item was filtered; leave it unscored (see the fallback below)
         log.warning("%s: content-filtered item left unscored", section, items[0].title)
         return []
     mid = len(items) // 2
@@ -45,7 +45,7 @@ except ContentFilterError:
     return rank_section(section, items[:mid], rubric) + rank_section(section, items[mid:], rubric)
 ```
 
-**Practical effect:** The batch is split in half and sent again. If a half-batch also gets filtered, it is split again. Single items that get filtered are skipped entirely and fallback to appendix (if eligible by score).
+**Practical effect:** The batch is split in half and sent again. If a half-batch also gets filtered, it is split again. A single item that still gets filtered is left unscored: a paper stays in the pool and is sent again next run, a news/blogs item goes to the appendix with score 0 (see [Fallback for unscored items](#fallback-for-unscored-items)).
 
 ### Example Logs
 
@@ -182,29 +182,22 @@ except RuntimeError as e:
         "leaving unscored (appendix fallback) instead of aborting the run",
         section, len(items), e,
     )
-    return []  # No scored items; all will go to appendix if they pass other gates
+    return []  # No scored items; score_candidates' unscored fallback handles them
 ```
 
 **Practical effect:**
 
-- Items in the failed section are **not dropped**; they move to appendix (if `appendix_min` score is defined).
+- Items in the failed section are **not dropped**. Papers stay in the pool unscored and are sent to the ranker again on the next run or on a retry of the day; news/blogs move to the appendix with score 0.
 - The pipeline **does not abort**; other sections and the writer stage continue.
 - You get a **newsletter with fewer featured items** in the failed section.
 - The run is recorded as `ok` (not `failed`), but the failure is logged as an error and you receive a notification.
 
-### Fallback Logic for Unscored Items
+### Fallback for unscored items
 
-After ranking, `publish.py` checks if there are unscored items and assigns them to appendix if eligible:
+`rank.score_candidates` (shared by `rank.main` and `backfill`) runs after every section call. Some candidates come back with no ranking: the ranker omitted them, a content-filter block left them unscored, or the section's call failed. For those, by section:
 
-```python
-# In rank.py's assign_statuses():
-if score is None or score < appendix_min:
-    status = "dropped"  # Not eligible for appendix
-elif score < featured_min:
-    status = "appendix"  # Unscored items land here
-else:
-    status = "featured"
-```
+- **papers**: no decision. The row stays `candidate` with `score` NULL and `times_competed` unchanged, so it goes back into the unscored `papers` bucket. The next run, or a retry of the same day, sends it to the ranker again. If it is never scored, the papers-pool age-out (`db.PAPER_AGE_OUT_SQL`) retires it as `expired_unjudged`. Log line: `N papers not scored → left in the pool to re-compete`. Before #720 these papers were sealed as `appendix` with score 0, and a retry could not re-score them.
+- **news / blogs**: there is no pool, so they go to `appendix` with score 0 and `why` = `fallback: ranker did not return a score` (title and link only in the issue). Log line: `N candidates not scored → fallback to appendix`.
 
 ---
 

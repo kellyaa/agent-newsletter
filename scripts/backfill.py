@@ -198,7 +198,7 @@ def rank_with_optional_llm(conn, candidates: dict) -> dict:
     Delegates to the canonical rank module instead of reimplementing the
     scoring/status-assignment logic, so the sandbox run gets the same
     content-filter bisection, per-section failure isolation, output
-    sanitising, thresholds/caps and unscored -> appendix fallback as the
+    sanitising, thresholds/caps and unscored fallback as the
     daily run. Usually no LLM call happens: on a missed-day backfill the
     candidates are typically all prescored from prior runs.
     """

@@ -886,6 +886,7 @@ _UPSERT_ITEM_SQL = f"""
                                   items.keyword_gate_bypass),
         recency_days_override = COALESCE(excluded.recency_days_override,
                                          items.recency_days_override)
+    RETURNING appearances
 """
 
 
@@ -903,8 +904,12 @@ def upsert_item(
     over NULL; ``keyword_gate_bypass`` is sticky once on). Everything else on
     the stored row is left alone.
 
-    Does not commit (the caller commits once per batch). Returns whether SQLite
-    reported a written row (rowcount and lastrowid both set).
+    Does not commit (the caller commits once per batch). Returns True when the
+    id was new (a row was inserted) and False when an existing row was
+    refreshed. The answer comes from the row itself (``RETURNING appearances``:
+    always 1 on insert, at least 2 after a conflict update), not from
+    ``cursor.lastrowid``: SQLite leaves that at the connection's last real
+    insert on a conflict update, so it counted re-seen items as new (#723).
     """
     cur = conn.execute(
         _UPSERT_ITEM_SQL,
@@ -916,7 +921,8 @@ def upsert_item(
             seen_date, seen_date,
         ),
     )
-    return bool(cur.rowcount and cur.lastrowid)
+    (appearances,) = cur.fetchone()
+    return appearances == 1
 
 
 if __name__ == "__main__":

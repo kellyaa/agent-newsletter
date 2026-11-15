@@ -99,8 +99,8 @@ def test_backfill_bisects_content_filtered_item(monkeypatch, no_persist):
 
     decisions = backfill.rank_with_optional_llm(None, grouped)
 
-    assert {i: d["score"] for i, d in decisions.items()} == {"a": 9, "b": 9, "c": 9, "bad": 0}
-    assert decisions["bad"]["status"] == Status.APPENDIX
+    # The blocked paper gets no decision: it stays in the pool, unscored (#720).
+    assert {i: d["score"] for i, d in decisions.items()} == {"a": 9, "b": 9, "c": 9}
 
 
 def test_backfill_survives_ranker_runtime_error(monkeypatch, no_persist):
@@ -118,8 +118,8 @@ def test_backfill_survives_ranker_runtime_error(monkeypatch, no_persist):
     decisions = backfill.rank_with_optional_llm(None, grouped)
 
     assert decisions["p1"]["score"] == 9
-    assert decisions["u1"]["status"] == Status.APPENDIX
-    assert decisions["u1"]["section"] == Section.PAPERS
+    # The failed batch's paper stays in the pool unscored, not sealed (#720).
+    assert "u1" not in decisions
 
 
 def test_backfill_omitted_item_falls_back_to_appendix(monkeypatch, no_persist):

@@ -220,7 +220,7 @@ blogs: ranker returned 8 entries
 ── rank ── ok
 ```
 
-Papers section got no ranked items.
+Papers section got no ranked items. The papers stay in the pool unscored (log: `N papers not scored → left in the pool to re-compete`), so the next run or a retry sends them to the ranker again (#720).
 
 **Recovery (if temporary):**
 
