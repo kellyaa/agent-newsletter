@@ -19,6 +19,7 @@ This directory contains comprehensive guides for operating, extending, and under
 - **Tune an edition's keyword gate or sources** → [edition-tuning-guide.md](edition-tuning-guide.md)
 - **Understand how ranking works** → [ranking-rubric.md](ranking-rubric.md)
 - **Write a new LLM integration** → [llm-integration-guide.md](llm-integration-guide.md)
+- **Understand shell orchestration (run.sh, contracts, watchdog)** → [shell-architecture-guide.md](shell-architecture-guide.md)
 - **Work on the Astro site** → [site-development-guide.md](site-development-guide.md)
 - **Understand the database schema** → [database-schema-guide.md](database-schema-guide.md)
 - **Handle multiple editions** → [multi-edition-operations.md](multi-edition-operations.md)
@@ -32,6 +33,7 @@ This directory contains comprehensive guides for operating, extending, and under
 
 | Guide | Purpose |
 |-------|---------|
+| [shell-architecture-guide.md](shell-architecture-guide.md) | Shell orchestration contracts, coordination patterns, shell library design; runlog, pyrunner, envfiles, runlock, contentbranch, editionlist |
 | [site-architecture.md](site-architecture.md) | Astro site structure, routing, content model, build process |
 | [repository-branches-and-worktrees.md](repository-branches-and-worktrees.md) | Two-branch model, worktree layout, main vs content |
 | [risk-tiers.md](risk-tiers.md) | Change review expectations by what you touch (tier 0–3) |
