@@ -36,6 +36,7 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 ### Architecture and Design
 
 - **[SPEC.md](../SPEC.md)** — Canonical design document; architecture, layers, contracts, iteration plan
+- **[Shell Architecture Guide](./shell-architecture-guide.md)** — Shell orchestration contracts, coordination patterns, shell library design
 - **[Site Architecture](./site-architecture.md)** — Astro site structure, component organization, build process
 - **[Repository Structure](../README.md)** — Scripts, editions, tests, and file layout
 
