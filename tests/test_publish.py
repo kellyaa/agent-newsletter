@@ -139,6 +139,11 @@ class TestMainMissingFile:
         monkeypatch.setattr(publish_mod, "connect", lambda: db_mod.connect(db_path))
         monkeypatch.setattr(publish_mod, "init_db", lambda: db_mod.init_db(db_path))
 
+        # A featured row is waiting, so write should have produced a file.
+        conn = db_mod.connect(db_path)
+        _insert_item(conn, "f1", "featured")
+        conn.close()
+
         monkeypatch.setenv("RUN_DATE", "2026-06-01")
         result = publish_main()
 
