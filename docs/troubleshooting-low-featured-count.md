@@ -127,7 +127,7 @@ tail -50 logs/agents/run-$(date +%Y-%m-%d).log | tail -20
 
 If the last line is `── rank ── ok` with no `write` line after, the writer never started (it's called after rank). This can happen if:
 
-1. **Rank left nothing to write.** All sections got 0 ranked items.
+1. **Rank left nothing to write.** All sections got 0 ranked items. Write then logs `nothing to publish for <date>; skipping`, writes no issue file and exits 0, and publish fails the day with `exit_code = 5` (`EMPTY_ISSUE`). `exit_code = 2` (`MISSING_INPUT`) at publish means something else: featured or appendix rows are waiting but the issue file is missing.
 2. **Writer hung or timed out.** Check `ps aux` for any running processes.
 
 **Diagnose:**

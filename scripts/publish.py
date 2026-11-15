@@ -118,6 +118,20 @@ def main(today: str | None = None) -> int:
         today = run_date()
     issue_path = issues_dir() / issue_filename(today)
     if not issue_path.exists():
+        # write skips the file when nothing is featured and nothing is in the
+        # appendix. That is the empty-issue refusal below, not a write that
+        # never ran, so report it as EMPTY_ISSUE rather than MISSING_INPUT.
+        conn = connect()
+        try:
+            pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
+        finally:
+            conn.close()
+        if pending == 0:
+            log.error(
+                "no featured and no appendix items for %s, so write produced no "
+                "issue — refusing to publish an empty issue", today,
+            )
+            return ExitCode.EMPTY_ISSUE
         log.error("missing %s — run write.py first", issue_path)
         return ExitCode.MISSING_INPUT
 

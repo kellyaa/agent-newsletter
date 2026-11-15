@@ -286,6 +286,7 @@ class ExitCode(IntEnum):
     # publish: the issue file is too small to be a real issue.
     ISSUE_TOO_SMALL = 4
     # publish: no featured and no appendix items, so the issue would be empty.
+    # Also returned when write skipped the issue file for that reason.
     EMPTY_ISSUE = 5
 
 
