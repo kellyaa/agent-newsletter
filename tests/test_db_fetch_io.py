@@ -64,8 +64,9 @@ def test_insert_does_not_commit(conn):
 def test_reseen_bumps_appearances_and_last_seen_only(conn):
     _upsert(conn)
     conn.execute("UPDATE items SET status = ? WHERE id = 'a'", (Status.CANDIDATE,))
+    # A re-seen id is an update, not a new item (#723).
     assert _upsert(conn, title="New title", fetched_at="2026-06-02T01:00:00Z",
-                   seen_date="2026-06-02") is True
+                   seen_date="2026-06-02") is False
     r = _row(conn)
     assert (r["appearances"], r["first_seen_date"], r["last_seen_date"]) == (
         2, "2026-06-01", "2026-06-02")

@@ -1,12 +1,11 @@
 """Tests for branch coverage gaps — partial branches not covered by existing tests.
 
-All 9 partial branches from --cov-branch analysis:
+All 8 partial branches from --cov-branch analysis:
   backfill.py:89->92   — setup_sandbox() fresh-run (sandbox does not pre-exist)
   candidates.py        — load_candidates_from_db() unknown section in DB (falls through to blogs)
   db.py:129->132       — canonicalize_url() arxiv URL where regex does NOT match
   fetch.py:152->154    — fetch_hn() hit with no created_at field
   fetch.py:186->188    — fetch_reddit() post with no created_utc field
-  fetch.py:271->241    — upsert_items() conflict update (rowcount check false path)
   llm.py:107->110      — _one_shot() markdown code fence without closing triple-tick
   write.py:234->231    — _emit_dict() returns empty list for a list value
   write.py:273->272    — assemble_issue() writer output entry without 'id' key
@@ -247,50 +246,6 @@ class TestFetchRedditNoCreatedUtc:
         assert len(items) == 1
         assert items[0].published_at is None
         assert items[0].url == "https://www.reddit.com/r/LocalLLaMA/comments/x/t/"
-
-
-# ---------------------------------------------------------------------------
-# fetch.py upsert_items() — db.upsert_item() reported-no-row false path
-# (Note: this is structurally unreachable with real SQLite ON CONFLICT DO UPDATE
-# but the test documents the observed behavior and exercises the code path)
-# ---------------------------------------------------------------------------
-
-class TestUpsertItemsConflictBranch:
-    def test_conflict_update_counted_as_inserted(self, tmp_path):
-        """Conflict DO UPDATE: SQLite returns rowcount=1 even for updates.
-
-        Branch 271->241 is the 'not (rowcount and lastrowid)' path.
-        In practice ON CONFLICT DO UPDATE always sets rowcount=1, so this
-        branch doesn't fire with real SQLite. Documented here for traceability.
-        """
-        import db as db_mod
-        from fetch import upsert_items, Item
-
-        _init_db(tmp_path / "state.db")
-        conn = db_mod.connect(tmp_path / "state.db")
-
-        item = Item(
-            source="rss:test",
-            url="https://example.com/conflict-test",
-            title="Conflict Test",
-            author=None,
-            published_at=None,
-            raw_text=None,
-        )
-
-        # First insert
-        seen1, inserted1 = upsert_items(conn, [item])
-        assert seen1 == 1
-        assert inserted1 == 1
-
-        # Second insert — conflict/update path
-        seen2, inserted2 = upsert_items(conn, [item])
-        assert seen2 == 1
-        # SQLite ON CONFLICT DO UPDATE: rowcount=1, lastrowid=existing_rowid
-        # so inserted still counts as 1 (the guard is True both times)
-        assert inserted2 == 1
-
-        conn.close()
 
 
 # ---------------------------------------------------------------------------
