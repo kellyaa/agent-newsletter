@@ -32,7 +32,17 @@ from db import (
 )
 from llm import ContentFilterError, call_llm, ranker_config
 from llm_ids import alias_items, resolve_ids
-from models import SCORE_MAX, SCORE_MIN, ExitCode, encode_tags, RankDecision, ScoredItem, Section, Status
+from models import (
+    SCORE_MAX,
+    SCORE_MIN,
+    ExitCode,
+    RankDecision,
+    ScoredItem,
+    Section,
+    Status,
+    encode_tags,
+    issue_filename,
+)
 
 log = logging.getLogger("rank")
 
@@ -49,6 +59,18 @@ def ranked_path() -> Path:
     stale one (#446).
     """
     return edition.runtime_paths(content_root()).ranked
+
+
+def issue_path(date: str) -> Path:
+    """The selected edition's issue file for run date ``date``.
+
+    rank skips when this exists: write has already turned an earlier
+    attempt's verdicts into the day's issue, so re-ranking would only make the
+    DB (which publish seals) disagree with the file readers get. Resolved at
+    call time like :func:`ranked_path`; built from the shared layout helpers
+    because stages must not import write.
+    """
+    return edition.runtime_paths(content_root()).issues_dir / issue_filename(date)
 
 
 # Per-section thresholds and caps come from editions/<slug>/edition.yaml
@@ -449,6 +471,16 @@ def main(now: datetime | None = None) -> int:
         return ExitCode.MISSING_INPUT
     if now is None:
         now = datetime.now(timezone.utc)
+
+    # Same skip rule as write: once today's issue file exists it is the day's
+    # product, and rank's verdicts only feed it. Re-ranking now (a retry after
+    # publish failed, or a re-run of a finished day) would reset or promote
+    # items the file does not show, and publish would seal those instead.
+    # reset_day (--force/--refetch) deletes the file, so forced re-runs still rank.
+    written = issue_path(run_date())
+    if written.exists():
+        log.info("rank: skip — %s already written; reset_day to re-rank (#728)", written)
+        return ExitCode.OK
 
     rubric = prompts.render_and_log("rank", edition.current(), template_path=PROMPT_PATH)
 
