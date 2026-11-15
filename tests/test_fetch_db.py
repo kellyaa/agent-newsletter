@@ -101,17 +101,12 @@ class TestUpsertItemsConflict:
         assert row["appearances"] == 2
 
     def test_duplicate_increments_appearances_not_inserted(self, db):
-        """On conflict, appearances increments but the row is not a new insert.
-
-        SQLite ON CONFLICT DO UPDATE sets rowcount=1 and lastrowid to the existing
-        row's rowid even on update — so upsert_items counts a conflict as inserted=1.
-        This test documents the observed behavior (appearances increments correctly).
-        """
+        """On conflict, appearances increments and the item is not counted as new."""
         item = _make_item()
-        upsert_items(db, [item])
-        upsert_items(db, [item])  # same URL again — conflict path
+        assert upsert_items(db, [item]) == (1, 1)
+        assert upsert_items(db, [item]) == (1, 0)  # same URL again — conflict path
         row = db.execute("SELECT appearances FROM items").fetchone()
-        assert row["appearances"] == 2  # appearances is correctly incremented
+        assert row["appearances"] == 2
 
     def test_section_override_not_overwritten_by_none(self, db):
         """If the re-seen item has no section_override, existing value is preserved."""
