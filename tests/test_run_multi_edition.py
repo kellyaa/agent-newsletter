@@ -399,8 +399,9 @@ def test_run_edition_push_failure_exits_nonzero(fx):
              "NEWSLETTER_PYTHON": sys.executable, "RUN_DATE": _today()},
         capture_output=True, text=True,
     )
-    assert r.returncode == 1
+    assert r.returncode != 0  # git's own status, like a failing stage's (#735)
     assert "push failed" in r.stdout
+    assert "FAILED at stage=push" in r.stdout
 
 
 def test_python_runner_fallbacks(fx, tmp_path):
@@ -534,9 +535,10 @@ def test_run_edition_stage_failure_stops_later_stages_and_keeps_exit_code(fx, fa
     assert "stage=rank rc=7" in fake_notifier.read_text()
 
 
-def test_run_edition_push_failure_keeps_attempt_ok_and_commit_for_next_push(fx, fake_notifier):
-    """A failed push is not a failed run: the attempt stays ok, no alert fires,
-    the issue stays committed locally, and the next run's push carries it."""
+def test_run_edition_push_failure_fails_the_attempt_at_stage_push(fx, fake_notifier):
+    """A failed push fails the attempt at stage=push (#735): FAILED marker, an
+    alert and a failed row, so run.sh's selection sees what its summary says.
+    The issue stays committed locally and the re-run's push carries it."""
     repo, remote, env = fx
     assert _run(repo, env, "--edition", "agents").returncode == 0
     wt = repo / ".worktrees" / "content"
@@ -546,26 +548,55 @@ def test_run_edition_push_failure_keeps_attempt_ok_and_commit_for_next_push(fx, 
     local_before = _git(wt, "log", "--format=%s").stdout
 
     r = _direct_run_edition(repo, env)
-    assert r.returncode == 1, r.stdout + r.stderr
+    assert r.returncode != 0, r.stdout + r.stderr
     assert "git: committed" in r.stdout
-    assert "git: push failed (will retry on next run)" in r.stdout
+    assert "git: push failed" in r.stdout
     assert "[run] DONE" not in r.stdout
-    # Not treated as a stage failure: no FAILED line, no notification, no failed row.
-    assert "FAILED at stage" not in r.stdout
-    assert not fake_notifier.exists()
-    assert _attempts(repo, "agents", env)[-1] == (2, "ok", None)
-    # Committed locally, absent from the remote.
+    assert "FAILED at stage=push" in r.stdout
+    assert "stage=push" in fake_notifier.read_text()
+    assert _attempts(repo, "agents", env)[-1] == (2, "failed", "push")
+    # Committed locally (the run commit, then the failed-attempt state.db), absent remotely.
     assert _remote_log(remote) == pushed_before
-    assert _git(wt, "log", "--format=%s").stdout != local_before
-    assert "newsletter(agents): " in _git(wt, "log", "-1", "--format=%s").stdout
+    # Two new local commits: the daily run, then the failed attempt's state.db.
+    local = _git(wt, "log", "--format=%s").stdout.splitlines()
+    assert local[2:] == local_before.splitlines()
+    assert local[0].endswith("attempt 2 failed at push")
+    assert local[1].endswith("daily run")
 
-    # Remote is reachable again: the next run's push carries the stranded commit.
+    # Remote is reachable again: the re-run pushes everything left local.
     _git(wt, "remote", "set-url", "origin", good_url)
     r2 = _direct_run_edition(repo, env)
     assert r2.returncode == 0, r2.stdout + r2.stderr
     assert "git: pushed to content" in r2.stdout
     assert _remote_log(remote).splitlines() == _git(wt, "log", "--format=%s").stdout.splitlines()
     assert _attempts(repo, "agents", env)[-1] == (3, "ok", None)
+
+
+def test_push_failure_is_rerun_by_run_sh_failed_and_ships_the_issue(fx, fake_notifier):
+    """The orchestrator's readers agree after a failed push (#735). Before, the
+    summary said 'FAILED ... re-run with ./run.sh --failed' while the attempt
+    stayed ok, so --failed found nothing, a plain run said 'already ok today',
+    and the day's issue never reached the content branch."""
+    repo, remote, env = fx
+    assert _run(repo, env, "--edition", "beta").returncode == 0  # creates the worktree
+    wt = repo / ".worktrees" / "content"
+    issue = f"editions/agents/issues/{_today()}.md"
+    # Break only the push URL, so run.sh's own content pull still works.
+    _git(wt, "remote", "set-url", "--push", "origin", str(repo.parent / "gone.git"))
+
+    r = _run(repo, env, "--edition", "agents")
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "agents: FAILED at stage=push" in r.stdout
+    assert _attempts(repo, "agents", env)[-1][1:] == ("failed", "push")
+    assert issue not in _remote_files(remote)
+
+    _git(wt, "remote", "set-url", "--push", "origin", str(remote))
+    r = _run(repo, env, "--failed")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "nothing to re-run" not in r.stdout
+    assert "── agents ── ok" in r.stdout
+    assert issue in _remote_files(remote)
+    assert _attempts(repo, "agents", env)[-1][1:] == ("ok", None)
 
 
 @pytest.mark.parametrize("flag, marker", [
