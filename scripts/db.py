@@ -8,6 +8,7 @@ import os
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import edition as _edition
 from models import AttemptOutcome, Section, Status
@@ -639,21 +640,28 @@ def count_featured_by_section(conn: sqlite3.Connection) -> dict[str, int]:
     return {r[0]: int(r[1]) for r in rows}
 
 
-def publish_selected_items(conn: sqlite3.Connection, date: str) -> int:
-    """Move every featured/appendix item to ``published`` on ``date``.
-
-    Commits. Returns rows updated.
-    """
+def _seal_selected_items(conn: sqlite3.Connection, date: str) -> int:
+    """The sealing UPDATE behind :func:`publish_selected_items`; does not commit."""
     cur = conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
         f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
         (date,),
     )
-    conn.commit()
     return cur.rowcount or 0
 
 
-def upsert_run(
+def publish_selected_items(conn: sqlite3.Connection, date: str) -> int:
+    """Move every featured/appendix item to ``published`` on ``date``.
+
+    Commits. Returns rows updated. The daily publish stage uses
+    :func:`publish_day` instead, so the seal and the ``runs`` row land together.
+    """
+    n = _seal_selected_items(conn, date)
+    conn.commit()
+    return n
+
+
+def _write_run(
     conn: sqlite3.Connection,
     date: str,
     *,
@@ -670,11 +678,7 @@ def upsert_run(
     papers_expired_unjudged: int | None = None,
     papers_prerank_cut: int | None = None,
 ) -> None:
-    """Insert or refresh the ``runs`` row for ``date``. Commits.
-
-    Counts and notes are overwritten on re-publish; duration, tokens and the
-    papers-pool counters keep their earlier value when the new one is None.
-    """
+    """The ``runs`` upsert behind :func:`upsert_run`; does not commit."""
     conn.execute(
         """
         INSERT INTO runs (date, items_fetched, items_candidate, items_featured,
@@ -705,7 +709,37 @@ def upsert_run(
             papers_expired_unjudged, papers_prerank_cut,
         ),
     )
+
+
+def upsert_run(conn: sqlite3.Connection, date: str, **run: Any) -> None:
+    """Insert or refresh the ``runs`` row for ``date``. Commits.
+
+    Takes the keyword arguments of :func:`_write_run`. Counts and notes are
+    overwritten on re-publish; duration, tokens and the papers-pool counters
+    keep their earlier value when the new one is None.
+    """
+    _write_run(conn, date, **run)
     conn.commit()
+
+
+def publish_day(conn: sqlite3.Connection, date: str, **run: Any) -> int:
+    """Seal the day's featured/appendix items AND write its ``runs`` row, atomically.
+
+    One transaction, one commit: if either statement fails the other is rolled
+    back and the error propagates, so the day is left exactly as it was before
+    the call and a retry publishes it normally. Sealing first and writing the
+    ``runs`` row in a second commit stranded the day as EMPTY_ISSUE forever when
+    the second step failed (#738). ``run`` takes the keyword arguments of
+    :func:`_write_run`. Returns the number of items sealed.
+    """
+    try:
+        sealed = _seal_selected_items(conn, date)
+        _write_run(conn, date, **run)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    return sealed
 
 
 # --- reset_day's forced re-run resets ----------------------------------------

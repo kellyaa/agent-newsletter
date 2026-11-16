@@ -9,6 +9,7 @@ bottom keep inline SQL and bare section/status literals out of publish.py.
 from __future__ import annotations
 
 import ast
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -200,3 +201,59 @@ def test_publish_has_no_bare_section_or_status_literals():
         and node.value in DOMAIN_NAMES
     ]
     assert offenders == [], f"use models.Section/Status instead of literals: {offenders}"
+
+
+# --- publish_day (atomic seal + runs row, #738) ------------------------------
+
+def test_publish_day_seals_items_and_writes_runs_row(conn, tmp_path):
+    _add(conn, "f", Status.FEATURED)
+    _add(conn, "a", Status.APPENDIX)
+    _add(conn, "c", Status.CANDIDATE)
+    assert db_mod.publish_day(conn, "2026-06-01", **_run_kwargs()) == 2
+    assert tuple(_status(conn, "f")) == (Status.PUBLISHED, "2026-06-01")
+    assert tuple(_status(conn, "a")) == (Status.PUBLISHED, "2026-06-01")
+    assert tuple(_status(conn, "c")) == (Status.CANDIDATE, None)
+    other = db_mod.connect(tmp_path / "state.db")  # committed, visible elsewhere
+    try:
+        assert other.execute("SELECT items_featured FROM runs").fetchone()[0] == 3
+    finally:
+        other.close()
+
+
+def test_publish_day_rolls_back_the_seal_when_the_runs_write_fails(conn, tmp_path):
+    _add(conn, "f", Status.FEATURED)
+    # An unknown column makes the runs upsert fail after the seal UPDATE ran.
+    with pytest.raises(TypeError):
+        db_mod.publish_day(conn, "2026-06-01", **_run_kwargs(bogus=1))
+    assert not conn.in_transaction
+    conn.execute("DROP TABLE runs")  # a failure inside sqlite itself
+    conn.commit()
+    with pytest.raises(sqlite3.OperationalError):
+        db_mod.publish_day(conn, "2026-06-01", **_run_kwargs())
+    assert not conn.in_transaction
+    other = db_mod.connect(tmp_path / "state.db")
+    try:
+        assert other.execute("SELECT status FROM items").fetchone()[0] == Status.FEATURED
+    finally:
+        other.close()
+
+
+def test_publish_day_is_the_only_publish_writer_publish_py_calls():
+    """publish.py must not seal and record separately again (#738): two commits
+    let a failure between them strand the day as EMPTY_ISSUE on retry."""
+    tree = ast.parse(PUBLISH_PY.read_text(encoding="utf-8"))
+    called = {
+        n.func.id if isinstance(n.func, ast.Name) else n.func.attr
+        for n in ast.walk(tree) if isinstance(n, ast.Call)
+        and isinstance(n.func, (ast.Name, ast.Attribute))
+    }
+    assert "publish_day" in called
+    assert not called & {"publish_selected_items"}, "use db.publish_day"
+    # upsert_run stays reachable only through record_run (a lone-runs-row helper)
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    in_main = {
+        n.func.id if isinstance(n.func, ast.Name) else n.func.attr
+        for n in ast.walk(main) if isinstance(n, ast.Call)
+        and isinstance(n.func, (ast.Name, ast.Attribute))
+    }
+    assert not in_main & {"publish_selected_items", "upsert_run", "record_run"}

@@ -579,3 +579,74 @@ class TestMainRerunBehaviour:
 
         # nothing featured/appendix and no runs row: falls through to the empty-issue refusal
         assert publish_main() == 5
+
+
+class TestMainIsAtomic:
+    """#738: sealing the items and writing the runs row are one transaction."""
+
+    def _seed(self, publish_env):
+        import db as db_mod
+        conn = db_mod.connect(publish_env)
+        _insert_item(conn, "feat-1", "featured", "news")
+        conn.close()
+
+    def _item_status(self, db_path):
+        import db as db_mod
+        conn = db_mod.connect(db_path)
+        try:
+            return conn.execute("SELECT status FROM items WHERE id = 'feat-1'").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_failure_writing_the_runs_row_leaves_the_day_publishable(
+            self, publish_env, monkeypatch):
+        import sqlite3
+        import db as db_mod
+        import publish
+        real = db_mod._write_run
+        calls = {"n": 0}
+
+        def flaky(*a, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise sqlite3.OperationalError("database or disk is full")
+            return real(*a, **kw)
+
+        monkeypatch.setattr(db_mod, "_write_run", flaky)
+        self._seed(publish_env)
+
+        with pytest.raises(sqlite3.OperationalError):
+            publish.main()
+        assert self._item_status(publish_env) == "featured"
+        assert _runs_row(publish_env) is None
+
+        assert publish.main() == 0  # the retry ships, not EMPTY_ISSUE
+        assert self._item_status(publish_env) == "published"
+        assert _runs_row(publish_env)["items_featured"] == 1
+
+    def test_failure_gathering_inputs_writes_nothing(self, publish_env, monkeypatch):
+        import publish
+        self._seed(publish_env)
+
+        def boom(_path):
+            raise OSError("usage log unreadable")
+
+        real = publish.usage_totals
+        monkeypatch.setattr(publish, "usage_totals", boom)
+        with pytest.raises(OSError):
+            publish.main()
+        assert self._item_status(publish_env) == "featured"
+        assert _runs_row(publish_env) is None
+
+        monkeypatch.setattr(publish, "usage_totals", real)
+        assert publish.main() == 0
+        assert self._item_status(publish_env) == "published"
+
+    def test_run_fields_is_pure_and_matches_record_run(self, db):
+        from publish import record_run, run_fields
+        fields = run_fields({"papers": 2}, 3, 50, duration_s=245)
+        assert fields["items_candidate"] == 5
+        assert fields["duration_seconds"] == 245
+        record_run(db, "2026-10-17", {"papers": 2}, 3, 50, duration_s=245)
+        row = db.execute("SELECT * FROM runs WHERE date = '2026-10-17'").fetchone()
+        assert row["items_candidate"] == fields["items_candidate"]
