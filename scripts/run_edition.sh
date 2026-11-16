@@ -85,9 +85,12 @@ RUN_ATTEMPT=""
 CURRENT_STAGE="config"
 EDITION_NAME="$EDITION"
 
-# On any error before DONE, fire a notification and exit nonzero.
+# On any error before DONE, fire a notification and exit nonzero. The ERR trap
+# calls it with no argument (rc is the failing command's status); a caller that
+# handled the failure itself passes the status explicitly.
 fail_handler() {
   local rc=$?
+  [ -n "${1:-}" ] && rc="$1"
   local stage="${CURRENT_STAGE:-unknown}"
   runlog_mark_failed "$stage" "$rc" "— see $LOG_FILE"
   notify "$EDITION_NAME failed" \
@@ -166,8 +169,8 @@ run_stage "write"     "${PY_RUN[@]}" scripts/write.py
 run_stage "publish"   "${PY_RUN[@]}" scripts/publish.py
 
 # Mark the attempt ok before committing, so the commit below carries the row.
-# A git add/commit error re-marks it failed at stage=git. A failed push does
-# not: the issue is committed locally and goes out with the next push.
+# A git add/commit error re-marks it failed at stage=git, and a failed push at
+# stage=push (#735).
 CURRENT_STAGE="git"
 if [ -n "$RUN_ATTEMPT" ]; then
   "${PY_RUN[@]}" scripts/run_attempt.py finish "$RUN_ATTEMPT" ok \
@@ -189,12 +192,20 @@ fi
 git -C "$CONTENT_WORKTREE" commit -m "$(content_run_subject "$EDITION" "$DATE_TODAY")" >/dev/null
 log "git: committed $DATE_TODAY daily run (content, $EDITION)"
 
+# A failed push is a failed attempt (stage=push), not a quiet exit 1: the issue
+# is only committed locally, so the site does not have it. run.sh and
+# `run.sh --failed` pick editions by the attempt outcome, so an attempt left
+# `ok` here was skipped as "already ok today" and nothing pushed it until
+# something else did (#735). The commit stays local; the re-run's stages all
+# skip (issue file and runs row exist) and its push carries this commit too.
 if git -C "$CONTENT_WORKTREE" remote get-url origin >/dev/null 2>&1; then
+  CURRENT_STAGE="push"
   if git -C "$CONTENT_WORKTREE" push --quiet; then
     log "git: pushed to content"
   else
-    log "git: push failed (will retry on next run)"
-    exit 1
+    push_rc=$?
+    log "git: push failed (exit $push_rc); the commit stays local until a re-run pushes it"
+    fail_handler "$push_rc"
   fi
 else
   log "git: no remote configured; skipping push"
