@@ -202,6 +202,7 @@ publish: git push to origin/content
 | Error | Meaning | Fix |
 |-------|---------|-----|
 | `git push failed: non-fast-forward` | Someone else pushed to content branch | Rare in single-user setup; pull and retry |
+| `git: push failed (exit N)` / `FAILED at stage=push` | The content push failed; the issue is committed locally only, so the site does not have it | Fix the remote or credentials, then `./run.sh --failed`: all stages skip and the push carries the stranded commit (#735) |
 | `state.db locked` | Database is busy | Retry; usually transient |
 
 ---
