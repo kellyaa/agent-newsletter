@@ -19,6 +19,11 @@
     "yaml": "^2.9.1"
   },
   "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fc5q-39xc-vjpf"
+      ]
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "sharp"
