@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -654,10 +655,32 @@ def write_issue(conn, today: str, *, force: bool = False, log_prompt: bool = Tru
 
     issue_md = assemble_issue(today, featured, appendix_by_section, metadata, writer_output)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(issue_md)
+    write_atomic(out_path, issue_md)
     log.info("wrote %s (%d bytes)", out_path, len(issue_md))
     return out_path
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` so that ``path`` is either absent, the old
+    file, or the complete new file; never a partial one.
+
+    The existence of the issue file is the "write finished" signal: write and
+    rank skip the day once it exists and publish seals the DB against it. A
+    plain ``write_text`` that dies part way (disk full, killed) left a
+    truncated file behind, so every retry skipped rank and write and publish
+    failed as ISSUE_TOO_SMALL (or shipped a cut-off issue) until someone
+    deleted it by hand. The temp file is a dotfile without the issue suffix,
+    so ``ISSUE_GLOB`` and the site never pick it up, and it is removed if the
+    write fails.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.partial")
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def main(today: str | None = None) -> int:
