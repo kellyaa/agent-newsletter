@@ -7,6 +7,8 @@ This directory contains comprehensive guides for operating, extending, and under
 ### I want to…
 
 - **Look up a command** → [command-reference.md](command-reference.md)
+- **Optimize pipeline costs or performance** → [optimization-playbook.md](optimization-playbook.md)
+- **Understand token usage and pricing** → [performance-and-cost-guide.md](performance-and-cost-guide.md)
 - **Contribute for the first time** → [getting-started-guide.md](getting-started-guide.md), then [Start here](../CONTRIBUTING.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
@@ -56,6 +58,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [monitoring-and-alerting-integration.md](monitoring-and-alerting-integration.md) | Integrate pipeline health with external monitoring and alerting systems |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
 | [performance-and-cost-guide.md](performance-and-cost-guide.md) | Where tokens and wall time go; cost measurement and tracking |
+| [optimization-playbook.md](optimization-playbook.md) | Practical strategies to reduce costs and improve performance; real-world examples and tuning techniques |
 | [source-reliability-matrix.md](source-reliability-matrix.md) | Which sources fail how often; fallback and retry behavior |
 
 ### Configuration & Tuning
