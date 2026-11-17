@@ -197,8 +197,10 @@ sqlite3 editions/agents/state.db ".schema" | head -20
 # (If using macOS) lsof | grep state.db
 # (If using Linux) fuser editions/agents/state.db
 
-# As a last resort, reset the database (loses today's prefilter state):
-uv run scripts/reset_day.py --edition agents --force
+# As a last resort, reset today's state (re-queues today's items and drops
+# today's run row and issue file); for a damaged database see
+# database-recovery-guide.md:
+EDITION=agents uv run python scripts/reset_day.py
 ```
 
 ---
