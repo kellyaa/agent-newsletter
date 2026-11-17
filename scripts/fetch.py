@@ -670,54 +670,55 @@ def main(now: datetime | None = None) -> int:
         log.warning("%s; skipped (check_edition reports this as an error)", problem)
     sources = sf.as_dict()
     conn = connect()
+    try:
 
-    existing = _already_fetched_today(conn)
-    if existing > 0:
-        log.info(
-            "fetch: skip — today already has %d items in DB "
-            "(re-running fetch is safe but wasteful; use run.sh --refetch to force)",
-            existing,
-        )
-        conn.close()
-        return ExitCode.OK
-
-    total_seen = total_inserted = 0
-    errors = 0
-
-    def run_collector(label: str, gen):
-        nonlocal total_seen, total_inserted, errors
-        try:
-            items = list(gen)
-        except Exception as e:
-            log.exception("%s: collector failed: %s", label, e)
-            errors += 1
-            record_source_fetch(
-                conn, run_date(), label, items_seen=0, items_new=0,
-                error=f"{type(e).__name__}: {e}"[:500], fetched_at=now.isoformat(),
+        existing = _already_fetched_today(conn)
+        if existing > 0:
+            log.info(
+                "fetch: skip — today already has %d items in DB "
+                "(re-running fetch is safe but wasteful; use run.sh --refetch to force)",
+                existing,
             )
-            return
-        seen, inserted = upsert_items(conn, items, now=now)
-        log.info("%s: seen=%d new=%d", label, seen, inserted)
-        record_source_fetch(
-            conn, run_date(), label, items_seen=seen, items_new=inserted,
-            error=None, fetched_at=now.isoformat(),
-        )
-        total_seen += seen
-        total_inserted += inserted
+            return ExitCode.OK
 
-    # Use a single shared HTTP client for all source adapters. This reuses
-    # TCP connections across requests to the same host (e.g. multiple RSS
-    # feeds on the same domain, or the arXiv API across multiple queries),
-    # eliminating redundant TLS handshakes and connection setup.
-    with _make_http_client() as http_client:
-        for label, gen in iter_collectors(sources, http_client):
-            run_collector(label, gen)
+        total_seen = total_inserted = 0
+        errors = 0
 
-    prune_source_fetches(conn, run_date())
-    log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
-    if not (total_seen == 0 and errors > 0):
-        set_meta(conn, FETCH_DONE_KEY, run_date())
-    conn.close()
+        def run_collector(label: str, gen):
+            nonlocal total_seen, total_inserted, errors
+            try:
+                items = list(gen)
+            except Exception as e:
+                log.exception("%s: collector failed: %s", label, e)
+                errors += 1
+                record_source_fetch(
+                    conn, run_date(), label, items_seen=0, items_new=0,
+                    error=f"{type(e).__name__}: {e}"[:500], fetched_at=now.isoformat(),
+                )
+                return
+            seen, inserted = upsert_items(conn, items, now=now)
+            log.info("%s: seen=%d new=%d", label, seen, inserted)
+            record_source_fetch(
+                conn, run_date(), label, items_seen=seen, items_new=inserted,
+                error=None, fetched_at=now.isoformat(),
+            )
+            total_seen += seen
+            total_inserted += inserted
+
+        # Use a single shared HTTP client for all source adapters. This reuses
+        # TCP connections across requests to the same host (e.g. multiple RSS
+        # feeds on the same domain, or the arXiv API across multiple queries),
+        # eliminating redundant TLS handshakes and connection setup.
+        with _make_http_client() as http_client:
+            for label, gen in iter_collectors(sources, http_client):
+                run_collector(label, gen)
+
+        prune_source_fetches(conn, run_date())
+        log.info("DONE: seen=%d new=%d errors=%d", total_seen, total_inserted, errors)
+        if not (total_seen == 0 and errors > 0):
+            set_meta(conn, FETCH_DONE_KEY, run_date())
+    finally:
+        conn.close()
     # Per-source errors are logged but don't abort the run, as long as at
     # least one source produced data. This matches the docstring's contract
     # and avoids the common case where one rate-limited collector (arxiv 429)

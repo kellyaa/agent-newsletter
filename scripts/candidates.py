@@ -96,16 +96,13 @@ def load_candidates_from_db(
         If given, ``stats["prerank_cut"]`` is set to the number of unscored
         papers the cap left out of this call (only when the cap truncated).
     """
-    close_conn = False
-    if conn is None:
-        conn = connect()
-        close_conn = True
-
-    try:
+    if conn is not None:
         return _load(conn, prerank_cap, prerank_scorer, now, stats)
+    owned = connect()
+    try:
+        return _load(owned, prerank_cap, prerank_scorer, now, stats)
     finally:
-        if close_conn:
-            conn.close()
+        owned.close()
 
 
 def _load(conn, prerank_cap, prerank_scorer, now, stats) -> dict[str, list[CandidateItem]]:
