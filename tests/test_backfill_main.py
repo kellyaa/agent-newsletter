@@ -40,6 +40,22 @@ def _init_db(db_path: Path) -> None:
     db_mod.init_db(db_path)
 
 
+def _insert_issue_rows(db_path: Path, *rows: tuple[str, str]) -> None:
+    """Insert ``(id, status)`` papers rows: what write left in the sandbox, and
+    so what ``--apply-published`` seals in the live DB (#748)."""
+    conn = sqlite3.connect(db_path)
+    for iid, status in rows:
+        conn.execute(
+            "INSERT INTO items (id, source, url, canonical_url, title, fetched_at, "
+            "status, section, first_seen_date, last_seen_date) "
+            "VALUES (?, 'arxiv:cs', ?, ?, ?, '2026-07-14', ?, 'papers', "
+            "'2026-07-14', '2026-07-14')",
+            (iid, f"http://arxiv.org/{iid}", f"http://arxiv.org/{iid}", iid, status),
+        )
+    conn.commit()
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # find_pre_run_commit
 # ---------------------------------------------------------------------------
@@ -628,13 +644,14 @@ class TestBackfillMain:
         assert result == 1
 
     def test_apply_published_promotes_featured_ids(self, tmp_path, monkeypatch):
-        """With --apply-published, apply_published_to_live is called with featured ids."""
+        """With --apply-published, apply_published_to_live is called with the issue's ids."""
         import backfill as bf
         import db as db_real
         import sqlite3
 
         sandbox_db = tmp_path / "state.db"
         db_real.init_db(sandbox_db)
+        _insert_issue_rows(sandbox_db, ("feat1", "featured"))
 
         apply_calls = []
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
@@ -775,6 +792,7 @@ class TestBackfillMainEdgeCases:
 
         sandbox_db = tmp_path / "state.db"
         db_real.init_db(sandbox_db)
+        _insert_issue_rows(sandbox_db, ("feat1", "featured"), ("feat2", "featured"))
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
@@ -811,6 +829,7 @@ class TestBackfillMainEdgeCases:
 
         sandbox_db = tmp_path / "state.db"
         db_real.init_db(sandbox_db)
+        _insert_issue_rows(sandbox_db, ("feat1", "featured"), ("feat2", "featured"))
 
         monkeypatch.setattr("backfill.setup_sandbox", lambda date: tmp_path)
         monkeypatch.setattr(db_real, "init_db", lambda *a, **kw: None)
@@ -834,7 +853,7 @@ class TestBackfillMainEdgeCases:
             result = bf.main()
 
         assert result == 0
-        assert any("promoted 2/2 featured ids" in r.message for r in caplog.records)
+        assert any("promoted 2/2 issue ids" in r.message for r in caplog.records)
         assert not any("were NOT in live" in r.message for r in caplog.records)
 
     def test_run_writer_appendix_only_skips_llm(self, tmp_path, monkeypatch):
