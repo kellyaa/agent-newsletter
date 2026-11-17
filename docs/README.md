@@ -7,6 +7,7 @@ This directory contains comprehensive guides for operating, extending, and under
 ### I want to…
 
 - **Look up a command** → [command-reference.md](command-reference.md)
+- **Integrate with external systems (RSS, webhooks, database)** → [external-integrations-guide.md](external-integrations-guide.md)
 - **Contribute for the first time** → [getting-started-guide.md](getting-started-guide.md), then [Start here](../CONTRIBUTING.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
@@ -40,6 +41,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [agent-boundaries.md](agent-boundaries.md) | What AI agents may and may not do here (summary of AGENTS.md and the policy file) |
 | [multi-agent.md](multi-agent.md) | How several AI agents work in the repo at once without colliding (roles, coordination) |
 | [strategy.md](strategy.md) | Index of where direction, roadmap, health and agent activity are recorded |
+| [external-integrations-guide.md](external-integrations-guide.md) | RSS feeds, webhooks, database access, git contracts for external systems |
 
 ### Operations
 
