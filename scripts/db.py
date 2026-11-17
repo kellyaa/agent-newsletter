@@ -639,6 +639,25 @@ def count_featured_by_section(conn: sqlite3.Connection) -> dict[str, int]:
     return {r[0]: int(r[1]) for r in rows}
 
 
+# The statuses of the rows a written issue shows: write puts every featured
+# and appendix row in the issue file, so these are what sealing an issue
+# means. publish seals them in place; backfill reads them from its sandbox
+# and seals the same ids in the live DB (#748).
+ISSUE_STATUSES: tuple[Status, ...] = (Status.FEATURED, Status.APPENDIX)
+_ISSUE_STATUSES_SQL = ", ".join(f"'{s}'" for s in ISSUE_STATUSES)
+
+
+def load_issue_item_ids(conn: sqlite3.Connection) -> list[str]:
+    """Ids of the rows the issue shows (:data:`ISSUE_STATUSES`), sorted.
+
+    Exactly the rows :func:`publish_selected_items` would seal on ``conn``.
+    """
+    rows = conn.execute(
+        f"SELECT id FROM items WHERE status IN ({_ISSUE_STATUSES_SQL}) ORDER BY id"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def publish_selected_items(
     conn: sqlite3.Connection, date: str, *, commit: bool = True,
 ) -> int:
@@ -649,7 +668,7 @@ def publish_selected_items(
     """
     cur = conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
-        f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
+        f"WHERE status IN ({_ISSUE_STATUSES_SQL})",
         (date,),
     )
     if commit:
