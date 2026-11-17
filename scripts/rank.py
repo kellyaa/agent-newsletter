@@ -532,22 +532,24 @@ def main(now: datetime | None = None) -> int:
     decisions = score_candidates(candidates, rubric, ranked_path=ranked_path())
 
     conn = connect()
-    counts = persist(conn, decisions)
-    # Bump times_competed for every paper that competed and stayed in the
-    # candidate pool (i.e. didn't get sealed to featured or appendix). Gating
-    # on status='candidate' makes the increment a no-op for sealed items, so
-    # featured/appendix winners can't have their counter inflated. It counts
-    # once per run date, so retrying a failed day does not age the pool.
-    papers_competitors = [
-        iid for iid, d in decisions.items() if d["section"] == Section.PAPERS
-    ]
-    if papers_competitors:
-        bumped = bump_times_competed(conn, papers_competitors, run_date())
-        log.info(
-            "papers: bumped times_competed on %d pool items (of %d competitors)",
-            bumped, len(papers_competitors),
-        )
-    conn.close()
+    try:
+        counts = persist(conn, decisions)
+        # Bump times_competed for every paper that competed and stayed in the
+        # candidate pool (i.e. didn't get sealed to featured or appendix). Gating
+        # on status='candidate' makes the increment a no-op for sealed items, so
+        # featured/appendix winners can't have their counter inflated. It counts
+        # once per run date, so retrying a failed day does not age the pool.
+        papers_competitors = [
+            iid for iid, d in decisions.items() if d["section"] == Section.PAPERS
+        ]
+        if papers_competitors:
+            bumped = bump_times_competed(conn, papers_competitors, run_date())
+            log.info(
+                "papers: bumped times_competed on %d pool items (of %d competitors)",
+                bumped, len(papers_competitors),
+            )
+    finally:
+        conn.close()
 
     log.info(
         "DONE: featured=%d appendix=%d dropped=%d candidate=%d",

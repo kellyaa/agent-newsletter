@@ -163,96 +163,98 @@ def main(now: datetime | None = None) -> int:
     """
     init_db()
     conn = connect()
-    if now is None:
-        now = datetime.now(timezone.utc)
+    try:
+        if now is None:
+            now = datetime.now(timezone.utc)
 
-    # Wipe cached papers scores if the rubric changed since the last run.
-    _maybe_invalidate_papers_scores(conn)
+        # Wipe cached papers scores if the rubric changed since the last run.
+        _maybe_invalidate_papers_scores(conn)
 
-    # Done up front so aged-out papers don't appear in candidates.json this run.
-    aged_out, expired_unjudged_now = age_out_papers(conn, now)
-    if aged_out:
-        log.info("aged out %d papers candidates (cap or recency)", aged_out)
-    log.info(
-        "papers age-out this run: expired_unjudged=%d dropped=%d",
-        expired_unjudged_now, aged_out - expired_unjudged_now,
-    )
+        # Done up front so aged-out papers don't appear in candidates.json this run.
+        aged_out, expired_unjudged_now = age_out_papers(conn, now)
+        if aged_out:
+            log.info("aged out %d papers candidates (cap or recency)", aged_out)
+        log.info(
+            "papers age-out this run: expired_unjudged=%d dropped=%d",
+            expired_unjudged_now, aged_out - expired_unjudged_now,
+        )
 
-    unjudged = count_never_scored_expired(conn, Section.PAPERS)
-    log.info("papers expired without ever being scored (cumulative): %d", unjudged)
+        unjudged = count_never_scored_expired(conn, Section.PAPERS)
+        log.info("papers expired without ever being scored (cumulative): %d", unjudged)
 
-    # Fetch all `new` items; featured and appendix items are sealed at publish.
-    items = load_prefilter_eligible(conn)
-    log.info("loaded %d items eligible for prefilter", len(items))
+        # Fetch all `new` items; featured and appendix items are sealed at publish.
+        items = load_prefilter_eligible(conn)
+        log.info("loaded %d items eligible for prefilter", len(items))
 
-    if items:
-        # Apply cheap gates.
-        after_recency = [it for it in items if _passes_recency(it, now)]
-        log.info("after recency: %d", len(after_recency))
+        if items:
+            # Apply cheap gates.
+            after_recency = [it for it in items if _passes_recency(it, now)]
+            log.info("after recency: %d", len(after_recency))
 
-        after_keyword = [it for it in after_recency if _passes_keyword_gate(it)]
-        log.info("after keyword gate: %d", len(after_keyword))
+            after_keyword = [it for it in after_recency if _passes_keyword_gate(it)]
+            log.info("after keyword gate: %d", len(after_keyword))
 
-        after_dedup = collapse_near_dups(after_keyword)
-        log.info("after near-dup collapse: %d", len(after_dedup))
-    else:
-        # Idempotent re-run: prefilter already promoted everything. Skip the
-        # gate work; we'll re-emit candidates.json from whatever is currently
-        # in `status = candidate` below.
-        after_dedup = []
-        log.info("prefilter: no new items to gate (idempotent re-run)")
+            after_dedup = collapse_near_dups(after_keyword)
+            log.info("after near-dup collapse: %d", len(after_dedup))
+        else:
+            # Idempotent re-run: prefilter already promoted everything. Skip the
+            # gate work; we'll re-emit candidates.json from whatever is currently
+            # in `status = candidate` below.
+            after_dedup = []
+            log.info("prefilter: no new items to gate (idempotent re-run)")
 
-    # Assign section + promote survivors to 'candidate'.
-    candidate_ids = [it["id"] for it in after_dedup]
-    if candidate_ids:
-        for it in after_dedup:
-            it["section"] = assign_section(it["source"], it.get("section_override"))
-        promote_to_candidates(conn, [(it["id"], it["section"]) for it in after_dedup])
+        # Assign section + promote survivors to 'candidate'.
+        candidate_ids = [it["id"] for it in after_dedup]
+        if candidate_ids:
+            for it in after_dedup:
+                it["section"] = assign_section(it["source"], it.get("section_override"))
+            promote_to_candidates(conn, [(it["id"], it["section"]) for it in after_dedup])
 
-    # Demote new-but-rejected to 'dropped' so they don't re-enter the pipeline.
-    rejected_ids = [
-        it["id"] for it in items
-        if it["status"] == Status.NEW and it["id"] not in set(candidate_ids)
-    ]
-    if rejected_ids:
-        drop_items(conn, rejected_ids)
-        log.info("dropped %d items that failed prefilter", len(rejected_ids))
+        # Demote new-but-rejected to 'dropped' so they don't re-enter the pipeline.
+        rejected_ids = [
+            it["id"] for it in items
+            if it["status"] == Status.NEW and it["id"] not in set(candidate_ids)
+        ]
+        if rejected_ids:
+            drop_items(conn, rejected_ids)
+            log.info("dropped %d items that failed prefilter", len(rejected_ids))
 
-    # Load the candidate pool from DB using the shared query function.
-    # This is the canonical way to get grouped candidates — rank.py uses
-    # the same function, eliminating the file-based coupling.
-    cap_stats: dict[str, int] = {}
-    grouped = load_ranking_pool(
-        conn,
-        now=now,
-        keyword_re=edition.current().keyword_re(),
-        stats=cap_stats,
-    )
-    prerank_cut = cap_stats.get("prerank_cut", 0)
-    log.info("papers pre-rank cap cut this run: %d", prerank_cut)
-    record_stage_stats(
-        conn,
-        run_date(),
-        expired_unjudged=expired_unjudged_now,
-        prerank_cut=prerank_cut,
-    )
+        # Load the candidate pool from DB using the shared query function.
+        # This is the canonical way to get grouped candidates — rank.py uses
+        # the same function, eliminating the file-based coupling.
+        cap_stats: dict[str, int] = {}
+        grouped = load_ranking_pool(
+            conn,
+            now=now,
+            keyword_re=edition.current().keyword_re(),
+            stats=cap_stats,
+        )
+        prerank_cut = cap_stats.get("prerank_cut", 0)
+        log.info("papers pre-rank cap cut this run: %d", prerank_cut)
+        record_stage_stats(
+            conn,
+            run_date(),
+            expired_unjudged=expired_unjudged_now,
+            prerank_cut=prerank_cut,
+        )
 
-    # Write candidates.json as a debug/inspection artifact. rank.py does NOT
-    # depend on this file — it queries the DB directly via load_ranking_pool().
-    candidates_out = candidates_path()
-    candidates_out.parent.mkdir(parents=True, exist_ok=True)
-    candidates_out.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
-    log.info(
-        "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
-        candidates_out,
-        len(grouped[Section.PAPERS]),
-        len(grouped[PAPERS_PRESCORED]),
-        len(grouped[Section.NEWS]),
-        len(grouped[Section.BLOGS]),
-    )
+        # Write candidates.json as a debug/inspection artifact. rank.py does NOT
+        # depend on this file — it queries the DB directly via load_ranking_pool().
+        candidates_out = candidates_path()
+        candidates_out.parent.mkdir(parents=True, exist_ok=True)
+        candidates_out.write_text(json.dumps(grouped, indent=2, ensure_ascii=False))
+        log.info(
+            "wrote %s (debug artifact) — papers=%d (prescored=%d) news=%d blogs=%d",
+            candidates_out,
+            len(grouped[Section.PAPERS]),
+            len(grouped[PAPERS_PRESCORED]),
+            len(grouped[Section.NEWS]),
+            len(grouped[Section.BLOGS]),
+        )
 
-    conn.close()
-    return ExitCode.OK
+        return ExitCode.OK
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
