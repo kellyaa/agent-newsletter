@@ -11,6 +11,7 @@ This directory contains comprehensive guides for operating, extending, and under
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
 - **Learn run strategies (--force, --refetch, --failed)** → [run-strategies-and-recovery.md](run-strategies-and-recovery.md)
+- **Something failed — quick diagnosis** → [troubleshooting-quick-reference.md](troubleshooting-quick-reference.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
 - **Fix low featured item count** → [troubleshooting-low-featured-count.md](troubleshooting-low-featured-count.md)
 - **Understand LLM errors & content filtering** → [llm-error-handling-guide.md](llm-error-handling-guide.md)
@@ -45,6 +46,7 @@ This directory contains comprehensive guides for operating, extending, and under
 
 | Guide | Purpose |
 |-------|---------|
+| [troubleshooting-quick-reference.md](troubleshooting-quick-reference.md) | **START HERE when something fails** — find the right guide fast; quick diagnosis flowchart |
 | [operations-and-maintenance.md](operations-and-maintenance.md) | Daily checks, run model, where things live, when to investigate |
 | [run-strategies-and-recovery.md](run-strategies-and-recovery.md) | When to use --force, --refetch, --failed; recovery for each failure mode |
 | [operations-runbook.md](operations-runbook.md) | Fast lookup for common operational tasks; quick-reference companion to operations-and-maintenance |
