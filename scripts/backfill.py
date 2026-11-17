@@ -284,39 +284,40 @@ def main() -> int:
     # apply_published_to_live() targets it on purpose.
     db_mod.init_db(sandbox_db)
     conn = db_mod.connect(sandbox_db)
+    try:
+        aged = age_out_for_synthetic_date(conn, args.date)
+        if aged:
+            log.info("aged out %d papers candidates for synthetic %s", aged, args.date)
 
-    aged = age_out_for_synthetic_date(conn, args.date)
-    if aged:
-        log.info("aged out %d papers candidates for synthetic %s", aged, args.date)
-
-    # Load through the same pool loader as rank.main, so field selection,
-    # section logic, prescored detection and the papers pre-rank cap match the
-    # daily run. The cap bounds the papers prompt: uncapped, a missed-day
-    # backlog goes to the ranker in one call and can run past the endpoint's
-    # timeout. The synthetic date (UTC midnight) is "now" for the cap's
-    # recency score, as it is for the age-out above.
-    candidates = load_ranking_pool(
-        conn, now=synthetic_now, keyword_re=edition.current().keyword_re(),
-    )
-    log.info(
-        "candidates: papers=%d prescored=%d news=%d blogs=%d",
-        len(candidates.get(Section.PAPERS, [])),
-        len(candidates.get(PAPERS_PRESCORED, [])),
-        len(candidates.get(Section.NEWS, [])),
-        len(candidates.get(Section.BLOGS, [])),
-    )
-    if candidates.get(Section.NEWS) or candidates.get(Section.BLOGS):
-        log.warning(
-            "found news/blogs candidates in the snapshot — unusual; backfills "
-            "are typically papers-only since news/blogs don't persist."
+        # Load through the same pool loader as rank.main, so field selection,
+        # section logic, prescored detection and the papers pre-rank cap match the
+        # daily run. The cap bounds the papers prompt: uncapped, a missed-day
+        # backlog goes to the ranker in one call and can run past the endpoint's
+        # timeout. The synthetic date (UTC midnight) is "now" for the cap's
+        # recency score, as it is for the age-out above.
+        candidates = load_ranking_pool(
+            conn, now=synthetic_now, keyword_re=edition.current().keyword_re(),
         )
+        log.info(
+            "candidates: papers=%d prescored=%d news=%d blogs=%d",
+            len(candidates.get(Section.PAPERS, [])),
+            len(candidates.get(PAPERS_PRESCORED, [])),
+            len(candidates.get(Section.NEWS, [])),
+            len(candidates.get(Section.BLOGS, [])),
+        )
+        if candidates.get(Section.NEWS) or candidates.get(Section.BLOGS):
+            log.warning(
+                "found news/blogs candidates in the snapshot — unusual; backfills "
+                "are typically papers-only since news/blogs don't persist."
+            )
 
-    # Rank using the canonical rank module's functions.
-    rank_with_optional_llm(conn, candidates)
+        # Rank using the canonical rank module's functions.
+        rank_with_optional_llm(conn, candidates)
 
-    out = run_writer_for_date(conn, args.date, args.force)
-    sandbox_issue_ids = db_mod.load_issue_item_ids(conn)
-    conn.close()
+        out = run_writer_for_date(conn, args.date, args.force)
+        sandbox_issue_ids = db_mod.load_issue_item_ids(conn)
+    finally:
+        conn.close()
     if out is None:
         return 1
 

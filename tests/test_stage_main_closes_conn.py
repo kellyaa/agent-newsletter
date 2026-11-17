@@ -1,6 +1,6 @@
-"""prefilter.main and rank.main close state.db when a step raises (#744).
+"""prefilter, rank, fetch and backfill main close state.db when a step raises (#744).
 
-Both closed the connection by hand at the end of main, so an exception in
+Each closed the connection by hand at the end of main, so an exception in
 between leaked it. publish.main had the same bug, fixed in #743.
 """
 from __future__ import annotations
@@ -103,3 +103,87 @@ def test_rank_main_closes_connection_when_a_step_raises(rank_env, monkeypatch, s
 def test_rank_main_closes_connection_on_success(rank_env):
     assert rank_mod.main() == 0
     assert len(rank_env) == 2 and all(c.closed for c in rank_env)
+
+
+# --- fetch -------------------------------------------------------------------
+
+@pytest.fixture()
+def fetch_env(tmp_path, db_path, monkeypatch):
+    """fetch.main against a tmp DB and one fake RSS source (no network)."""
+    import fetch as fetch_mod
+    from fetch import Item
+
+    sources = tmp_path / "sources.yaml"
+    sources.write_text("rss:\n  - id: a\n    url: https://example.com/a.xml\n")
+    monkeypatch.setenv("RUN_DATE", "2026-07-09")
+    monkeypatch.setattr(fetch_mod, "sources_path", lambda: sources)
+    monkeypatch.setattr(fetch_mod, "init_db", lambda: db_mod.init_db(db_path))
+    monkeypatch.setattr(
+        fetch_mod, "fetch_rss",
+        lambda src, **kw: [Item("rss:a", "https://a.com/1", "T", None, None, None)],
+    )
+    return fetch_mod, _track(monkeypatch, fetch_mod, db_path)
+
+
+@pytest.mark.parametrize(
+    "step", ["_already_fetched_today", "upsert_items", "prune_source_fetches", "set_meta"],
+)
+def test_fetch_main_closes_connection_when_a_step_raises(fetch_env, monkeypatch, step):
+    fetch_mod, opened = fetch_env
+    monkeypatch.setattr(fetch_mod, step, _boom)
+    with pytest.raises(sqlite3.OperationalError):
+        fetch_mod.main()
+    assert len(opened) == 1 and opened[0].closed
+
+
+def test_fetch_main_closes_connection_on_success_and_on_skip(fetch_env):
+    fetch_mod, opened = fetch_env
+    assert fetch_mod.main() == 0
+    # Second run the same day takes the "already fetched" early return.
+    assert fetch_mod.main() == 0
+    assert len(opened) == 2 and all(c.closed for c in opened)
+
+
+# --- backfill ----------------------------------------------------------------
+
+@pytest.fixture()
+def backfill_env(tmp_path, monkeypatch):
+    """backfill.main against an empty sandbox DB, tracking the sandbox connection."""
+    import sys
+
+    import backfill
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    monkeypatch.setattr(backfill, "setup_sandbox", lambda date: sandbox)
+    monkeypatch.setattr(sys, "argv", ["backfill.py", "--date", "2026-07-15"])
+    opened: list[_TrackedConn] = []
+    real_connect = db_mod.connect
+
+    def _connect(path=None):
+        c = _TrackedConn(real_connect(path))
+        opened.append(c)
+        return c
+
+    monkeypatch.setattr(db_mod, "connect", _connect)
+    return backfill, opened
+
+
+@pytest.mark.parametrize(
+    "step", ["age_out_for_synthetic_date", "rank_with_optional_llm", "run_writer_for_date"],
+)
+def test_backfill_main_closes_sandbox_connection_when_a_step_raises(backfill_env, monkeypatch, step):
+    backfill, opened = backfill_env
+    monkeypatch.setattr(backfill, step, _boom)
+    with pytest.raises(sqlite3.OperationalError):
+        backfill.main()
+    # init_db opens (and closes) its own connection first; main's is the last.
+    assert opened and all(c.closed for c in opened)
+
+
+def test_backfill_main_closes_sandbox_connection_on_success(backfill_env, monkeypatch):
+    backfill, opened = backfill_env
+    monkeypatch.setattr(backfill, "rank_with_optional_llm", lambda conn, c: {})
+    monkeypatch.setattr(backfill, "run_writer_for_date", lambda conn, d, f: None)
+    assert backfill.main() == 1
+    assert opened and all(c.closed for c in opened)
