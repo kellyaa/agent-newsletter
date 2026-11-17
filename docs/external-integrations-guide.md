@@ -22,11 +22,11 @@ External systems can integrate by:
 
 ## 1. RSS Feeds
 
-The pipeline generates RSS feeds that you can consume or republish. **These are the most stable integration points.**
+The pipeline generates RSS feeds that you can consume or republish. **This is the recommended integration point.**
 
 ### Feed URLs
 
-**Root feed** (all editions):
+**Root feed** (a copy of the `agents` edition feed, kept for existing subscribers):
 ```
 https://kellyaa.github.io/agent-newsletter/rss.xml
 ```
@@ -36,7 +36,7 @@ https://kellyaa.github.io/agent-newsletter/rss.xml
 https://kellyaa.github.io/agent-newsletter/agents/rss.xml
 ```
 
-(Replace the URL base with your own if you deploy to a different host.)
+Each listed edition has its own feed at `/<edition>/rss.xml`. (Replace the URL base with your own if you deploy to a different host.)
 
 ### Feed Format
 
@@ -44,12 +44,13 @@ Both feeds follow the **[RSS 2.0](https://www.rssboard.org/rss-specification)** 
 
 | Field | Content | Example |
 |-------|---------|---------|
-| `title` | Issue date + edition name | "2026-11-17 — AI Agents Daily" |
+| `title` | `<date> — <first sentence of the theme>`, or `Issue <date>` when the issue has no theme | "2026-11-17 — A mixed-methods study at a large company" |
 | `link` | URL to the issue page | `https://kellyaa.github.io/agent-newsletter/agents/issues/2026-11-17/` |
-| `pubDate` | Issue publication date (RFC 822) | "Mon, 17 Nov 2026 13:00:00 GMT" |
-| `description` | HTML content (all featured items with links, tags, scores) | (HTML with featured items and their metadata) |
-| `guid` | Unique stable identifier | Date-based, stable across republishes |
-| `author` | Generator | "AI Agents Daily" |
+| `pubDate` | Issue date at 12:00 UTC (RFC 822) | "Mon, 17 Nov 2026 12:00:00 GMT" |
+| `description` | The issue theme, or `<edition name> — <date>` when there is none | "A mixed-methods study…" |
+| `content` (`content:encoded`) | HTML of the featured items | (HTML) |
+
+No `author` is emitted and no `guid` is set explicitly; `@astrojs/rss` derives the `guid` from `link`. Source of truth: `buildFeed` in `site/src/scripts/feed.js`.
 
 ### Consuming the Feed
 
@@ -102,33 +103,43 @@ Each issue is a markdown file: `editions/<slug>/issues/YYYY-MM-DD.md`
 
 ```yaml
 ---
-date: "2026-11-17"                    # ISO date, matches filename
-theme: "Multi-agent orchestration trends"  # Optional theme line
+date: "2026-11-17"                    # YYYY-MM-DD, matches the filename
+theme: "One or two sentences."        # Optional; may be null
 featured:
-  - id: "<item-id>"                   # Unique per-issue identifier
-    section: "papers"                 # papers | news | blogs
-    source: "arxiv:cs-ai"             # Source identifier
-    url: "https://example.com/paper"  # URL to original item
-    title: "Multi-Agent Reinforcement Learning"
-    author: "Smith, J. et al"         # Optional; may be null
-    score: 9                           # 0–10 ranking score
-    tags: ["multi-agent", "rl"]       # Optional tags
-    why: "Recent advances in cooperative multi-agent systems..." # Rationale
-appendix: []                           # Lower-scored items (optional)
+- id: "d586dccc…"                     # Item id
+  section: "papers"                   # papers | news | blogs
+  source: "arxiv:arxiv-se-ai-dev"     # Source identifier
+  url: "https://arxiv.org/abs/2611.18939v1"   # http(s) only
+  title: "Level Up! AI-Driven Challenges and Adaptations to Code Review Practices"
+  author: "Kaia Newman, Christian Bird"       # Optional; may be null
+  score: 8                            # Integer 0–10
+  tags:
+  - "code-review"
+  summary: "The writer's prose summary (markdown)."
+  takeaway: "Optional editorial callout."     # Optional; may be null
+  open_question: null                         # Optional; may be null
+appendix:
+  papers:                             # Lower-ranked items, no score/summary
+  - id: "…"
+    section: "papers"
+    source: "arxiv:arxiv-se-ai-dev"
+    url: "https://arxiv.org/abs/2611.19719v1"
+    title: "Found, but Not Fixed"
+  news: []
+  blogs: []
+metadata:
+  items_considered: 120
+  items_featured_total: 5
+  items_featured_papers: 3
+  items_featured_news: 2
+  items_featured_blogs: 0
+  items_appendix: 9
+  cost_usd: 0.42                      # Optional; may be null
+  duration_seconds: 310               # Optional; may be null
 ---
-
-# AI Agents Daily — November 17
-
-Featured section prose here (rendered from LLM output).
-
-## Papers
-
-- **[Multi-Agent Reinforcement Learning](https://example.com/paper)** (9/10) — …
-
-## News
-
-- **[Company releases new agentic framework](https://example.com)** (7/10) — …
 ```
+
+The file body after the frontmatter is not part of the contract. The authoritative schema is the Zod schema in `site/src/content.config.ts`; for a real file, look at any `editions/<slug>/issues/*.md` on the `content` branch.
 
 ### Parsing Issue Files
 
@@ -136,7 +147,7 @@ The schema is defined in `site/src/content.config.ts` (Zod schema). To parse:
 
 1. **Extract frontmatter**: Split on `---`, parse the first YAML block
 2. **Extract markdown**: Everything after the second `---` is the rendered prose
-3. **Validate structure**: featured/appendix arrays, scores 0–10, sections in {papers, news, blogs}
+3. **Validate structure**: `featured` is an array, `appendix` is an object with `papers`/`news`/`blogs` arrays, scores 0–10, sections in {papers, news, blogs}
 
 Example (Python):
 
@@ -161,7 +172,8 @@ def load_issue(date_str: str, slug: str):
         "date": frontmatter.get("date"),
         "theme": frontmatter.get("theme"),
         "featured": frontmatter.get("featured", []),
-        "appendix": frontmatter.get("appendix", []),
+        "appendix": frontmatter.get("appendix", {}),
+        "metadata": frontmatter.get("metadata", {}),
         "prose": markdown_text.strip(),
     }
 
@@ -311,36 +323,29 @@ async def get_latest_issue(edition="agents"):
 
 ## 5. Webhooks and Notifications
 
-The pipeline can POST alerts and statistics to external services.
+The pipeline can POST failure and staleness alerts to an external URL.
 
-### Watchdog Webhook
+### Alert Webhook
 
-When the watchdog detects a stale pipeline (no successful run in >36 hours), it can POST an alert:
+`notify()` in `scripts/runlog.sh` (used by the watchdogs and pipeline failure alerts) POSTs to `WATCHDOG_WEBHOOK_URL` when it is set:
 
 ```bash
 # In .env:
-WATCHDOG_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+WATCHDOG_WEBHOOK_URL="https://ntfy.sh/your-topic"
 ```
 
-**Payload (JSON):**
-```json
-{
-  "text": "🚨 Newsletter pipeline stale: no run since 2026-11-15T13:00Z",
-  "timestamp": "2026-11-17T22:15:00Z",
-  "edition": "agents"
-}
+The request is a **plain-text** POST, not JSON:
+
+```bash
+curl -fsS -m 10 -H "Title: $title" -d "$message" "$WATCHDOG_WEBHOOK_URL"
 ```
 
-You can use this with:
-- **Slack Incoming Webhooks**
-- **Discord Webhooks**
-- **Microsoft Teams**
-- **ntfy.sh** (POST-based notifications)
-- **Your own service**
+- Header `Title`: the alert title
+- Body: the alert message, as plain text
 
-### Setting Up an Alert Handler
+This is the [ntfy](https://ntfy.sh) format, so an ntfy topic URL works directly. Slack, Discord and Teams incoming webhooks require a JSON body and will **not** accept this request as-is; point `WATCHDOG_WEBHOOK_URL` at a small relay that translates it.
 
-Example handler for Slack:
+### Example: Relay Alerts to Slack
 
 ```python
 from fastapi import FastAPI, Request
@@ -350,47 +355,36 @@ app = FastAPI()
 
 @app.post("/newsletter-alert")
 async def handle_alert(request: Request):
-    data = await request.json()
-    
-    # Build Slack message
-    slack_msg = {
-        "text": data["text"],
-        "channel": "#alerts",
-        "icon_emoji": ":warning:",
-    }
-    
-    # POST to Slack
-    await httpx.post(
-        "https://hooks.slack.com/services/YOUR/WEBHOOK",
-        json=slack_msg,
-    )
-    
+    title = request.headers.get("Title", "Newsletter alert")
+    message = (await request.body()).decode()
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            "https://hooks.slack.com/services/YOUR/WEBHOOK",
+            json={"text": f"*{title}*\n{message}"},
+        )
     return {"status": "sent"}
 ```
 
-Configure the pipeline to use it:
-
-```bash
-WATCHDOG_WEBHOOK_URL="https://your-service.com/newsletter-alert"
-```
+Then set `WATCHDOG_WEBHOOK_URL="https://your-service.com/newsletter-alert"`.
 
 ---
 
 ## 6. Contracts and Stability Guarantees
 
-### What's Stable (Won't Break)
+### Current Behaviour
 
-These are considered public contracts; breaking changes will be announced:
+> This table describes how the interfaces behave today and how likely they are to change. It is **not** a formal compatibility promise from the maintainers; if you depend on one of these, say so in an issue.
 
-| Interface | Stability | Notes |
-|-----------|-----------|-------|
-| RSS feed URLs | High | `/rss.xml` and `/<edition>/rss.xml` are stable |
-| RSS feed format | High | Follows RSS 2.0 spec; fields documented above |
-| Issue file format | High | Markdown + YAML frontmatter; schema in `site/src/content.config.ts` |
-| Git commit subjects | Medium | Pattern `newsletter(<slug>): <date> daily run` is stable |
-| `state.db` schema | Medium | Core tables (`runs`, `items`) are stable; new columns may be added |
-| Static site URLs | Medium | Route structure may change; use RSS instead |
-| Webhook payload | Low | Format may change; ping the maintainer if you depend on it |
+| Interface | Expected stability | Notes |
+|-----------|--------------------|-------|
+| RSS feed URLs | Relatively stable | `/rss.xml` is kept as a copy of `/agents/rss.xml` for existing subscribers; `/<edition>/rss.xml` per edition |
+| RSS feed format | Relatively stable | RSS 2.0 via `@astrojs/rss`; fields documented above |
+| Issue file frontmatter | May evolve | Schema in `site/src/content.config.ts` |
+| Git commit subjects | May evolve | Pattern `newsletter(<slug>): <date> daily run` |
+| `state.db` schema | May evolve | Columns may be added; see `scripts/db.py` |
+| Static site URLs | May evolve | Use RSS instead |
+| Alert webhook | May evolve | Plain-text POST with a `Title` header |
 
 ### What's Not Stable (May Change)
 
@@ -448,17 +442,17 @@ def analyze_section_scores(slug="agents", days=30):
     
     # Scores per section over the last N days
     cursor = conn.execute("""
-        SELECT 
-            strftime('%Y-%m-%d', date) as date,
+        SELECT
+            published_date AS date,
             section,
-            AVG(score) as avg_score,
-            COUNT(*) as count
+            AVG(score) AS avg_score,
+            COUNT(*) AS count
         FROM items
         WHERE status = 'published'
-          AND date >= date('now', ? || ' days')
-        GROUP BY date, section
-        ORDER BY date DESC
-    """, (f"-{days}",))
+          AND published_date >= date('now', ?)
+        GROUP BY published_date, section
+        ORDER BY published_date DESC
+    """, (f"-{days} days",))
     
     for row in cursor:
         print(f"{row['date']} {row['section']}: {row['avg_score']:.1f} (n={row['count']})")

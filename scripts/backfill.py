@@ -34,10 +34,11 @@ Limitations, all forced by the missing fetch:
     have happened with a real run. Minor — affects when a paper ages out
     by at most one day.
 
-Pass --apply-published to promote the featured ids to status='published'
-in the live state.db once the issue file is written. Without it, those ids
-remain status='candidate' in the live DB and would compete again on the
-next normal run — meaning the same paper could end up featured twice.
+Pass --apply-published to promote the issue's ids (featured and appendix,
+the rows publish seals on a daily run) to status='published' in the live
+state.db once the issue file is written. Without it, those ids remain
+status='candidate' in the live DB and would compete again on the next
+normal run — meaning the same paper could end up in two issues.
 Default is off so you can dry-run; pass it for real backfills.
 """
 from __future__ import annotations
@@ -254,7 +255,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--apply-published", action="store_true",
         help=(
-            "After writing the issue file, promote the featured ids to "
+            "After writing the issue file, promote the issue's featured and appendix ids to "
             "status='published' in the LIVE state.db so they don't compete "
             "again on the next normal run. Off by default for dry-runs; "
             "pass this for real backfills."
@@ -311,31 +312,35 @@ def main() -> int:
         )
 
     # Rank using the canonical rank module's functions.
-    decisions = rank_with_optional_llm(conn, candidates)
+    rank_with_optional_llm(conn, candidates)
 
     out = run_writer_for_date(conn, args.date, args.force)
+    sandbox_issue_ids = db_mod.load_issue_item_ids(conn)
     conn.close()
     if out is None:
         return 1
 
     if args.apply_published:
-        featured_ids = [
-            iid for iid, d in decisions.items() if d["status"] == Status.FEATURED
-        ]
-        promoted = apply_published_to_live(featured_ids, args.date)
+        # Seal what the issue shows, the same rows publish seals on a daily
+        # run: featured and appendix in the sandbox after write (so mid-band
+        # appendix papers and writer-demoted items too), not just the ranker's
+        # featured verdicts. Otherwise appendix papers stay 'candidate' in the
+        # live pool and can appear in a later issue as well (#748).
+        issue_ids = sandbox_issue_ids
+        promoted = apply_published_to_live(issue_ids, args.date)
         log.info(
-            "promoted %d/%d featured ids to status='published' in live %s",
-            promoted, len(featured_ids), db_mod.db_path(),
+            "promoted %d/%d issue ids (featured + appendix) to status='published' in live %s",
+            promoted, len(issue_ids), db_mod.db_path(),
         )
-        if promoted < len(featured_ids):
+        if promoted < len(issue_ids):
             log.warning(
-                "%d featured ids were NOT in live status='candidate' (likely "
+                "%d issue ids were NOT in live status='candidate' (likely "
                 "already promoted or not present); skipped to preserve idempotency",
-                len(featured_ids) - promoted,
+                len(issue_ids) - promoted,
             )
     else:
         log.warning(
-            "issue file written but featured ids remain status='candidate' in "
+            "issue file written but its featured/appendix ids remain status='candidate' in "
             "the live DB. They will compete on the next normal run and could "
             "re-feature. Re-run with --apply-published to seal them."
         )

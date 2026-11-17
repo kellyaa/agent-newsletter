@@ -145,50 +145,48 @@ def main(today: str | None = None) -> int:
         return ExitCode.ISSUE_TOO_SMALL
 
     conn = connect()
+    try:
+        # Idempotent skip: if a runs row exists for today AND no featured/appendix
+        # items remain in candidate-of-publish state, this run already finished.
+        published_featured = load_run_featured_count(conn, today)
+        pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
+        if published_featured is not None and pending == 0:
+            log.info(
+                "publish: skip — already published for %s (runs.items_featured=%d)",
+                today, published_featured,
+            )
+            return ExitCode.OK
+        featured_counts = count_featured_by_section(conn)
+        appendix_count = count_items_in_status(conn, Status.APPENDIX)
+        items_considered = count_items_seen_on(conn, today)
 
-    # Idempotent skip: if a runs row exists for today AND no featured/appendix
-    # items remain in candidate-of-publish state, this run already finished.
-    published_featured = load_run_featured_count(conn, today)
-    pending = count_items_in_status(conn, Status.FEATURED, Status.APPENDIX)
-    if published_featured is not None and pending == 0:
+        total_featured = sum(featured_counts.values())
+        if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
+            log.error(
+                "no featured items and no appendix items — refusing to publish empty issue"
+            )
+            return ExitCode.EMPTY_ISSUE
+
+        # Gather every input before writing anything: the seal and the runs row go
+        # in one transaction below, so a failure here (or there) leaves the day
+        # unpublished and the retry publishes it normally (#738).
+        fields = run_fields(
+            today, featured_counts, appendix_count, items_considered,
+            usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
+            duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
+            stage_stats=load_stage_stats(conn, today),
+        )
+        seal_and_record_run(conn, today, **fields)
         log.info(
-            "publish: skip — already published for %s (runs.items_featured=%d)",
-            today, published_featured,
+            "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
+            total_featured,
+            featured_counts.get(Section.PAPERS, 0),
+            featured_counts.get(Section.NEWS, 0),
+            featured_counts.get(Section.BLOGS, 0),
+            appendix_count,
         )
+    finally:
         conn.close()
-        return ExitCode.OK
-    featured_counts = count_featured_by_section(conn)
-    appendix_count = count_items_in_status(conn, Status.APPENDIX)
-    items_considered = count_items_seen_on(conn, today)
-
-    total_featured = sum(featured_counts.values())
-    if total_featured < MIN_FEATURED_FOR_PUBLISH and appendix_count == 0:
-        log.error(
-            "no featured items and no appendix items — refusing to publish empty issue"
-        )
-        conn.close()
-        return ExitCode.EMPTY_ISSUE
-
-    # Gather every input before writing anything: the seal and the runs row go
-    # in one transaction below, so a failure here (or there) leaves the day
-    # unpublished and the retry publishes it normally (#738).
-    fields = run_fields(
-        today, featured_counts, appendix_count, items_considered,
-        usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
-        duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
-        stage_stats=load_stage_stats(conn, today),
-    )
-    seal_and_record_run(conn, today, **fields)
-    log.info(
-        "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
-        total_featured,
-        featured_counts.get(Section.PAPERS, 0),
-        featured_counts.get(Section.NEWS, 0),
-        featured_counts.get(Section.BLOGS, 0),
-        appendix_count,
-    )
-
-    conn.close()
 
     log.info("issue file: %s (%d bytes)", issue_path, size)
     log.info("the Astro build is the next gate; it validates frontmatter against the schema")

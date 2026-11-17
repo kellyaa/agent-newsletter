@@ -8,10 +8,13 @@ This directory contains comprehensive guides for operating, extending, and under
 
 - **Look up a command** → [command-reference.md](command-reference.md)
 - **Integrate with external systems (RSS, webhooks, database)** → [external-integrations-guide.md](external-integrations-guide.md)
+- **Optimize pipeline costs or performance** → [optimization-playbook.md](optimization-playbook.md)
+- **Understand token usage and pricing** → [performance-and-cost-guide.md](performance-and-cost-guide.md)
 - **Contribute for the first time** → [getting-started-guide.md](getting-started-guide.md), then [Start here](../CONTRIBUTING.md)
 - **Get started contributing code** → [Start here](../CONTRIBUTING.md), then read the appropriate guide below
 - **Run the pipeline manually** → [operations-and-maintenance.md](operations-and-maintenance.md)
 - **Learn run strategies (--force, --refetch, --failed)** → [run-strategies-and-recovery.md](run-strategies-and-recovery.md)
+- **Something failed — quick diagnosis** → [troubleshooting-quick-reference.md](troubleshooting-quick-reference.md)
 - **Troubleshoot a failed run** → [debugging-guide.md](debugging-guide.md)
 - **Fix low featured item count** → [troubleshooting-low-featured-count.md](troubleshooting-low-featured-count.md)
 - **Understand LLM errors & content filtering** → [llm-error-handling-guide.md](llm-error-handling-guide.md)
@@ -47,6 +50,7 @@ This directory contains comprehensive guides for operating, extending, and under
 
 | Guide | Purpose |
 |-------|---------|
+| [troubleshooting-quick-reference.md](troubleshooting-quick-reference.md) | **START HERE when something fails** — find the right guide fast; quick diagnosis flowchart |
 | [operations-and-maintenance.md](operations-and-maintenance.md) | Daily checks, run model, where things live, when to investigate |
 | [run-strategies-and-recovery.md](run-strategies-and-recovery.md) | When to use --force, --refetch, --failed; recovery for each failure mode |
 | [operations-runbook.md](operations-runbook.md) | Fast lookup for common operational tasks; quick-reference companion to operations-and-maintenance |
@@ -58,6 +62,7 @@ This directory contains comprehensive guides for operating, extending, and under
 | [monitoring-and-alerting-integration.md](monitoring-and-alerting-integration.md) | Integrate pipeline health with external monitoring and alerting systems |
 | [multi-edition-operations.md](multi-edition-operations.md) | Running multiple newsletters from one codebase, watchdog model |
 | [performance-and-cost-guide.md](performance-and-cost-guide.md) | Where tokens and wall time go; cost measurement and tracking |
+| [optimization-playbook.md](optimization-playbook.md) | Practical strategies to reduce costs and improve performance; real-world examples and tuning techniques |
 | [source-reliability-matrix.md](source-reliability-matrix.md) | Which sources fail how often; fallback and retry behavior |
 
 ### Configuration & Tuning
