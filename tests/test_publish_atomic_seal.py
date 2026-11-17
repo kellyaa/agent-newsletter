@@ -143,3 +143,47 @@ def test_publish_does_not_call_the_committing_helpers_separately():
     }
     assert "upsert_run" not in in_main
     assert "record_run" not in in_main
+
+
+class _TrackedConn:
+    """Wraps a sqlite3 connection and records whether ``close`` was called."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+        self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+@pytest.fixture()
+def tracked(env, monkeypatch):
+    opened: list[_TrackedConn] = []
+
+    def _connect():
+        c = _TrackedConn(db_mod.connect(env))
+        opened.append(c)
+        return c
+
+    monkeypatch.setattr(publish_mod, "connect", _connect)
+    return opened
+
+
+def test_main_closes_connection_when_a_step_raises(tracked, monkeypatch):
+    def boom(_path):
+        raise OSError("usage log unreadable")
+
+    monkeypatch.setattr(publish_mod, "usage_totals", boom)
+    with pytest.raises(OSError):
+        publish_mod.main()
+    assert len(tracked) == 1 and tracked[0].closed
+
+
+def test_main_closes_connection_on_success_and_on_skip(tracked):
+    assert publish_mod.main() == 0
+    assert publish_mod.main() == 0  # idempotent skip path
+    assert len(tracked) == 2 and all(c.closed for c in tracked)
