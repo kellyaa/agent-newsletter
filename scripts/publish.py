@@ -28,7 +28,7 @@ from db import (
     count_items_in_status,
     count_items_seen_on,
     load_run_featured_count,
-    publish_selected_items,
+    seal_and_record_run,
     upsert_run,
 )
 from llm import usage_totals
@@ -69,8 +69,7 @@ def run_duration_s(started_at: str | None, now: datetime | None = None) -> int |
     return max(0, int((now - start).total_seconds()))
 
 
-def record_run(
-    conn,
+def run_fields(
     today: str,
     featured_counts: dict[str, int],
     appendix_count: int,
@@ -78,7 +77,8 @@ def record_run(
     usage: dict | None = None,
     duration_s: int | None = None,
     stage_stats: dict | None = None,
-) -> None:
+) -> dict:
+    """The ``runs`` row columns (``db.upsert_run``'s keywords) for ``today``."""
     notes = f"appendix={appendix_count}"
     if usage is not None:
         notes += (f" llm_calls={usage['calls']} models={usage['models']}"
@@ -88,9 +88,7 @@ def record_run(
     papers = featured_counts.get(Section.PAPERS, 0)
     news = featured_counts.get(Section.NEWS, 0)
     blogs = featured_counts.get(Section.BLOGS, 0)
-    upsert_run(
-        conn,
-        today,
+    return dict(
         items_fetched=items_considered,
         items_candidate=papers + news + blogs + appendix_count,
         items_featured=sum(featured_counts.values()),
@@ -104,6 +102,12 @@ def record_run(
         papers_expired_unjudged=stage_stats.get("papers_expired_unjudged"),
         papers_prerank_cut=stage_stats.get("papers_prerank_cut"),
     )
+
+
+def record_run(conn, today: str, *args, **kwargs) -> None:
+    """Write the ``runs`` row alone (commits). :func:`main` does not use it: it
+    seals the items in the same transaction via ``db.seal_and_record_run``."""
+    upsert_run(conn, today, **run_fields(today, *args, **kwargs))
 
 
 def main(today: str | None = None) -> int:
@@ -165,7 +169,16 @@ def main(today: str | None = None) -> int:
         conn.close()
         return ExitCode.EMPTY_ISSUE
 
-    publish_selected_items(conn, today)
+    # Gather every input before writing anything: the seal and the runs row go
+    # in one transaction below, so a failure here (or there) leaves the day
+    # unpublished and the retry publishes it normally (#738).
+    fields = run_fields(
+        today, featured_counts, appendix_count, items_considered,
+        usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
+        duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
+        stage_stats=load_stage_stats(conn, today),
+    )
+    seal_and_record_run(conn, today, **fields)
     log.info(
         "promoted featured=%d (papers=%d news=%d blogs=%d) and appendix=%d to published",
         total_featured,
@@ -175,12 +188,6 @@ def main(today: str | None = None) -> int:
         appendix_count,
     )
 
-    record_run(
-        conn, today, featured_counts, appendix_count, items_considered,
-        usage=usage_totals(os.environ.get("LLM_USAGE_LOG")),
-        duration_s=run_duration_s(os.environ.get("RUN_STARTED_AT")),
-        stage_stats=load_stage_stats(conn, today),
-    )
     conn.close()
 
     log.info("issue file: %s (%d bytes)", issue_path, size)

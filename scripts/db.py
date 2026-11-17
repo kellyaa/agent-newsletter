@@ -639,17 +639,21 @@ def count_featured_by_section(conn: sqlite3.Connection) -> dict[str, int]:
     return {r[0]: int(r[1]) for r in rows}
 
 
-def publish_selected_items(conn: sqlite3.Connection, date: str) -> int:
+def publish_selected_items(
+    conn: sqlite3.Connection, date: str, *, commit: bool = True,
+) -> int:
     """Move every featured/appendix item to ``published`` on ``date``.
 
-    Commits. Returns rows updated.
+    Commits unless ``commit=False`` (see :func:`seal_and_record_run`). Returns
+    rows updated.
     """
     cur = conn.execute(
         f"UPDATE items SET status = '{Status.PUBLISHED}', published_date = ? "
         f"WHERE status IN ('{Status.FEATURED}', '{Status.APPENDIX}')",
         (date,),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.rowcount or 0
 
 
@@ -669,8 +673,10 @@ def upsert_run(
     tokens_out: int | None = None,
     papers_expired_unjudged: int | None = None,
     papers_prerank_cut: int | None = None,
+    commit: bool = True,
 ) -> None:
-    """Insert or refresh the ``runs`` row for ``date``. Commits.
+    """Insert or refresh the ``runs`` row for ``date``. Commits unless
+    ``commit=False`` (see :func:`seal_and_record_run`).
 
     Counts and notes are overwritten on re-publish; duration, tokens and the
     papers-pool counters keep their earlier value when the new one is None.
@@ -705,7 +711,29 @@ def upsert_run(
             papers_expired_unjudged, papers_prerank_cut,
         ),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
+
+
+def seal_and_record_run(
+    conn: sqlite3.Connection, date: str, **run_fields: int | str | None,
+) -> int:
+    """Seal the day's featured/appendix items and write its ``runs`` row in one
+    transaction (#738).
+
+    Commits once; on any error rolls both statements back, so a failure leaves
+    the day as it was before publish ran and a retry publishes it normally.
+    ``run_fields`` are :func:`upsert_run`'s keyword arguments. Returns the rows
+    sealed.
+    """
+    try:
+        sealed = publish_selected_items(conn, date, commit=False)
+        upsert_run(conn, date, commit=False, **run_fields)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    return sealed
 
 
 # --- reset_day's forced re-run resets ----------------------------------------
