@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import ast
 import logging
-import shutil
 from pathlib import Path
 
 import pytest
@@ -181,7 +180,7 @@ def test_fetch_names_the_file_on_fatal(tmp_path, monkeypatch, caplog):
 def test_comments_only_draft_lints_and_fetches(tmp_path, monkeypatch):
     # The reported bug: lint-clean draft whose sources.yaml has no entries yet.
     editions_dir = tmp_path / "editions"
-    shutil.copytree(REPO / "editions" / "agents", editions_dir / "demo")
+    edition.copy_config(REPO / "editions" / "agents", editions_dir / "demo")
     cfg = editions_dir / "demo" / "edition.yaml"
     text = cfg.read_text()
     text = "\n".join(

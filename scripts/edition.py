@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -152,6 +153,36 @@ class Edition:
         """The keyword gate as one case-insensitive pattern (prefilter's gate,
         and the keyword-density term of the papers prerank heuristic)."""
         return re.compile("|".join(self.keywords), re.IGNORECASE)
+
+
+# What runtime_paths() puts inside an edition folder when CONTENT_ROOT is the
+# repo root (the default outside run.sh): the state DB, its SQLite sidecars
+# (connect() turns on WAL) and the issues folder. They are .gitignored, so they
+# sit unseen next to edition.yaml in a dev checkout, and a bare copytree of the
+# folder took them along: a "fresh" copy started with another run's state.db.
+RUNTIME_ARTIFACTS = (
+    STATE_DB_NAME,
+    f"{STATE_DB_NAME}-wal",
+    f"{STATE_DB_NAME}-shm",
+    f"{STATE_DB_NAME}-journal",
+    ISSUES_DIRNAME,
+)
+
+
+def copy_config(src: Path, dest: Path, *exclude: str) -> Path:
+    """Copy ``src`` to ``dest``: edition config only, never runtime state.
+
+    The one way to clone an edition folder, or the whole ``editions/`` tree
+    (new_edition's scaffold and the test fixtures). It skips
+    :data:`RUNTIME_ARTIFACTS`, ``__pycache__`` and any ``exclude`` names at
+    every depth, so the copy is the same whether or not a local run has left
+    state in ``src``.
+    """
+    shutil.copytree(
+        src, dest,
+        ignore=shutil.ignore_patterns(*RUNTIME_ARTIFACTS, "__pycache__", *exclude),
+    )
+    return dest
 
 
 @dataclass(frozen=True)

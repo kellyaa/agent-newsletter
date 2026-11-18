@@ -1,6 +1,5 @@
 """scripts/check_edition.py: edition lint and the no-LLM fetch/prefilter dry run."""
 import io
-import shutil
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -17,14 +16,14 @@ REAL = edition.EDITIONS_DIR
 def editions_dir(tmp_path, monkeypatch):
     """A copy of the real editions/ tree that tests may freely edit."""
     d = tmp_path / "editions"
-    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("engineering-with-ai"))
+    edition.copy_config(REAL, d, "engineering-with-ai")
     monkeypatch.setattr(edition, "EDITIONS_DIR", d)
     return d
 
 
 def _clone_agents(editions_dir, slug="demo", status="draft"):
     dest = editions_dir / slug
-    shutil.copytree(editions_dir / "agents", dest)
+    edition.copy_config(editions_dir / "agents", dest)
     data = yaml.safe_load((dest / "edition.yaml").read_text())
     data["slug"], data["status"] = slug, status
     (dest / "edition.yaml").write_text(yaml.safe_dump(data))
