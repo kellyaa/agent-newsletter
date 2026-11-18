@@ -21,6 +21,7 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 ### Troubleshooting
 
 - **[Debugging Guide](./debugging-guide.md)** — Inspecting state.db, analyzing LLM responses, tracing issues
+- **[Troubleshooting Quick Reference](./troubleshooting-quick-reference.md)** — Fast index to troubleshooting by symptom
 - **[Troubleshooting Low Featured Item Count](./troubleshooting-low-featured-count.md)** — Common causes and fixes
 - **[LLM Error Handling Guide](./llm-error-handling-guide.md)** — Understanding LLM failures, retry logic, token issues
 - **[Database Recovery Guide](./database-recovery-guide.md)** — Repairing corrupted state.db, recovery procedures
@@ -94,6 +95,11 @@ Comprehensive guide to all resources for users, maintainers, and contributors to
 ### Multi-Agent and Analytics
 
 - **[Multi-Agent Coordination](./multi-agent.md)** — How fetch, rank, write, and publish stages interact
+
+### External Integration and Operations
+
+- **[External Integrations Guide](./external-integrations-guide.md)** — Consuming RSS, accessing content branch, GitHub webhooks
+- **[Performance and Cost Optimization Playbook](./optimization-playbook.md)** — Real-world strategies to reduce costs and improve performance
 
 ### Governance and Policy
 
