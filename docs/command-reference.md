@@ -35,6 +35,8 @@ Quick lookup for all pipeline, testing, and operational commands. For detailed u
 
 | Command | Does | See also |
 |---------|------|----------|
+| `EDITION=<slug> uv run scripts/reset_day.py` | Reset today's post-fetch state for an edition (revert rank/write, drop today's issue and runs row) | [README.md § Troubleshooting](../README.md#troubleshooting-a-stalled-run) |
+| `EDITION=<slug> uv run scripts/reset_day.py --refetch` | Also delete today's fetched items so fetch runs again (expensive; arXiv is rate-limited) | [README.md § Troubleshooting](../README.md#troubleshooting-a-stalled-run) |
 | `uv run scripts/backfill.py --date YYYY-MM-DD` | Reconstruct missed issue from candidate pool (dry-run; doesn't modify state.db) | [CONTRIBUTING.md § scripts/backfill.py](../CONTRIBUTING.md#scriptsbackfillpy--reconstruct-a-missed-days-issue) |
 | `uv run scripts/backfill.py --date YYYY-MM-DD --apply-published` | Backfill for real: promote the issue's featured and appendix items to 'published' in live DB | [CONTRIBUTING.md § scripts/backfill.py](../CONTRIBUTING.md#scriptsbackfillpy--reconstruct-a-missed-days-issue) |
 | `uv run scripts/replay_writer.py YYYY-MM-DD` | Re-run writer against published items from a past date (logs to `logs/theme-replay-*.json`) | [CONTRIBUTING.md § scripts/replay_writer.py](../CONTRIBUTING.md#scriptsreplay_writerpy--replay-writer-against-a-past-issue) |
@@ -179,7 +181,8 @@ gh pr create --title "✨ feat: add … source" --body "…"
 cat logs/run-$(date +%Y-%m-%d).log                    # which stage failed?
 tail -100 logs/<slug>/run-$(date +%Y-%m-%d).log       # full log for that edition
 ./run.sh --edition <slug>                             # re-run that edition
-./run.sh --edition <slug> --force                     # if it's stuck in prefilter/rank/write
+EDITION=<slug> uv run scripts/reset_day.py             # reset today's state and revert rank/write
+EDITION=<slug> uv run scripts/reset_day.py --refetch  # also re-fetch (use sparingly)
 ```
 
 ### I want to backfill a missed day
