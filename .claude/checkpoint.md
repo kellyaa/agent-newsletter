@@ -4,19 +4,15 @@ Mid-task state for an agent session that may be interrupted. Overwrite it as wor
 
 ## In progress
 
-One unpushed commit ready for merge:
-- Commit: 39506f4 (docs: verify dedupe task completion #630)
-- File: DEDUPE_VERIFICATION.md (verification report, 104 lines)
-- Status: Ready to push to origin/main
-- Note: Supervisor role is READ-ONLY; push requires elevated credentials
+COMPLETED: ROADMAP update merged as PR #756
+- Recorded connection close for all stages (#744, #753)
+- Recorded external integrations guide (#747)
+- Recorded picomatch audit ignore (#752)
+- Main branch current as of commit f73ac2b
+
+Repository state: healthy, all recent PRs merged.
 
 ## How to resume
-
-### Current task: Push verification documentation
-1. Branch: main (local ahead by 1 commit: 39506f4)
-2. File modified: DEDUPE_VERIFICATION.md (104 lines, added)
-3. Next command: `git push origin main` (requires merge-capable credentials)
-4. After pushing: Task complete, update .claude/checkpoint.md to clear "In progress"
 
 ### For new work:
 1. Read `AGENTS.md`, `.claude/session-summary.md` and `.memory/corrections.jsonl`.
