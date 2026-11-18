@@ -98,7 +98,7 @@ for entry in parsed.entries:
     if not link or not title:
         continue                     # skip malformed entries, keep the rest
     ...
-    yield Item(source=f"rss:{source['id']}", ...)
+    yield Item(source=item_source(SourceFamily.RSS, source), ...)
 ```
 
 Two details worth copying: it parses `resp.content` (bytes) so feedparser can
@@ -167,16 +167,20 @@ the page markup changes.
 
 Only needed when none of the six families can read the source. Touch these places:
 
-1. **`scripts/fetch.py`**: add `fetch_<family>(source, *, client=None)` following
-   the template below, and call it from `iter_collectors()` with the
-   `with_override(...)` wrapper, using the label `"<family>/<id>"`. If the source
-   is rate-limited, sleep between sources the way arXiv (3 s) and Reddit
-   (`REDDIT_REQUEST_DELAY`) do.
-2. **`scripts/check_edition.py`**: add the family to `FAMILIES` and its required
-   keys to `REQUIRED_KEYS`, or lint will reject the YAML as an unknown family.
-3. **`scripts/prefilter.py`**: add the family to `RECENCY_DAYS`,
-   `SECTION_BY_FAMILY` and `SOURCE_PRIORITY`. Missing entries fall back to a 3-day
-   window, the `blogs` section and priority 0, which is rarely what you want.
+1. **`scripts/models.py`** (the family registry): add a `SourceFamily` member,
+   its `SOURCE_REQUIRED_KEYS` entry and its `ITEM_SOURCE_PREFIX` (plus
+   `SOURCE_FAMILY_INT_KEYS` for numeric keys). `check_edition.py` and
+   `tests/test_sources_config.py` derive `FAMILIES` / `REQUIRED_KEYS` from these,
+   so do not edit them.
+2. **`scripts/fetch.py`**: add `fetch_<family>(source, *, client=None)` following
+   the template below. Call it from `iter_collectors()` with the
+   `with_override(...)` wrapper, labelled with `source_label(SourceFamily.<X>, src)`.
+   If the source is rate-limited, sleep between sources the way arXiv
+   (`ARXIV_REQUEST_DELAY_S`) and Reddit (`REDDIT_REQUEST_DELAY`) do.
+3. **`scripts/gates.py`**: add the prefix to `RECENCY_DAYS`,
+   `SECTION_BY_FAMILY` and `SOURCE_PRIORITY` (`prefilter.py` only re-exports
+   them). A missing key fails
+   `tests/test_item_source_single_source.py::test_gates_tables_cover_exactly_the_fetched_prefixes`.
 4. **Docs**: the family table above, `docs/edition-yaml-reference.md`, and
    `SPEC.md` if it lists families.
 5. **Tests**: see section 5.
@@ -186,7 +190,7 @@ Only needed when none of the six families can read the source. Touch these place
 ```python
 def fetch_example(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     url = source["url"]                       # required keys: index directly, fail loudly
-    max_items = source.get("max_items", 30)   # optional keys: .get() with a default
+    max_items = _family_int(SourceFamily.EXAMPLE, source, "max_items")  # numeric: default in models
     log.info("example: fetching %s (%s)", source["id"], url)
     _client = client or _make_http_client()
     try:
@@ -201,7 +205,7 @@ def fetch_example(source: dict, *, client: httpx.Client | None = None) -> Iterab
         if not link or not title:
             continue
         yield Item(
-            source=f"example:{source['id']}", # family before the colon
+            source=item_source(SourceFamily.EXAMPLE, source),  # "example:<id>"
             url=link,
             title=title.strip(),
             author=rec.get("author"),

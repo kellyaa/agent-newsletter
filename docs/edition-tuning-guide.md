@@ -62,7 +62,7 @@ Use `keyword_gate_bypass` only for low-volume, hand-picked blogs where nearly ev
 
 ### 3.2 Recency (`sources.yaml` `recency_days`)
 
-Default windows are by family (`RECENCY_DAYS` in `scripts/prefilter.py`: arXiv 7, RSS 30, HN and Reddit 3, GitHub 14, html 30, anything else 3). A source that publishes every few weeks may need a longer one. Setting it on a high-volume source mostly adds old items.
+Default windows are by family (`RECENCY_DAYS` in `scripts/gates.py`: arXiv 7, RSS 30, HN and Reddit 3, GitHub 14, html 30, anything else 3). A source that publishes every few weeks may need a longer one. Setting it on a high-volume source mostly adds old items.
 
 ### 3.3 Ranking rubric emphasis (`prompts/rank.*.md`)
 
