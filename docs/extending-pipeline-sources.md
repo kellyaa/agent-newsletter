@@ -3,7 +3,7 @@
 [adding-feed-sources-guide.md](adding-feed-sources-guide.md) explains the adapter contract and lists the six families. This guide is the worked, end-to-end version for contributors who need something the YAML cannot express. It has two examples:
 
 - **Medium effort**: a new Hacker News query variant (YAML, plus one optional code change).
-- **Hard effort**: a new source family backed by an authenticated API, touching `fetch.py`, `check_edition.py`, `prefilter.py`, `.env.template` and tests.
+- **Hard effort**: a new source family backed by an authenticated API, touching `models.py` (the family registry), `fetch.py`, `gates.py`, `.env.template` and tests.
 
 Read the "Contract" section of the feed-sources guide first. Failure behaviour is in [source-reliability-matrix.md](source-reliability-matrix.md), and the gates a fetched item meets next are in [prefilter-gates-guide.md](prefilter-gates-guide.md).
 
@@ -21,7 +21,8 @@ editions/<slug>/sources.yaml ──► fetch.load_sources() ──► edition.re
 
 - **Six families**: `rss`, `arxiv`, `hn`, `reddit`, `html` (CSS-selector scraper) and `github_releases` (shells out to `gh api`; items are prefixed `gh:`). Their keys, defaults and default sections are in the table in the feed-sources guide.
 - **One edition, one `sources.yaml`.** Sources are config; no edition names appear in code.
-- **The family is the prefix before the colon in `Item.source`** (`rss:simonw`, `hn:hn-agent`). The prefilter uses it for the recency window (`RECENCY_DAYS`), the default section (`SECTION_BY_FAMILY`) and the cross-source dedup winner (`SOURCE_PRIORITY`).
+- **The family is the prefix before the colon in `Item.source`** (`rss:simonw`, `hn:hn-agent`). Adapters build it only with `models.item_source(family, entry)`, from `models.ITEM_SOURCE_PREFIX`. The prefilter reads it back for the recency window (`RECENCY_DAYS`), the default section (`SECTION_BY_FAMILY`) and the cross-source dedup winner (`SOURCE_PRIORITY`), all in `scripts/gates.py`.
+- **The family registry is `scripts/models.py`.** `SourceFamily` (the `sources.yaml` keys, in fetch order), `SOURCE_REQUIRED_KEYS`, `ITEM_SOURCE_PREFIX`, `SOURCE_FAMILY_INT_KEYS` and `source_label` live there. `check_edition` and `tests/test_sources_config.py` derive their family lists from it, so lint learns a new family when you add it there.
 - **Adapters only fetch and normalise.** They make no LLM calls and do not filter by relevance; the prefilter and ranker do that.
 - **Fetched text is untrusted.** It reaches the ranker and writer as data, never as instructions (see `SECURITY-AI.md`). Do not add tools or shell access to LLM calls based on item content.
 
@@ -118,7 +119,7 @@ Keep credentials out of the YAML. They come from the environment.
 
 ### Step 2: the adapter (`scripts/fetch.py`)
 
-Place it with the other adapters, above "Persistence". `os` must be imported at the top of the module (it is not currently).
+Place it with the other adapters, above "Persistence". `os` must be imported at the top of the module (it is not currently). `item_source`, `source_label` and `SourceFamily` are already imported from `models`; `X.X` below assumes the Step 4 registry entry (`SourceFamily.X`).
 
 ```python
 X_API_URL = "https://api.x.com/2"
@@ -126,7 +127,7 @@ X_API_URL = "https://api.x.com/2"
 
 def fetch_x(source: dict, *, client: httpx.Client | None = None) -> Iterable[Item]:
     username = source["username"]
-    max_results = source.get("max_results", 20)
+    max_results = _family_int(SourceFamily.X, source, "max_results")   # default from models.SOURCE_FAMILY_INT_KEYS
     token = os.environ.get("X_BEARER_TOKEN")
     if not token:
         # Raise: a missing credential is a failed source, not "no news".
@@ -152,7 +153,7 @@ def fetch_x(source: dict, *, client: httpx.Client | None = None) -> Iterable[Ite
         if not text:
             continue
         yield Item(
-            source=f"x:{source['id']}",                      # family prefix
+            source=item_source(SourceFamily.X, source),      # "x:<id>", via models
             url=f"https://x.com/{username}/status/{post['id']}",
             title=text.splitlines()[0][:200],
             author=username,
@@ -173,32 +174,36 @@ Points that are easy to get wrong:
     for i, src in enumerate(sources.get("x") or []):
         if i > 0:
             time.sleep(X_REQUEST_DELAY)          # define next to REDDIT_REQUEST_DELAY if the API rate-limits
-        yield f"x/{src['id']}", with_override(src, fetch_x(src, client=http_client))
+        yield source_label(SourceFamily.X, src), with_override(
+            src, fetch_x(src, client=http_client))
 ```
 
 The label (`x/<id>`) appears in logs and in the `check_edition.py` table.
 
-### Step 4: teach lint about the family (`scripts/check_edition.py`)
+### Step 4: register the family (`scripts/models.py`)
 
 ```python
-FAMILIES = ("rss", "arxiv", "hn", "reddit", "html", "github_releases", "x")
-REQUIRED_KEYS = {
-    ...,
-    "x": {"id", "username"},
-}
+class SourceFamily(StrEnum):
+    ...
+    GITHUB_RELEASES = "github_releases"
+    X = "x"                                   # declaration order is fetch order
+
+SOURCE_REQUIRED_KEYS = {..., SourceFamily.X: frozenset({"id", "username"})}
+ITEM_SOURCE_PREFIX = {..., SourceFamily.X: "x"}   # never rename a prefix: state.db rows carry it
+SOURCE_FAMILY_INT_KEYS = {..., SourceFamily.X: {"max_results": 20}}   # only if it has numeric keys
 ```
 
-Without this, lint reports `unknown source families ['x']` and the edition cannot go live. `tests/test_sources_config.py` keeps its own copies of `FAMILIES` and `REQUIRED_KEYS`; update them as well so a committed `sources.yaml` using the family is validated.
+Do not touch `check_edition.py` or `tests/test_sources_config.py`. Both take `FAMILIES` and `REQUIRED_KEYS` from these tables. Once the entry exists, lint accepts `x:` in `sources.yaml`, rejects an entry missing `username`, and rejects a non-positive `max_results`. In the adapter, read the numeric key with `_family_int(SourceFamily.X, source, "max_results")`, not `source.get(...)`. Without the registry entry, lint reports `unknown source families ['x']`. If any table misses the family, `tests/test_item_source_single_source.py::test_every_family_has_a_prefix` or `tests/test_source_families_single_source.py::test_required_keys_cover_every_family` fails.
 
-### Step 5: prefilter tables (`scripts/prefilter.py`)
+### Step 5: gate tables (`scripts/gates.py`)
 
 ```python
 RECENCY_DAYS = {..., "x": 3, ...}
 SOURCE_PRIORITY = {..., "x": 1, ...}     # lowest: the same story elsewhere wins the collapse
-SECTION_BY_FAMILY = {..., "x": "news", ...}
+SECTION_BY_FAMILY = {..., "x": Section.NEWS.value, ...}
 ```
 
-A missing entry does not error: it silently becomes a 3-day window, the `blogs` section and priority 0.
+The keys are `ITEM_SOURCE_PREFIX` values. `prefilter.py` only re-exports these tables, so edit them in `gates.py`. A missing or extra key fails `tests/test_item_source_single_source.py::test_gates_tables_cover_exactly_the_fetched_prefixes`.
 
 ### Step 6: configuration and documentation
 
@@ -225,14 +230,14 @@ def test_x_requires_token(monkeypatch):
         list(fetch_x({"id": "a", "username": "u"}))
 ```
 
-Also: an empty or text-less post is skipped, an HTTP error status raises, `raw_text` is capped at 4000, an invalid `username` is rejected, and `iter_collectors` yields the `x/<id>` label (see `test_hn_sources_called_in_main` in `tests/test_fetch_adapters.py` for the pattern of monkeypatching the adapter and calling `main()`). Remember the coverage gate: every new branch needs a test.
+Also: an empty or text-less post is skipped, a missing token or invalid `username` raises (a broken source must be recorded as failed, see `tests/test_fetch_adapter_failures_recorded.py`), an HTTP error status raises, `raw_text` is capped at 4000, and `iter_collectors` yields the `x/<id>` label (see `test_hn_sources_called_in_main` in `tests/test_fetch_adapters.py` for the pattern of monkeypatching the adapter and calling `main()`). Remember the coverage gate: every new branch needs a test.
 
 ## 5. Checklist
 
-1. Adapter yields `Item`s with the right family prefix; raises on HTTP and parse errors; skips malformed entries; caps `raw_text`.
-2. Registered in `iter_collectors()` (with `with_override`) and rate-limited if the API requires it.
-3. `FAMILIES` and `REQUIRED_KEYS` updated in `check_edition.py` and in `tests/test_sources_config.py`.
-4. `RECENCY_DAYS`, `SOURCE_PRIORITY`, `SECTION_BY_FAMILY` updated in `prefilter.py`.
+1. Adapter builds `Item.source` with `models.item_source`. It raises on HTTP, parse and config errors. It skips malformed entries and caps `raw_text`.
+2. Registered in `iter_collectors()` with `source_label` and `with_override`, and rate-limited if the API requires it. Also add it to the adapter list in `tests/test_source_families_single_source.py::test_fetch_walks_every_family`.
+3. `SourceFamily`, `SOURCE_REQUIRED_KEYS`, `ITEM_SOURCE_PREFIX` (and `SOURCE_FAMILY_INT_KEYS` if needed) updated in `models.py`. `check_edition.py` follows automatically.
+4. `RECENCY_DAYS`, `SOURCE_PRIORITY`, `SECTION_BY_FAMILY` updated in `gates.py`.
 5. Any new env var in `.env.template`, never in YAML or logs.
 6. Docs updated; no stage-to-stage imports.
 7. `uv run --extra test pytest` passes the 95% gate; `uv run scripts/check_edition.py <slug>` shows the new source row with sensible counts.
