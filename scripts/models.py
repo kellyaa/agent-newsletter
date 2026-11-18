@@ -89,7 +89,7 @@ SOURCE_REQUIRED_KEYS: dict[SourceFamily, frozenset[str]] = {
     SourceFamily.ARXIV: frozenset({"id", "query"}),
     SourceFamily.HN: frozenset({"id", "query"}),
     SourceFamily.REDDIT: frozenset({"id", "url"}),
-    SourceFamily.HTML: frozenset({"id", "url"}),
+    SourceFamily.HTML: frozenset({"id", "url", "link_selector"}),
     SourceFamily.GITHUB_RELEASES: frozenset({"owner", "repo"}),
 }
 
