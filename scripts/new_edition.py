@@ -633,7 +633,7 @@ def scaffold(
         if own_client:
             client.close()
 
-    shutil.copytree(template, dest)
+    edition_mod.copy_config(template, dest)
     fragments_dir = dest / PROMPTS_DIRNAME
     (fragments_dir / "README.md").unlink(missing_ok=True)
     try:

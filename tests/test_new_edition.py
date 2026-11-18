@@ -17,7 +17,7 @@ REAL = edition.EDITIONS_DIR
 @pytest.fixture()
 def editions_dir(tmp_path, monkeypatch):
     d = tmp_path / "editions"
-    shutil.copytree(REAL, d, ignore=shutil.ignore_patterns("engineering-with-ai"))
+    edition.copy_config(REAL, d, "engineering-with-ai")
     monkeypatch.setattr(edition, "EDITIONS_DIR", d)
     return d
 

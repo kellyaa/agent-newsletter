@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+import edition  # copy_config only; the CLI under test still runs as a subprocess
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SLUG = "e2e-demo"
 
@@ -85,7 +87,8 @@ def sandbox(tmp_path, feed_url):
             ignore=shutil.ignore_patterns("__pycache__"),
         )
     edition_dir = root / "editions" / SLUG
-    shutil.copytree(REPO_ROOT / "editions" / "agents", edition_dir)
+    # Config only: a local run leaves a .gitignored state.db in editions/agents/.
+    edition.copy_config(REPO_ROOT / "editions" / "agents", edition_dir)
     cfg_path = edition_dir / "edition.yaml"
     cfg = yaml.safe_load(cfg_path.read_text())
     cfg["slug"] = SLUG

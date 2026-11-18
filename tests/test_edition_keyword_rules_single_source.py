@@ -15,7 +15,6 @@ keeps must load through ``render_edition_yaml`` -> ``edition.load``.
 from __future__ import annotations
 
 import ast
-import shutil
 from pathlib import Path
 
 import pytest
@@ -92,7 +91,7 @@ def test_whatever_clean_keywords_keeps_loads(tmp_path):
     assert len(dropped) == len(CORPUS) - len(kept)
 
     editions_dir = tmp_path / "editions"
-    shutil.copytree(edition.EDITIONS_DIR / "_template", editions_dir / "demo")
+    edition.copy_config(edition.EDITIONS_DIR / "_template", editions_dir / "demo")
     sections = yaml.safe_load((editions_dir / "demo" / "edition.yaml").read_text())["sections"]
     v = new_edition.Validated("tagline", "profile", [], kept, ["ai"], {}, {}, [])
     (editions_dir / "demo" / "edition.yaml").write_text(
