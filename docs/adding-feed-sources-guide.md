@@ -81,9 +81,8 @@ Notes:
 - `github_releases` shells out to `gh api` instead of using the HTTP client, and
   its items use the source prefix `gh:` (not `github_releases:`). The shipped
   `agents` edition currently has it set to `[]`.
-- `check_edition.py` enforces the required keys above (`REQUIRED_KEYS`), though
-  it only checks `id` and `url` for `html`; `link_selector` is validated when
-  the adapter runs.
+- `check_edition.py` enforces the required keys above (`REQUIRED_KEYS`, from
+  `models.SOURCE_REQUIRED_KEYS`), including `link_selector` for `html`.
 
 ### Pattern 1: RSS/Atom (`fetch_rss`)
 
@@ -127,7 +126,8 @@ config (`_validate_reddit_limit`) with a logged fallback.
 For pages with no feed. Selectors are CSS (selectolax). `link_selector` may match
 the `<a>` itself or a wrapper containing one; the other selectors are evaluated
 relative to the link element. If `link_selector` matches nothing the adapter
-logs a warning and yields nothing. Prefer RSS where it exists; scrapers break when
+logs a warning and yields nothing (a quiet page, which `dead_sources` reports once
+it stays empty); a missing `link_selector` raises, so the source is recorded as failed. Prefer RSS where it exists; scrapers break when
 the page markup changes.
 
 ## 3. Job A: add a source to an edition

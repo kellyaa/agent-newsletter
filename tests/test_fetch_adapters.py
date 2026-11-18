@@ -766,10 +766,10 @@ class TestFetchGithubReleases:
         ("a/b", "r"), ("o", "r?per_page=100"), ("o", ".."), ("..", "r"),
         ("-x", "r"), ("o", ""), (None, "r"), ("o", 5),
     ])
-    def test_invalid_owner_repo_skipped_without_subprocess(self, owner, repo):
+    def test_invalid_owner_repo_raises_without_subprocess(self, owner, repo):
         with patch("subprocess.run") as run:
-            items = list(fetch_github_releases([{"owner": owner, "repo": repo}]))
-        assert items == []
+            with pytest.raises(ValueError, match="invalid owner/repo"):
+                list(fetch_github_releases([{"owner": owner, "repo": repo}]))
         run.assert_not_called()
 
     def test_release_missing_url_skipped(self):
@@ -785,29 +785,37 @@ class TestFetchGithubReleases:
         assert len(items) == 1
         assert "v1.0" in items[0].url
 
-    def test_subprocess_error_logs_warning_and_continues(self):
-        """CalledProcessError → log warning, skip this repo."""
+    def test_subprocess_error_raises(self):
+        """CalledProcessError → raise, so fetch.main records the source as failed (#762)."""
         with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "gh")):
-            items = list(fetch_github_releases(self._watchlist()))
-        assert items == []
+            with pytest.raises(RuntimeError, match="gh api failed for openai/openai-python"):
+                list(fetch_github_releases(self._watchlist()))
 
-    def test_subprocess_filenotfound_logs_warning(self):
-        """FileNotFoundError (gh not installed) → log warning, skip."""
+    def test_subprocess_filenotfound_raises(self):
+        """FileNotFoundError (gh not installed) → raise."""
         with patch("subprocess.run", side_effect=FileNotFoundError("gh not found")):
-            items = list(fetch_github_releases(self._watchlist()))
-        assert items == []
+            with pytest.raises(RuntimeError, match="gh not found"):
+                list(fetch_github_releases(self._watchlist()))
 
-    def test_subprocess_timeout_logs_warning(self):
+    def test_subprocess_timeout_raises(self):
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 30)):
-            items = list(fetch_github_releases(self._watchlist()))
-        assert items == []
+            with pytest.raises(RuntimeError, match="gh api failed"):
+                list(fetch_github_releases(self._watchlist()))
 
-    def test_invalid_json_logs_warning_and_continues(self):
+    def test_invalid_json_raises(self):
         mock_result = MagicMock()
         mock_result.stdout = "not valid json"
         with patch("subprocess.run", return_value=mock_result):
-            items = list(fetch_github_releases(self._watchlist()))
-        assert items == []
+            with pytest.raises(RuntimeError, match="invalid JSON"):
+                list(fetch_github_releases(self._watchlist()))
+
+    def test_non_list_json_raises(self):
+        """An error object such as {"message": "Not Found"} is not a release list."""
+        mock_result = MagicMock()
+        mock_result.stdout = json.dumps({"message": "Not Found"})
+        with patch("subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError, match="expected a JSON list"):
+                list(fetch_github_releases(self._watchlist()))
 
     def test_body_truncated_at_4000(self):
         long_body = "x" * 5000

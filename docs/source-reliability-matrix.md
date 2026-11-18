@@ -54,7 +54,7 @@ Understanding this tells you what a failure costs.
 | `reddit` | Warning `invalid limit` | `source <id>: invalid limit ... using 10` | `limit` not a positive int | Fix the YAML. |
 | `html` | Silent zero items | `html: <id> - link_selector '...' matched 0 elements` or `produced 0 items` (warnings, not errors) | Page markup changed | Re-inspect the page, update selectors. This is the most fragile family. |
 | `html` | Missing dates | Items appear but are judged on fetch time | `date_selector` stopped matching | Update `date_selector`. |
-| `github_releases` | Warning `gh: failed for owner/repo` | uses the `gh` CLI | `gh` missing, unauthenticated, repo renamed, or timeout (30 s) | Install/auth `gh`; fix the name. Not used by the shipped `agents` edition. |
+| `github_releases` | `gh/<owner>/<repo>: collector failed: ... gh api failed for owner/repo` (or `invalid JSON` / `invalid owner/repo`) | uses the `gh` CLI | `gh` missing, unauthenticated, repo renamed, or timeout (30 s) | Install/auth `gh`; fix the name. Not used by the shipped `agents` edition. |
 | any | Items missing but source "worked" | Warning `rejecting item with disallowed URL scheme` | Entry URL is not `http(s)` | Usually a feed quirk; nothing to do unless it is every item. |
 | any | TLS or `406` from every source | All collectors fail at once | Egress proxy rejecting ALPN (see note in `_NoALPNContext`) | Environment issue, not a source issue. |
 

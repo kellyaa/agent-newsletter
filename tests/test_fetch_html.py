@@ -88,12 +88,13 @@ def test_fetch_html_happy_path():
     assert "Better tool use" in it.raw_text
 
 
-def test_fetch_html_missing_link_selector_returns_empty(caplog):
+@pytest.mark.parametrize("extra", [{}, {"link_selector": ""}, {"link_selector": None}])
+def test_fetch_html_missing_link_selector_raises(extra):
+    """Broken config, not a quiet page: raise so fetch records the error (#762)."""
     import fetch
     client = _FakeClient(_FakeResponse(ANTHROPIC_LIKE))
-    items = list(fetch.fetch_html(
-        {"id": "x", "url": "https://ex.com"}, client=client))
-    assert items == []
+    with pytest.raises(ValueError, match="has no link_selector"):
+        list(fetch.fetch_html({"id": "x", "url": "https://ex.com", **extra}, client=client))
 
 
 def test_fetch_html_no_matches_logs_warning(caplog):

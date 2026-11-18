@@ -224,7 +224,10 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
                                  per fetch (a bad value: warning, no cap).
 
     Failure modes are defensive per the issue:
-      - No matches for link_selector → log a warning, yield nothing.
+      - Missing link_selector → ValueError (broken config; check_edition
+        rejects it too, since it is in models.SOURCE_REQUIRED_KEYS).
+      - No matches for link_selector → log a warning, yield nothing (a quiet
+        page; dead_sources reports it once it stays empty).
       - httpx / TLS errors bubble up to the run_collector wrapper (same
         pattern as RSS), so one broken source can't break the whole run.
       - Missing / unparseable date_selector → published_at=None (prefilter
@@ -253,9 +256,9 @@ def fetch_html(source: dict, *, client: httpx.Client | None = None) -> Iterable[
     sid = source["id"]
     url = source["url"]
     link_sel = source.get("link_selector")
-    if not link_sel:
-        log.warning("html: %s missing link_selector; skipping", sid)
-        return
+    if not isinstance(link_sel, str) or not link_sel.strip():
+        # Broken config, not a quiet page: raise so fetch records the error (#762).
+        raise ValueError(f"source {sid!r} has no link_selector")
 
     title_sel = source.get("title_selector")
     date_sel = source.get("date_selector")
@@ -431,6 +434,14 @@ def fetch_reddit(source: dict, *, client: httpx.Client | None = None) -> Iterabl
 
 
 def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
+    """Yield the latest releases of each ``owner/repo`` in `watchlist` via ``gh api``.
+
+    Raises on an invalid name, a ``gh`` failure (not installed, non-zero exit,
+    timeout) or a reply that is not a JSON list, like every other adapter, so
+    ``fetch.main`` counts the source as failed and records its error instead of
+    a quiet ``seen=0`` (#762). ``iter_collectors`` passes one entry at a time, so
+    one broken repo never hides the others.
+    """
     for entry in watchlist:
         owner, repo = entry["owner"], entry["repo"]
         if (
@@ -438,8 +449,7 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
             or not _GH_NAME_RE.match(owner) or not _GH_NAME_RE.match(repo)
             or repo in (".", "..")
         ):
-            log.warning("gh: skipping invalid owner/repo %r/%r", owner, repo)
-            continue
+            raise ValueError(f"invalid owner/repo {owner!r}/{repo!r}")
         log.info("gh: fetching releases for %s/%s", owner, repo)
         try:
             result = subprocess.run(
@@ -447,13 +457,15 @@ def fetch_github_releases(watchlist: list[dict]) -> Iterable[Item]:
                 capture_output=True, text=True, timeout=30, check=True,
             )
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
-            log.warning("gh: failed for %s/%s: %s", owner, repo, e)
-            continue
+            raise RuntimeError(f"gh api failed for {owner}/{repo}: {e}") from e
         try:
             releases = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            log.warning("gh: invalid JSON for %s/%s", owner, repo)
-            continue
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"invalid JSON from gh api for {owner}/{repo}: {e}") from e
+        if not isinstance(releases, list):
+            raise RuntimeError(
+                f"expected a JSON list for {owner}/{repo}, got {type(releases).__name__}"
+            )
         for rel in releases:
             url = rel.get("html_url")
             tag = rel.get("tag_name") or rel.get("name") or ""
